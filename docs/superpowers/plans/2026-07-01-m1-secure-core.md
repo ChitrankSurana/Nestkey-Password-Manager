@@ -130,8 +130,22 @@ pub enum CryptoError {
 }
 
 /// A derived 256-bit key. Zeroized automatically when dropped.
+///
+/// The inner bytes are private and only reachable via `as_bytes()`, which returns a borrow.
+/// `[u8; 32]` is `Copy`, so a public field would let any caller do `let raw = key.0;` and hold an
+/// independent copy that `ZeroizeOnDrop` never touches — quietly defeating the zeroization
+/// guarantee the moment `vault.rs`/`auth.rs` need the raw bytes. A borrow-only accessor closes
+/// that gap: callers can read the bytes but can't walk away with an un-zeroized copy without
+/// deliberately choosing to (e.g. `*key.as_bytes()`), which is a visible, greppable smell instead
+/// of an invisible default.
 #[derive(ZeroizeOnDrop)]
-pub struct VaultKey(pub [u8; 32]);
+pub struct VaultKey([u8; 32]);
+
+impl VaultKey {
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
 
 pub fn random_salt() -> [u8; 16] {
     let mut salt = [0u8; 16];
@@ -701,7 +715,7 @@ Expected: FAIL — panics on `unimplemented!()`.
 ```rust
 pub fn open_vault(path: &Path, key: &VaultKey) -> Result<Connection, VaultError> {
     let conn = Connection::open(path)?;
-    let key_hex: String = key.0.iter().map(|b| format!("{:02x}", b)).collect();
+    let key_hex: String = key.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
     conn.pragma_update(None, "key", format!("x'{}'", key_hex))?;
 
     // SQLCipher only actually verifies the key once you touch the schema.
@@ -1268,7 +1282,7 @@ pub fn register_user(
         username: username.to_string(),
         kdf_salt: kdf_salt.to_vec(),
         verifier_salt: verifier_salt.to_vec(),
-        verifier_hash: verifier_key.0.to_vec(),
+        verifier_hash: verifier_key.as_bytes().to_vec(),
         sentinel_ciphertext,
         sentinel_nonce: sentinel_nonce.to_vec(),
     };
