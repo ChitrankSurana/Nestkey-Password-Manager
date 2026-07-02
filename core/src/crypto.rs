@@ -72,6 +72,11 @@ pub fn open(key: &VaultKey, ciphertext: &[u8], nonce: &[u8; 12]) -> Result<Vec<u
         .map_err(|_| CryptoError::Decrypt)
 }
 
+pub fn verifier_matches(computed: &VaultKey, stored: &[u8]) -> bool {
+    use subtle::ConstantTimeEq;
+    computed.as_bytes().as_slice().ct_eq(stored).unwrap_u8() == 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,5 +143,14 @@ mod tests {
         let (_, nonce1) = seal(&key, b"same plaintext").unwrap();
         let (_, nonce2) = seal(&key, b"same plaintext").unwrap();
         assert_ne!(nonce1, nonce2);
+    }
+
+    #[test]
+    fn verifier_matches_detects_equal_and_unequal() {
+        let key = derive_key("master password", &[5u8; 16]).unwrap();
+        let same = derive_key("master password", &[5u8; 16]).unwrap();
+        let different = derive_key("different password", &[5u8; 16]).unwrap();
+        assert!(verifier_matches(&key, &same.as_bytes()[..]));
+        assert!(!verifier_matches(&key, &different.as_bytes()[..]));
     }
 }
