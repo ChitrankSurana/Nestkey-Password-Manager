@@ -14,8 +14,22 @@ pub enum CryptoError {
 }
 
 /// A derived 256-bit key. Zeroized automatically when dropped.
+///
+/// The inner bytes are private and only reachable via `as_bytes()`, which returns a borrow.
+/// `[u8; 32]` is `Copy`, so a public field would let any caller do `let raw = key.0;` and hold an
+/// independent copy that `ZeroizeOnDrop` never touches — quietly defeating the zeroization
+/// guarantee the moment `vault.rs`/`auth.rs` need the raw bytes. A borrow-only accessor closes
+/// that gap: callers can read the bytes but can't walk away with an un-zeroized copy without
+/// deliberately choosing to (e.g. `*key.as_bytes()`), which is a visible, greppable smell instead
+/// of an invisible default.
 #[derive(ZeroizeOnDrop)]
-pub struct VaultKey(pub [u8; 32]);
+pub struct VaultKey([u8; 32]);
+
+impl VaultKey {
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
 
 pub fn random_salt() -> [u8; 16] {
     let mut salt = [0u8; 16];
