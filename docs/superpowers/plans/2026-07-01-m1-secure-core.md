@@ -69,14 +69,20 @@ Replace `core/src/lib.rs` with:
 
 ```rust
 pub mod crypto;
-pub mod registry;
-pub mod vault;
-pub mod auth;
-pub mod session;
 ```
 
-(The `pub mod` lines will fail to compile until Tasks 2–6 create these files — that's expected and
-confirms the scaffold is wired correctly once you hit Step 4 of Task 2.)
+**Important — corrected after Task 1 first shipped:** Rust requires every `pub mod` declared in
+`lib.rs` to have a backing file before the crate compiles at all (a `mod x;` with no `x.rs` is a hard
+compile error, `E0583`), and since the whole crate compiles as one unit, that error blocks `cargo test`
+for every module, not just the missing one. Declaring all 5 modules upfront (as an earlier draft of
+this task did) makes it impossible to TDD them one at a time — the first task to actually try `cargo
+test` after Task 1 would find 4 unrelated compile errors for modules that don't exist yet.
+
+The fix: **only declare `pub mod crypto;` here.** Each later task that creates a new module file adds
+its own `pub mod <name>;` line to `lib.rs` as part of that task (Task 5 adds `registry`, Task 6 adds
+`vault`, Task 10 adds `auth`, Task 12 adds `session` — each of those tasks' steps below now say so
+explicitly). This keeps the crate compiling (and every module's own tests runnable) after every single
+task, which is the actual point of TDD granularity.
 
 - [ ] **Step 4: Add build artifacts to .gitignore**
 
@@ -378,7 +384,7 @@ git commit -m "feat(crypto): add constant-time verifier comparison"
 
 **Files:**
 - Create: `core/src/registry.rs`
-- Modify: `core/src/lib.rs` (already declares `pub mod registry;` from Task 1)
+- Modify: `core/src/lib.rs` (add `pub mod registry;` — see Step 1b)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -485,6 +491,15 @@ mod tests {
 }
 ```
 
+- [ ] **Step 1b: Declare the module in `lib.rs`**
+
+Add `pub mod registry;` to `core/src/lib.rs` (it currently only has `pub mod crypto;` from Task 1).
+Result:
+```rust
+pub mod crypto;
+pub mod registry;
+```
+
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test -p pwmgr-core registry:: --manifest-path core/Cargo.toml`
@@ -578,7 +593,7 @@ Expected: PASS — all 4 registry tests green.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add core/src/registry.rs
+git add core/src/registry.rs core/src/lib.rs
 git commit -m "feat(registry): add unencrypted user registry (usernames + salts)"
 ```
 
@@ -588,6 +603,7 @@ git commit -m "feat(registry): add unencrypted user registry (usernames + salts)
 
 **Files:**
 - Create: `core/src/vault.rs`
+- Modify: `core/src/lib.rs` (add `pub mod vault;` — see Step 1b)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -666,6 +682,15 @@ mod tests {
 }
 ```
 
+- [ ] **Step 1b: Declare the module in `lib.rs`**
+
+Add `pub mod vault;` to `core/src/lib.rs`. Result:
+```rust
+pub mod crypto;
+pub mod registry;
+pub mod vault;
+```
+
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test -p pwmgr-core vault:: --manifest-path core/Cargo.toml`
@@ -725,7 +750,7 @@ Expected: PASS — all 3 vault tests green.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add core/src/vault.rs
+git add core/src/vault.rs core/src/lib.rs
 git commit -m "feat(vault): add SQLCipher open with wrong-key rejection + schema"
 ```
 
@@ -1141,6 +1166,7 @@ git commit -m "feat(vault): add case-insensitive search across sites and credent
 
 **Files:**
 - Create: `core/src/auth.rs`
+- Modify: `core/src/lib.rs` (add `pub mod auth;` — see Step 1b)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1207,6 +1233,16 @@ mod tests {
 }
 ```
 
+- [ ] **Step 1b: Declare the module in `lib.rs`**
+
+Add `pub mod auth;` to `core/src/lib.rs`. Result:
+```rust
+pub mod crypto;
+pub mod registry;
+pub mod vault;
+pub mod auth;
+```
+
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test -p pwmgr-core auth:: --manifest-path core/Cargo.toml`
@@ -1255,7 +1291,7 @@ Expected: PASS — both auth tests green.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add core/src/auth.rs
+git add core/src/auth.rs core/src/lib.rs
 git commit -m "feat(auth): add register_user tying crypto, registry, and vault together"
 ```
 
@@ -1373,6 +1409,7 @@ git commit -m "feat(auth): add login with verifier check and generic-error rejec
 
 **Files:**
 - Create: `core/src/session.rs`
+- Modify: `core/src/lib.rs` (add `pub mod session;` — see Step 1b)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1517,6 +1554,17 @@ mod tests {
 }
 ```
 
+- [ ] **Step 1b: Declare the module in `lib.rs`**
+
+Add `pub mod session;` to `core/src/lib.rs`. Result (all 5 modules now declared):
+```rust
+pub mod crypto;
+pub mod registry;
+pub mod vault;
+pub mod auth;
+pub mod session;
+```
+
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test -p pwmgr-core session:: --manifest-path core/Cargo.toml`
@@ -1575,6 +1623,7 @@ Expected: PASS — all 6 session tests green.
 
 ```bash
 git add core/src/session.rs
+git add core/src/session.rs core/src/lib.rs
 git commit -m "feat(session): add idle-timeout auto-lock with injectable clock for testing"
 ```
 
