@@ -47,6 +47,31 @@ pub fn derive_key(password: &str, salt: &[u8]) -> Result<VaultKey, CryptoError> 
     Ok(VaultKey(out))
 }
 
+pub fn seal(key: &VaultKey, plaintext: &[u8]) -> Result<(Vec<u8>, [u8; 12]), CryptoError> {
+    use aes_gcm::{Aes256Gcm, Key, Nonce};
+    use aes_gcm::aead::{Aead, KeyInit};
+
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_bytes()));
+    let mut nonce_bytes = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext)
+        .map_err(|_| CryptoError::Encrypt)?;
+    Ok((ciphertext, nonce_bytes))
+}
+
+pub fn open(key: &VaultKey, ciphertext: &[u8], nonce: &[u8; 12]) -> Result<Vec<u8>, CryptoError> {
+    use aes_gcm::{Aes256Gcm, Key, Nonce};
+    use aes_gcm::aead::{Aead, KeyInit};
+
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key.as_bytes()));
+    let nonce = Nonce::from_slice(nonce);
+    cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| CryptoError::Decrypt)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,5 +105,38 @@ mod tests {
         let b = random_salt();
         assert_ne!(a, [0u8; 16]);
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn seal_then_open_roundtrips() {
+        let key = derive_key("master password", &[9u8; 16]).unwrap();
+        let plaintext = b"hunter2-super-secret";
+        let (ciphertext, nonce) = seal(&key, plaintext).unwrap();
+        let opened = open(&key, &ciphertext, &nonce).unwrap();
+        assert_eq!(opened, plaintext);
+    }
+
+    #[test]
+    fn open_fails_with_wrong_key() {
+        let key1 = derive_key("password-one", &[1u8; 16]).unwrap();
+        let key2 = derive_key("password-two", &[1u8; 16]).unwrap();
+        let (ciphertext, nonce) = seal(&key1, b"secret data").unwrap();
+        assert!(open(&key2, &ciphertext, &nonce).is_err());
+    }
+
+    #[test]
+    fn open_fails_when_ciphertext_is_tampered() {
+        let key = derive_key("master password", &[3u8; 16]).unwrap();
+        let (mut ciphertext, nonce) = seal(&key, b"secret data").unwrap();
+        ciphertext[0] ^= 0xFF; // flip a bit
+        assert!(open(&key, &ciphertext, &nonce).is_err());
+    }
+
+    #[test]
+    fn seal_uses_a_fresh_nonce_each_call() {
+        let key = derive_key("master password", &[4u8; 16]).unwrap();
+        let (_, nonce1) = seal(&key, b"same plaintext").unwrap();
+        let (_, nonce2) = seal(&key, b"same plaintext").unwrap();
+        assert_ne!(nonce1, nonce2);
     }
 }
