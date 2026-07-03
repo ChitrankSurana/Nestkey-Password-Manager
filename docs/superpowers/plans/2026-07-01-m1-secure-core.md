@@ -1198,16 +1198,26 @@ Expected: FAIL — panics on `unimplemented!()`.
 
 ```rust
 pub fn search(conn: &Connection, query: &str) -> Result<Vec<SearchResult>, VaultError> {
-    let pattern = format!("%{}%", query.to_lowercase());
+    // SQLite's LIKE treats '%' and '_' as wildcards even inside the user's own query text, so a
+    // literal search for e.g. "50% off" or "jane_doe" would silently behave like a wildcard match
+    // instead of a literal one. Escape them (and the escape character itself) before wrapping in
+    // the leading/trailing '%' that makes this a substring search, and tell SQLite which escape
+    // character to honor via ESCAPE.
+    let escaped: String = query
+        .to_lowercase()
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let pattern = format!("%{}%", escaped);
     let mut stmt = conn.prepare(
         "SELECT s.id, s.name, c.id, c.username
          FROM credentials c
          JOIN sites s ON s.id = c.site_id
          WHERE c.deleted_at IS NULL AND s.deleted_at IS NULL
            AND (
-             lower(s.name) LIKE ?1
-             OR lower(coalesce(c.username, '')) LIKE ?1
-             OR lower(coalesce(c.remarks, '')) LIKE ?1
+             lower(s.name) LIKE ?1 ESCAPE '\\'
+             OR lower(coalesce(c.username, '')) LIKE ?1 ESCAPE '\\'
+             OR lower(coalesce(c.remarks, '')) LIKE ?1 ESCAPE '\\'
            )
          ORDER BY s.name",
     )?;
@@ -1227,10 +1237,53 @@ pub fn search(conn: &Connection, query: &str) -> Result<Vec<SearchResult>, Vault
 }
 ```
 
+- [ ] **Step 3b: Add tests proving the LIKE-escaping fix and soft-delete exclusion**
+
+Add inside `mod tests`, alongside the search test above:
+
+```rust
+    #[test]
+    fn search_treats_percent_and_underscore_in_query_as_literal_characters() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[11u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let site_id = add_site(&conn, "50% off deals", None, None).unwrap();
+        add_credential(&conn, &key, site_id, Some("jane_doe"), "secret", None).unwrap();
+
+        // A literal '%' in the query must match only the literal text, not act as a wildcard.
+        assert_eq!(search(&conn, "50% off").unwrap().len(), 1);
+
+        // A literal '_' must not behave like "match any single character".
+        assert!(search(&conn, "jane.doe").unwrap().is_empty());
+        assert_eq!(search(&conn, "jane_doe").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn search_excludes_soft_deleted_sites_and_credentials() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[10u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let site_id = add_site(&conn, "deleteme.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("carol"), "secret", None).unwrap();
+        assert_eq!(search(&conn, "deleteme").unwrap().len(), 1);
+
+        soft_delete_credential(&conn, cred_id).unwrap();
+        assert!(search(&conn, "deleteme").unwrap().is_empty());
+
+        restore_credential(&conn, cred_id).unwrap();
+        assert_eq!(search(&conn, "deleteme").unwrap().len(), 1);
+
+        soft_delete_site(&conn, site_id).unwrap();
+        assert!(search(&conn, "deleteme").unwrap().is_empty());
+    }
+```
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p pwmgr-core vault:: --manifest-path core/Cargo.toml`
-Expected: PASS — all 10 vault tests green.
+Expected: PASS — all 12 vault tests green (10 previous + these 2).
 
 - [ ] **Step 5: Commit**
 
