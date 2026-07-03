@@ -1348,7 +1348,11 @@ mod tests {
 
         let key = register_user(&registry_conn, &vault_path, "alice", "correct horse battery staple").unwrap();
 
-        assert!(registry::find_user(&registry_conn, "alice").is_ok());
+        let rec = registry::find_user(&registry_conn, "alice").unwrap();
+        // The whole point of deriving vault_key and verifier_key from separate salts is that
+        // neither can be reconstructed from the other - make that property test-visible, not
+        // just code-inspection-visible.
+        assert_ne!(rec.kdf_salt, rec.verifier_salt);
         assert!(vault::open_vault(&vault_path, &key).is_ok());
     }
 
@@ -1396,6 +1400,15 @@ pub fn register_user(
     let verifier_key = crypto::derive_key(master_password, &verifier_salt)?;
     let (sentinel_ciphertext, sentinel_nonce) = crypto::seal(&vault_key, SENTINEL_PLAINTEXT)?;
 
+    // Create the vault file BEFORE committing the registry row. If vault creation fails (disk
+    // full, permission error), nothing is left committed and a retry is clean. The reverse
+    // ordering can leave an orphaned registry row that permanently blocks the username with no
+    // vault to log into, since a retry would always hit UsernameTaken - see the Task 10 code
+    // review discussion in this plan's history. The residual failure mode here (an unclaimed
+    // vault file left on disk if the registry insert fails afterward) is self-healing: a retry's
+    // open_vault call just reopens the same correctly-keyed file rather than creating a new one.
+    vault::open_vault(vault_path, &vault_key)?;
+
     let rec = registry::UserRecord {
         username: username.to_string(),
         kdf_salt: kdf_salt.to_vec(),
@@ -1410,7 +1423,6 @@ pub fn register_user(
         other => AuthError::Registry(other),
     })?;
 
-    vault::open_vault(vault_path, &vault_key)?;
     Ok(vault_key)
 }
 ```
