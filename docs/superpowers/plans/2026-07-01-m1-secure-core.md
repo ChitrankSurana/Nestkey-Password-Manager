@@ -917,7 +917,7 @@ pub fn soft_delete_site(conn: &Connection, site_id: i64) -> Result<(), VaultErro
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p pwmgr-core vault:: --manifest-path core/Cargo.toml`
-Expected: PASS — all 5 vault tests green.
+Expected: PASS — all 6 vault tests green (4 from Task 6 + these 2).
 
 - [ ] **Step 5: Commit**
 
@@ -1093,7 +1093,7 @@ pub fn restore_credential(conn: &Connection, credential_id: i64) -> Result<(), V
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p pwmgr-core vault:: --manifest-path core/Cargo.toml`
-Expected: PASS — all 7 vault tests green.
+Expected: PASS — all 8 vault tests green.
 
 - [ ] **Step 5: Commit**
 
@@ -1200,7 +1200,7 @@ pub fn search(conn: &Connection, query: &str) -> Result<Vec<SearchResult>, Vault
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p pwmgr-core vault:: --manifest-path core/Cargo.toml`
-Expected: PASS — all 8 vault tests green.
+Expected: PASS — all 9 vault tests green.
 
 - [ ] **Step 5: Commit**
 
