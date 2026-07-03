@@ -943,6 +943,10 @@ pub struct Credential {
     pub id: i64,
     pub site_id: i64,
     pub username: Option<String>,
+    // TODO(M1 Phase B): decrypted secrets aren't wrapped in zeroize::Zeroizing yet. Deferred
+    // deliberately to the UI/IPC layer, which is the last consumer and last real chance to
+    // zeroize before display - see the Task 8 code review discussion in this plan's history.
+    // Don't let this be forgotten when that phase is planned.
     pub secret: String,
     pub remarks: Option<String>,
 }
@@ -1009,6 +1013,25 @@ Add inside `mod tests`:
         restore_credential(&conn, cred_id).unwrap();
         assert_eq!(list_credentials_for_site(&conn, &key, site_id).unwrap().len(), 1);
     }
+
+    #[test]
+    fn list_credentials_for_site_returns_only_that_sites_credentials() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[9u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_a = add_site(&conn, "a.com", None, None).unwrap();
+        let site_b = add_site(&conn, "b.com", None, None).unwrap();
+        add_credential(&conn, &key, site_a, Some("alice"), "secret-a1", None).unwrap();
+        add_credential(&conn, &key, site_a, Some("alice2"), "secret-a2", None).unwrap();
+        add_credential(&conn, &key, site_b, Some("bob"), "secret-b", None).unwrap();
+
+        let creds_a = list_credentials_for_site(&conn, &key, site_a).unwrap();
+        assert_eq!(creds_a.len(), 2);
+        assert!(creds_a.iter().all(|c| c.site_id == site_a));
+
+        let creds_b = list_credentials_for_site(&conn, &key, site_b).unwrap();
+        assert_eq!(creds_b.len(), 1);
+    }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1058,6 +1081,13 @@ pub fn list_credentials_for_site(
     let mut out = Vec::new();
     for r in rows {
         let (id, site_id, username, secret_enc, secret_nonce, remarks) = r?;
+        // secret_nonce comes from the DB row - external input relative to this function, not
+        // something this code controls. A malformed/corrupted row (bad migration, manual DB
+        // surgery, future bug elsewhere) must not be able to crash the whole read path via an
+        // unchecked copy_from_slice panic; fail that one lookup gracefully instead.
+        if secret_nonce.len() != 12 {
+            return Err(VaultError::UnlockFailed);
+        }
         let mut nonce = [0u8; 12];
         nonce.copy_from_slice(&secret_nonce);
         let plaintext = crate::crypto::open(key, &secret_enc, &nonce)?;
@@ -1093,7 +1123,7 @@ pub fn restore_credential(conn: &Connection, credential_id: i64) -> Result<(), V
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p pwmgr-core vault:: --manifest-path core/Cargo.toml`
-Expected: PASS — all 8 vault tests green.
+Expected: PASS — all 9 vault tests green.
 
 - [ ] **Step 5: Commit**
 
@@ -1200,7 +1230,7 @@ pub fn search(conn: &Connection, query: &str) -> Result<Vec<SearchResult>, Vault
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p pwmgr-core vault:: --manifest-path core/Cargo.toml`
-Expected: PASS — all 9 vault tests green.
+Expected: PASS — all 10 vault tests green.
 
 - [ ] **Step 5: Commit**
 
