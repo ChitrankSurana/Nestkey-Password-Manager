@@ -65,6 +65,52 @@ fn init_schema(conn: &Connection) -> Result<(), VaultError> {
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Site {
+    pub id: i64,
+    pub name: String,
+    pub url: Option<String>,
+    pub notes: Option<String>,
+}
+
+pub fn add_site(conn: &Connection, name: &str, url: Option<&str>, notes: Option<&str>) -> Result<i64, VaultError> {
+    conn.execute(
+        "INSERT INTO sites (name, url, notes) VALUES (?1, ?2, ?3)",
+        rusqlite::params![name, url, notes],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn list_sites(conn: &Connection) -> Result<Vec<Site>, VaultError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, url, notes FROM sites WHERE deleted_at IS NULL ORDER BY name",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(Site {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            url: row.get(2)?,
+            notes: row.get(3)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+pub fn soft_delete_site(conn: &Connection, site_id: i64) -> Result<(), VaultError> {
+    let updated = conn.execute(
+        "UPDATE sites SET deleted_at = datetime('now') WHERE id = ?1 AND deleted_at IS NULL",
+        rusqlite::params![site_id],
+    )?;
+    if updated == 0 {
+        return Err(VaultError::NotFound);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,5 +172,32 @@ mod tests {
 
         let reopened = open_vault(&path, &right_key);
         assert!(reopened.is_ok());
+    }
+
+    #[test]
+    fn add_site_then_list_sites_returns_it() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[4u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let id = add_site(&conn, "example.com", Some("https://example.com"), Some("note")).unwrap();
+        let sites = list_sites(&conn).unwrap();
+
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].id, id);
+        assert_eq!(sites[0].name, "example.com");
+    }
+
+    #[test]
+    fn soft_deleted_site_is_excluded_from_list_sites() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[5u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let id = add_site(&conn, "example.com", None, None).unwrap();
+        soft_delete_site(&conn, id).unwrap();
+
+        let sites = list_sites(&conn).unwrap();
+        assert!(sites.is_empty());
     }
 }
