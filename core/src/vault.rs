@@ -2,6 +2,7 @@ use crate::crypto::VaultKey;
 use rusqlite::Connection;
 use std::path::Path;
 use thiserror::Error;
+use zeroize::Zeroizing;
 
 #[derive(Error, Debug)]
 pub enum VaultError {
@@ -17,12 +18,18 @@ pub enum VaultError {
 
 pub fn open_vault(path: &Path, key: &VaultKey) -> Result<Connection, VaultError> {
     let conn = Connection::open(path)?;
-    let key_hex: String = key.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
-    conn.pragma_update(None, "key", format!("x'{}'", key_hex))?;
+    let key_hex: Zeroizing<String> = Zeroizing::new(
+        key.as_bytes().iter().map(|b| format!("{:02x}", b)).collect(),
+    );
+    conn.pragma_update(None, "key", format!("x'{}'", key_hex.as_str()))?;
 
     // SQLCipher only actually verifies the key once you touch the schema.
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))
         .map_err(|_| VaultError::UnlockFailed)?;
+
+    // Not persisted in the file - SQLite disables FK enforcement per-connection by default,
+    // so this must be reissued on every open, not just at schema-creation time.
+    conn.pragma_update(None, "foreign_keys", "ON")?;
 
     init_schema(&conn)?;
     Ok(conn)
@@ -46,6 +53,7 @@ fn init_schema(conn: &Connection) -> Result<(), VaultError> {
             secret_enc BLOB NOT NULL,
             secret_nonce BLOB NOT NULL,
             remarks TEXT,
+            strength_score REAL,
             password_updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -103,6 +111,20 @@ mod tests {
 
         open_vault(&path, &key).unwrap();
         let reopened = open_vault(&path, &key);
+        assert!(reopened.is_ok());
+    }
+
+    #[test]
+    fn failed_wrong_key_attempt_does_not_prevent_correct_key_reopen() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.vault");
+        let right_key = derive_key("correct password", &[6u8; 16]).unwrap();
+        let wrong_key = derive_key("wrong password", &[6u8; 16]).unwrap();
+
+        open_vault(&path, &right_key).unwrap();
+        let _ = open_vault(&path, &wrong_key); // expected to fail, side effects are what we're checking
+
+        let reopened = open_vault(&path, &right_key);
         assert!(reopened.is_ok());
     }
 }
