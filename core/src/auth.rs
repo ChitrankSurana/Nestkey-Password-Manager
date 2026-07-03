@@ -58,6 +58,35 @@ pub fn register_user(
     Ok(vault_key)
 }
 
+pub fn login(
+    registry_conn: &Connection,
+    vault_path: &Path,
+    username: &str,
+    master_password: &str,
+) -> Result<crypto::VaultKey, AuthError> {
+    let rec = registry::find_user(registry_conn, username).map_err(|_| AuthError::InvalidCredentials)?;
+
+    let verifier_key =
+        crypto::derive_key(master_password, &rec.verifier_salt).map_err(|_| AuthError::InvalidCredentials)?;
+    if !crypto::verifier_matches(&verifier_key, &rec.verifier_hash) {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let vault_key =
+        crypto::derive_key(master_password, &rec.kdf_salt).map_err(|_| AuthError::InvalidCredentials)?;
+
+    let mut nonce = [0u8; 12];
+    if rec.sentinel_nonce.len() != 12 {
+        return Err(AuthError::InvalidCredentials);
+    }
+    nonce.copy_from_slice(&rec.sentinel_nonce);
+    crypto::open(&vault_key, &rec.sentinel_ciphertext, &nonce).map_err(|_| AuthError::InvalidCredentials)?;
+
+    vault::open_vault(vault_path, &vault_key).map_err(|_| AuthError::InvalidCredentials)?;
+
+    Ok(vault_key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,5 +117,37 @@ mod tests {
         let result = register_user(&registry_conn, &dir.path().join("alice2.vault"), "alice", "password two");
 
         assert!(matches!(result, Err(AuthError::UsernameTaken)));
+    }
+
+    #[test]
+    fn login_with_correct_password_succeeds() {
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+        let vault_path = dir.path().join("alice.vault");
+        register_user(&registry_conn, &vault_path, "alice", "correct horse battery staple").unwrap();
+
+        let result = login(&registry_conn, &vault_path, "alice", "correct horse battery staple");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn login_with_wrong_password_is_rejected() {
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+        let vault_path = dir.path().join("alice.vault");
+        register_user(&registry_conn, &vault_path, "alice", "correct horse battery staple").unwrap();
+
+        let result = login(&registry_conn, &vault_path, "alice", "wrong password");
+        assert!(matches!(result, Err(AuthError::InvalidCredentials)));
+    }
+
+    #[test]
+    fn login_with_unknown_username_is_rejected_with_same_generic_error() {
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+        let vault_path = dir.path().join("nobody.vault");
+
+        let result = login(&registry_conn, &vault_path, "nobody", "any password");
+        assert!(matches!(result, Err(AuthError::InvalidCredentials)));
     }
 }
