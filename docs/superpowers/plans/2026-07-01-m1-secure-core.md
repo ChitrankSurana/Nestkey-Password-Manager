@@ -713,14 +713,22 @@ Expected: FAIL — panics on `unimplemented!()`.
 - [ ] **Step 3: Implement `open_vault` with schema init**
 
 ```rust
+use zeroize::Zeroizing;
+
 pub fn open_vault(path: &Path, key: &VaultKey) -> Result<Connection, VaultError> {
     let conn = Connection::open(path)?;
-    let key_hex: String = key.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
-    conn.pragma_update(None, "key", format!("x'{}'", key_hex))?;
+    let key_hex: Zeroizing<String> = Zeroizing::new(
+        key.as_bytes().iter().map(|b| format!("{:02x}", b)).collect(),
+    );
+    conn.pragma_update(None, "key", format!("x'{}'", key_hex.as_str()))?;
 
     // SQLCipher only actually verifies the key once you touch the schema.
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))
         .map_err(|_| VaultError::UnlockFailed)?;
+
+    // Not persisted in the file - SQLite disables FK enforcement per-connection by default,
+    // so this must be reissued on every open, not just at schema-creation time.
+    conn.pragma_update(None, "foreign_keys", "ON")?;
 
     init_schema(&conn)?;
     Ok(conn)
@@ -744,6 +752,7 @@ fn init_schema(conn: &Connection) -> Result<(), VaultError> {
             secret_enc BLOB NOT NULL,
             secret_nonce BLOB NOT NULL,
             remarks TEXT,
+            strength_score REAL,
             password_updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -756,10 +765,36 @@ fn init_schema(conn: &Connection) -> Result<(), VaultError> {
 }
 ```
 
+Notes:
+- Uses `key.as_bytes()` (the accessor from Task 2's follow-up fix) — already correct/expected above.
+- `key_hex` is wrapped in `zeroize::Zeroizing<String>` (the `zeroize` crate is already a dependency from Task 1) so the hex-encoded key material is wiped when it goes out of scope, consistent with the zeroization discipline `VaultKey` established in Task 2. This doesn't reach rusqlite's or SQLCipher's own internal copies of the key (out of reach from Rust across the C FFI boundary) — it only closes the two extra copies this function itself creates.
+- `PRAGMA foreign_keys = ON` is added and must run on every `open_vault` call (not just at creation) since SQLite does not persist this setting in the database file.
+- `strength_score REAL` (nullable, no default) is added now to match `docs/TRD.md`'s documented data model. It stays unused/NULL through M1 — password-strength scoring is an M2 feature — but adding the column now avoids needing a schema migration later, since there's no migration mechanism in this codebase yet.
+
+- [ ] **Step 3b: Add a test that a failed wrong-key attempt doesn't corrupt the file**
+
+Add inside `mod tests`, alongside the other 3:
+
+```rust
+    #[test]
+    fn failed_wrong_key_attempt_does_not_prevent_correct_key_reopen() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.vault");
+        let right_key = derive_key("correct password", &[6u8; 16]).unwrap();
+        let wrong_key = derive_key("wrong password", &[6u8; 16]).unwrap();
+
+        open_vault(&path, &right_key).unwrap();
+        let _ = open_vault(&path, &wrong_key); // expected to fail, side effects are what we're checking
+
+        let reopened = open_vault(&path, &right_key);
+        assert!(reopened.is_ok());
+    }
+```
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p pwmgr-core vault:: --manifest-path core/Cargo.toml`
-Expected: PASS — all 3 vault tests green.
+Expected: PASS — all 4 vault tests green (3 original + the Step 3b addition).
 
 - [ ] **Step 5: Commit**
 
