@@ -201,6 +201,43 @@ pub fn restore_credential(conn: &Connection, credential_id: i64) -> Result<(), V
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchResult {
+    pub site_id: i64,
+    pub site_name: String,
+    pub credential_id: i64,
+    pub username: Option<String>,
+}
+
+pub fn search(conn: &Connection, query: &str) -> Result<Vec<SearchResult>, VaultError> {
+    let pattern = format!("%{}%", query.to_lowercase());
+    let mut stmt = conn.prepare(
+        "SELECT s.id, s.name, c.id, c.username
+         FROM credentials c
+         JOIN sites s ON s.id = c.site_id
+         WHERE c.deleted_at IS NULL AND s.deleted_at IS NULL
+           AND (
+             lower(s.name) LIKE ?1
+             OR lower(coalesce(c.username, '')) LIKE ?1
+             OR lower(coalesce(c.remarks, '')) LIKE ?1
+           )
+         ORDER BY s.name",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![pattern], |row| {
+        Ok(SearchResult {
+            site_id: row.get(0)?,
+            site_name: row.get(1)?,
+            credential_id: row.get(2)?,
+            username: row.get(3)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +377,33 @@ mod tests {
 
         let creds_b = list_credentials_for_site(&conn, &key, site_b).unwrap();
         assert_eq!(creds_b.len(), 1);
+    }
+
+    #[test]
+    fn search_matches_site_name_username_and_remarks_case_insensitively() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[8u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let site_a = add_site(&conn, "GitHub", None, None).unwrap();
+        add_credential(&conn, &key, site_a, Some("alice"), "secret1", Some("work account")).unwrap();
+
+        let site_b = add_site(&conn, "example.com", None, None).unwrap();
+        add_credential(&conn, &key, site_b, Some("bob"), "secret2", None).unwrap();
+
+        let by_site_name = search(&conn, "github").unwrap();
+        assert_eq!(by_site_name.len(), 1);
+        assert_eq!(by_site_name[0].site_name, "GitHub");
+
+        let by_username = search(&conn, "bob").unwrap();
+        assert_eq!(by_username.len(), 1);
+        assert_eq!(by_username[0].username.as_deref(), Some("bob"));
+
+        let by_remarks = search(&conn, "work").unwrap();
+        assert_eq!(by_remarks.len(), 1);
+        assert_eq!(by_remarks[0].site_name, "GitHub");
+
+        let no_match = search(&conn, "nonexistent").unwrap();
+        assert!(no_match.is_empty());
     }
 }
