@@ -1,5 +1,4 @@
 /.worktrees/
-/core/target/
-/src-tauri/target/
+/target/
 node_modules/
 dist/
