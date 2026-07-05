@@ -1969,3 +1969,18 @@ git commit -m "test: add end-to-end integration test proving the M1 verify scena
   map directly to a mitigation row in `docs/THREAT_MODEL.md` §4.
 - **Known follow-up, not a blocker:** Argon2id parameters (Task 2, Step 3) are the OWASP-baseline
   starting point; benchmark and tune once the full app is running, per `docs/TRD.md` §3.5.
+- **Full-crate final review (post-Task 13):** found and fixed a `Credential` Debug-leak of the
+  plaintext secret and an inaccurate zeroization comment in `vault::open_vault` (see the
+  `fix: redact Credential Debug output...` commit). Also flagged two items correctly out of scope
+  for this crate, tracked for the M1 Phase B plan:
+  - `list_credentials_for_site` doesn't filter out credentials whose parent site is soft-deleted
+    (unlike `search`/`list_sites`, which do) — a read-path inconsistency to fix once Phase B wires
+    up trash/restore UI flows, not a security issue.
+  - No file-permission hardening on `registry.db`/`.vault` files — `docs/THREAT_MODEL.md` A2 lists
+    OS-level file permissions as a mitigation, but nothing currently sets or checks them; this
+    belongs to whichever layer owns app/installer directory scaffolding (`~/.pwmgr/`), not this
+    library crate.
+  - Also noted for Phase B's own plan: `session::Session` and its injectable `Clock` are
+    thread-agnostic on their own, but if Tauri's async command layer dispatches concurrent IPC
+    calls sharing one `rusqlite::Connection`, Phase B needs to explicitly pick a concurrency
+    strategy (e.g. `Mutex<Connection>` vs. per-call connections) — this crate doesn't decide that.
