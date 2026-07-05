@@ -39,17 +39,13 @@ pub fn open_registry(path: &Path) -> Result<Connection, RegistryError> {
 }
 
 pub fn create_user(conn: &Connection, rec: &UserRecord) -> Result<(), RegistryError> {
-    let exists: Option<i64> = conn
-        .query_row(
-            "SELECT 1 FROM users WHERE username = ?1",
-            params![rec.username],
-            |row| row.get(0),
-        )
-        .ok();
-    if exists.is_some() {
-        return Err(RegistryError::UsernameTaken);
-    }
-    conn.execute(
+    // Rely on the username PRIMARY KEY constraint to detect duplicates atomically, rather than a
+    // separate SELECT-then-INSERT (found in Task 11's code-quality review pass): a check-then-insert
+    // has a TOCTOU window where two callers on separate Connections to the same registry file could
+    // both see "not found" and then both attempt the INSERT, with the loser surfacing a raw
+    // rusqlite constraint-violation error instead of the clean UsernameTaken every other duplicate
+    // path returns.
+    let result = conn.execute(
         "INSERT INTO users (username, kdf_salt, verifier_salt, verifier_hash, sentinel_ciphertext, sentinel_nonce)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
@@ -60,8 +56,16 @@ pub fn create_user(conn: &Connection, rec: &UserRecord) -> Result<(), RegistryEr
             rec.sentinel_ciphertext,
             rec.sentinel_nonce
         ],
-    )?;
-    Ok(())
+    );
+    match result {
+        Ok(_) => Ok(()),
+        Err(rusqlite::Error::SqliteFailure(e, _))
+            if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            Err(RegistryError::UsernameTaken)
+        }
+        Err(other) => Err(RegistryError::Db(other)),
+    }
 }
 
 pub fn find_user(conn: &Connection, username: &str) -> Result<UserRecord, RegistryError> {
