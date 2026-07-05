@@ -541,17 +541,13 @@ pub fn open_registry(path: &Path) -> Result<Connection, RegistryError> {
 }
 
 pub fn create_user(conn: &Connection, rec: &UserRecord) -> Result<(), RegistryError> {
-    let exists: Option<i64> = conn
-        .query_row(
-            "SELECT 1 FROM users WHERE username = ?1",
-            params![rec.username],
-            |row| row.get(0),
-        )
-        .ok();
-    if exists.is_some() {
-        return Err(RegistryError::UsernameTaken);
-    }
-    conn.execute(
+    // Rely on the username PRIMARY KEY constraint to detect duplicates atomically, rather than a
+    // separate SELECT-then-INSERT (found in Task 11's code-quality review pass): a check-then-insert
+    // has a TOCTOU window where two callers on separate Connections to the same registry file could
+    // both see "not found" and then both attempt the INSERT, with the loser surfacing a raw
+    // rusqlite constraint-violation error instead of the clean UsernameTaken every other duplicate
+    // path returns.
+    let result = conn.execute(
         "INSERT INTO users (username, kdf_salt, verifier_salt, verifier_hash, sentinel_ciphertext, sentinel_nonce)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
@@ -562,8 +558,16 @@ pub fn create_user(conn: &Connection, rec: &UserRecord) -> Result<(), RegistryEr
             rec.sentinel_ciphertext,
             rec.sentinel_nonce
         ],
-    )?;
-    Ok(())
+    );
+    match result {
+        Ok(_) => Ok(()),
+        Err(rusqlite::Error::SqliteFailure(e, _))
+            if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            Err(RegistryError::UsernameTaken)
+        }
+        Err(other) => Err(RegistryError::Db(other)),
+    }
 }
 
 pub fn find_user(conn: &Connection, username: &str) -> Result<UserRecord, RegistryError> {
@@ -1509,6 +1513,28 @@ Add inside `mod tests`:
         let result = login(&registry_conn, &vault_path, "alice", "correct horse battery staple");
         assert!(matches!(result, Err(AuthError::InvalidCredentials)));
     }
+
+    #[test]
+    fn login_with_unknown_username_pays_equivalent_kdf_cost_to_avoid_timing_oracle() {
+        // Not a precise timing assertion (flaky by nature) - just a floor check that the
+        // unknown-username path isn't a near-instant DB-lookup-only return. Argon2id at this
+        // crate's params (64 MiB / 3 iterations / 4 lanes) costs tens of milliseconds minimum on
+        // any real hardware; a fast-path bypass (the bug this test guards against) would return in
+        // well under 1ms since it's just an indexed SQLite miss with no KDF call at all.
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+        let vault_path = dir.path().join("nobody.vault");
+
+        let start = std::time::Instant::now();
+        let _ = login(&registry_conn, &vault_path, "nobody", "any password");
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed.as_millis() >= 5,
+            "unknown-username login returned in {:?} - looks like the decoy KDF call was skipped",
+            elapsed
+        );
+    }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1519,13 +1545,28 @@ Expected: FAIL — panics on `unimplemented!()`.
 - [ ] **Step 3: Implement `login`**
 
 ```rust
+// Fixed, non-secret salt used ONLY to burn an Argon2id derivation of equivalent cost when the
+// username doesn't exist, so "unknown username" and "known username, wrong password" take the same
+// wall-clock time. Found in Task 11's code-quality review pass: without this, find_user's fast
+// indexed-lookup failure returned immediately (skipping both derive_key calls entirely) while a
+// wrong password for a real user always paid the full ~100ms-1s Argon2id cost first - an attacker
+// could enumerate valid usernames by timing alone, even though both paths return the identical
+// AuthError::InvalidCredentials value.
+const DECOY_SALT: [u8; 16] = [0u8; 16];
+
 pub fn login(
     registry_conn: &Connection,
     vault_path: &Path,
     username: &str,
     master_password: &str,
 ) -> Result<crypto::VaultKey, AuthError> {
-    let rec = registry::find_user(registry_conn, username).map_err(|_| AuthError::InvalidCredentials)?;
+    let rec = match registry::find_user(registry_conn, username) {
+        Ok(rec) => rec,
+        Err(_) => {
+            let _ = crypto::derive_key(master_password, &DECOY_SALT);
+            return Err(AuthError::InvalidCredentials);
+        }
+    };
 
     let verifier_key =
         crypto::derive_key(master_password, &rec.verifier_salt).map_err(|_| AuthError::InvalidCredentials)?;
@@ -1561,7 +1602,8 @@ pub fn login(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p pwmgr-core auth:: --manifest-path core/Cargo.toml`
-Expected: PASS — all 6 auth tests green (5 original + the missing-vault-file regression test).
+Expected: PASS — all 7 auth tests green (5 original + the missing-vault-file regression test + the
+timing-oracle floor check).
 
 - [ ] **Step 5: Commit**
 
