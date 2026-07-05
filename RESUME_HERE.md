@@ -3,6 +3,14 @@
 **Written:** 2026-07-05, at a clean stopping point (user has other work, not a crash this time).
 **Read this first in a new session before doing anything else.**
 
+> **⚠️ UPDATE (2026-07-06): M1 Phase B is now IN PROGRESS.** Everything below this notice describes
+> the state as of the Phase A merge and is now superseded for anything Phase-B-related. Phase B work
+> lives in a separate worktree + branch: `.worktrees/m1-phase-b` on branch `m1-phase-b`. **Go read
+> `.worktrees/m1-phase-b/RESUME_HERE.md` instead** — it has the full, current, detailed resume notes
+> (exact task progress, the refined workflow, gotchas hit so far). This main-repo copy is left as-is
+> below purely as a historical record of the Phase A merge; don't act on its "Next milestone, NOT YET
+> STARTED" line — that's now stale.
+
 ## Where everything stands
 
 - **Project root:** `E:\Coding_Projects-CS\Account_1\Password_Manager` — its own standalone git repo.
