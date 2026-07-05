@@ -19,6 +19,15 @@ pub enum AuthError {
 
 const SENTINEL_PLAINTEXT: &[u8] = b"pwmgr-sentinel-v1";
 
+// Fixed, non-secret salt used ONLY to burn an Argon2id derivation of equivalent cost when the
+// username doesn't exist, so "unknown username" and "known username, wrong password" take the same
+// wall-clock time. Found in Task 11's code-quality review pass: without this, find_user's fast
+// indexed-lookup failure returned immediately (skipping both derive_key calls entirely) while a
+// wrong password for a real user always paid the full ~100ms-1s Argon2id cost first - an attacker
+// could enumerate valid usernames by timing alone, even though both paths return the identical
+// AuthError::InvalidCredentials value.
+const DECOY_SALT: [u8; 16] = [0u8; 16];
+
 pub fn register_user(
     registry_conn: &Connection,
     vault_path: &Path,
@@ -64,7 +73,13 @@ pub fn login(
     username: &str,
     master_password: &str,
 ) -> Result<crypto::VaultKey, AuthError> {
-    let rec = registry::find_user(registry_conn, username).map_err(|_| AuthError::InvalidCredentials)?;
+    let rec = match registry::find_user(registry_conn, username) {
+        Ok(rec) => rec,
+        Err(_) => {
+            let _ = crypto::derive_key(master_password, &DECOY_SALT);
+            return Err(AuthError::InvalidCredentials);
+        }
+    };
 
     let verifier_key =
         crypto::derive_key(master_password, &rec.verifier_salt).map_err(|_| AuthError::InvalidCredentials)?;
@@ -158,6 +173,28 @@ mod tests {
 
         let result = login(&registry_conn, &vault_path, "nobody", "any password");
         assert!(matches!(result, Err(AuthError::InvalidCredentials)));
+    }
+
+    #[test]
+    fn login_with_unknown_username_pays_equivalent_kdf_cost_to_avoid_timing_oracle() {
+        // Not a precise timing assertion (flaky by nature) - just a floor check that the
+        // unknown-username path isn't a near-instant DB-lookup-only return. Argon2id at this
+        // crate's params (64 MiB / 3 iterations / 4 lanes) costs tens of milliseconds minimum on
+        // any real hardware; a fast-path bypass (the bug this test guards against) would return in
+        // well under 1ms since it's just an indexed SQLite miss with no KDF call at all.
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+        let vault_path = dir.path().join("nobody.vault");
+
+        let start = std::time::Instant::now();
+        let _ = login(&registry_conn, &vault_path, "nobody", "any password");
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed.as_millis() >= 5,
+            "unknown-username login returned in {:?} - looks like the decoy KDF call was skipped",
+            elapsed
+        );
     }
 
     #[test]
