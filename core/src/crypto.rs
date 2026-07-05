@@ -138,6 +138,16 @@ mod tests {
     }
 
     #[test]
+    fn open_fails_when_nonce_is_tampered() {
+        // THREAT_MODEL.md SS4 claims a bit-flip in ciphertext OR nonce fails loudly - this proves
+        // the nonce half of that claim, which open_fails_when_ciphertext_is_tampered doesn't cover.
+        let key = derive_key("master password", &[3u8; 16]).unwrap();
+        let (ciphertext, mut nonce) = seal(&key, b"secret data").unwrap();
+        nonce[0] ^= 0xFF; // flip a bit
+        assert!(open(&key, &ciphertext, &nonce).is_err());
+    }
+
+    #[test]
     fn seal_uses_a_fresh_nonce_each_call() {
         let key = derive_key("master password", &[4u8; 16]).unwrap();
         let (_, nonce1) = seal(&key, b"same plaintext").unwrap();

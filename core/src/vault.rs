@@ -18,6 +18,14 @@ pub enum VaultError {
 
 pub fn open_vault(path: &Path, key: &VaultKey) -> Result<Connection, VaultError> {
     let conn = Connection::open(path)?;
+    // Zeroizing the hex string closes the copy this function directly owns, but it is not a
+    // complete guarantee: PRAGMA statements can't bind parameters, so rusqlite's pragma_update
+    // formats this value into its own internal, unwrapped SQL buffer before executing it as
+    // literal SQL text - an additional in-memory copy of the raw key hex that this crate can't
+    // reach or zeroize. That's inherent to any PRAGMA-based key-passing approach with rusqlite/
+    // SQLCipher, not something fixable here without patching rusqlite itself. Found in the
+    // full-crate final review; noted rather than "fixed" since it's at the practical ceiling of
+    // what this call site can control.
     let key_hex: Zeroizing<String> = Zeroizing::new(
         key.as_bytes().iter().map(|b| format!("{:02x}", b)).collect(),
     );
@@ -111,7 +119,7 @@ pub fn soft_delete_site(conn: &Connection, site_id: i64) -> Result<(), VaultErro
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Credential {
     pub id: i64,
     pub site_id: i64,
@@ -122,6 +130,22 @@ pub struct Credential {
     // Don't let this be forgotten when that phase is planned.
     pub secret: String,
     pub remarks: Option<String>,
+}
+
+// Manual Debug impl (not derived) so a stray `{:?}`, `dbg!()`, or future log statement can never
+// print the plaintext secret. crypto::VaultKey already refuses to derive Debug for the same
+// reason - this closes the same gap for the one other struct in the crate that carries a
+// decrypted secret in memory. Found in the full-crate final review.
+impl std::fmt::Debug for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Credential")
+            .field("id", &self.id)
+            .field("site_id", &self.site_id)
+            .field("username", &self.username)
+            .field("secret", &"<redacted>")
+            .field("remarks", &self.remarks)
+            .finish()
+    }
 }
 
 pub fn add_credential(
@@ -353,6 +377,20 @@ mod tests {
         assert_eq!(creds[0].username.as_deref(), Some("alice"));
         assert_eq!(creds[0].secret, "s3cret!");
         assert_eq!(creds[0].remarks.as_deref(), Some("work login"));
+    }
+
+    #[test]
+    fn credential_debug_format_redacts_secret() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[11u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        add_credential(&conn, &key, site_id, Some("alice"), "extremely-unique-secret-xyz", None).unwrap();
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+
+        let debug_output = format!("{:?}", creds[0]);
+        assert!(!debug_output.contains("extremely-unique-secret-xyz"));
+        assert!(debug_output.contains("<redacted>"));
     }
 
     #[test]
