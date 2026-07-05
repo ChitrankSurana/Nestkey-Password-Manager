@@ -82,6 +82,15 @@ pub fn login(
     nonce.copy_from_slice(&rec.sentinel_nonce);
     crypto::open(&vault_key, &rec.sentinel_ciphertext, &nonce).map_err(|_| AuthError::InvalidCredentials)?;
 
+    // rusqlite::Connection::open (inside open_vault) silently creates a new empty file when
+    // the path doesn't exist (SQLite's default SQLITE_OPEN_CREATE behavior) - it never errors
+    // for "file not found." Without this check, a correct password against a deleted/moved
+    // vault file would silently succeed into a brand-new empty vault instead of failing,
+    // masking data loss. The registry-based verifier/sentinel checks above only prove the
+    // password is right; they say nothing about whether the vault file itself still exists.
+    if !vault_path.exists() {
+        return Err(AuthError::InvalidCredentials);
+    }
     vault::open_vault(vault_path, &vault_key).map_err(|_| AuthError::InvalidCredentials)?;
 
     Ok(vault_key)
@@ -148,6 +157,20 @@ mod tests {
         let vault_path = dir.path().join("nobody.vault");
 
         let result = login(&registry_conn, &vault_path, "nobody", "any password");
+        assert!(matches!(result, Err(AuthError::InvalidCredentials)));
+    }
+
+    #[test]
+    fn login_with_correct_password_but_missing_vault_file_is_rejected() {
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+        let vault_path = dir.path().join("alice.vault");
+        register_user(&registry_conn, &vault_path, "alice", "correct horse battery staple").unwrap();
+
+        // Simulate the vault file being deleted/moved out from under the registry entry.
+        std::fs::remove_file(&vault_path).unwrap();
+
+        let result = login(&registry_conn, &vault_path, "alice", "correct horse battery staple");
         assert!(matches!(result, Err(AuthError::InvalidCredentials)));
     }
 }
