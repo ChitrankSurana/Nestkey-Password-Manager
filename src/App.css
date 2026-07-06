@@ -8,6 +8,9 @@
 @source "./**/*.ts";
 @source "./**/*.jsx";
 @source "./**/*.tsx";
+/* Adding a new source file extension under src/? Add a matching @source line above -
+   Tailwind v4 doesn't support brace-expansion globs here, and an uncovered extension
+   fails silently (classes just render unstyled, no build error). */
 
 /* Tailwind v4 defaults the `dark:` variant to `prefers-color-scheme`.
    M1 is dark-theme-only and forces dark mode via a `dark` class on <html>

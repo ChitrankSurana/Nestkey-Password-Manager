@@ -13,6 +13,8 @@ function App() {
   }
 
   return (
+    // TODO(Task 9): temporary dark-mode verification classes - remove once this smoke page
+    // is replaced by the real AppState-wired smoke UI.
     <main className="container dark:bg-slate-900 dark:text-slate-100">
       <h1>Welcome to Tauri + React</h1>
 
