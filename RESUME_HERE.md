@@ -1,7 +1,8 @@
 # Resume Notes — Password Manager — M1 Phase B (in progress)
 
-**Written:** 2026-07-07, updated at a second pause point mid-Slice-0, per explicit user request
-("pause as soon as task 3 finishes") — not a crash. Original write-up was 2026-07-06 after Task 1.
+**Written:** 2026-07-07, updated at a third pause point mid-Slice-0, per explicit user request
+("pause once task 4 is complete properly and correctly") — not a crash. Original write-up was
+2026-07-06 after Task 1; updated again after Task 3.
 **Read this first in a new session before doing anything else.**
 
 ## Where everything stands
@@ -61,20 +62,29 @@
   actual Task 3 section is closed out and won't be re-executed — if a similar Tailwind setup task
   ever needs to be redone/referenced, check the actual `src/App.css`/`vite.config.ts` in this repo
   for the real v4 pattern, not the plan doc's original text.
-- **Tasks 4–9 (rest of Slice 0):** not started. `TaskCreate` entries #1–#9 exist in this session's
-  task tracker (#1–#3 completed, #4–#9 pending) — a fresh session won't see those (session-local),
-  so recreate equivalents before resuming if you want the same visibility; the plan doc remains the
+- **Task 4 (add pwmgr-core path dependency to src-tauri): DONE — implemented, spec-reviewed,
+  code-quality reviewed (Approved, no changes requested). Fully closed out.** Commits `4d9fa73`
+  (`src-tauri/Cargo.toml` dependency line) → `fa04465` (controller-applied `Cargo.lock` follow-up —
+  the implementer left it uncommitted per a strict reading of the task's file list; committing it was
+  the right call and both reviewers confirmed the split is low-risk since this repo has no `--locked`
+  CI gate). Verification probe (`use pwmgr_core::crypto::VaultKey;`) was added to `src-tauri/src/
+  lib.rs` (not `main.rs` — Tauri 2 splits them; `main.rs` is a thin entrypoint with no `use`
+  statements) then fully removed before committing.
+- **Tasks 5–9 (rest of Slice 0):** not started. `TaskCreate` entries #1–#9 exist in this session's
+  task tracker (#1–#4 completed, #5–#9 pending) — a fresh session won't see those (session-local), so
+  recreate equivalents before resuming if you want the same visibility; the plan doc remains the
   actual source of truth regardless.
 - **Slices 1–4 (Tasks 10–28):** not started, fully planned in the plan doc.
 
 ### What to do next
 
-Continue with Task 4 (Add pwmgr-core path dependency to src-tauri) exactly per the plan doc, subagent
-per task, review pair per task, pausing at the end of Slice 0 (after Task 9) to ask the user whether
-to continue — per their standing instruction, not just because this file says so. Also apply the
-same "pause when told to, mid-slice if asked" behavior demonstrated this pause: the user can ask to
-stop after any specific task, not just at slice boundaries — treat that as an ad hoc override of the
-default "pause at slice end" cadence for that one instance, not a permanent change to the cadence.
+Continue with Task 5 (`paths.rs` — `~/.pwmgr/` scaffolding + permission hardening, the first task
+with real TDD logic in this slice) exactly per the plan doc, subagent per task, review pair per task,
+pausing at the end of Slice 0 (after Task 9) to ask the user whether to continue — per their standing
+instruction, not just because this file says so. The user has twice now asked to pause mid-slice
+after a specific task (once after Task 3, once after Task 4) rather than waiting for the Slice 0
+boundary — treat each as a one-off override for that instance, not a permanent change to the default
+"pause at slice end" cadence, unless they say otherwise.
 
 ## Toolchain (already installed, but NOT on PATH for fresh shells)
 
