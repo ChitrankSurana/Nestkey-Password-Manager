@@ -1,9 +1,21 @@
 # Resume Notes — Password Manager — M1 Phase B (in progress)
 
-**Written:** 2026-07-07, updated at a third pause point mid-Slice-0, per explicit user request
-("pause once task 4 is complete properly and correctly") — not a crash. Original write-up was
-2026-07-06 after Task 1; updated again after Task 3.
+**Written:** 2026-07-09, updated at a fourth pause point mid-Slice-0, per explicit user request
+("pause now and rerun the re-verification on resume") — not a crash. Original write-up was
+2026-07-06 after Task 1; updated after Task 3, after Task 4, now after Task 5.
 **Read this first in a new session before doing anything else.**
+
+> **⚠️ IMMEDIATE NEXT STEP ON RESUME — do this before touching Task 6:** Task 5's code is done and
+> the one Important code-quality finding (TOCTOU race) has been fixed and committed (`d0ae40c`), but
+> the **re-verification of that fix was still in flight (a resumed background subagent, agent id
+> `a2d44463df6b77fee`) when this session paused.** Its result was never seen/confirmed. Per this
+> project's own established rule ("if a dispatched subagent's result isn't seen, treat it as needing
+> to be redone, don't assume it finished cleanly"), **do not trust that in-flight run — dispatch a
+> fresh code-quality reviewer subagent to re-verify commit `d0ae40c` from scratch** (see "Task 5"
+> section below for exactly what to check: does `DirBuilder::mode(0o700)` genuinely close the
+> create-then-chmod window on Unix, do all tests still pass, are the two deferred Minor findings
+> untouched). Only mark Task 5 fully closed out and start Task 6 once that fresh re-verification
+> comes back clean.
 
 ## Where everything stands
 
@@ -70,21 +82,62 @@
   CI gate). Verification probe (`use pwmgr_core::crypto::VaultKey;`) was added to `src-tauri/src/
   lib.rs` (not `main.rs` — Tauri 2 splits them; `main.rs` is a thin entrypoint with no `use`
   statements) then fully removed before committing.
-- **Tasks 5–9 (rest of Slice 0):** not started. `TaskCreate` entries #1–#9 exist in this session's
-  task tracker (#1–#4 completed, #5–#9 pending) — a fresh session won't see those (session-local), so
-  recreate equivalents before resuming if you want the same visibility; the plan doc remains the
-  actual source of truth regardless.
+- **Task 5 (`paths.rs` — `~/.pwmgr/` scaffolding + permission hardening): implemented, spec-reviewed
+  (✅ approved, independently re-verified diff + tests), code-quality reviewed (found one Important +
+  two Minor issues), Important issue fixed. Re-verification of that fix is the one open item — see the
+  banner at the top of this file.**
+  - Commit `8ba08f0` — initial implementation: `AppPaths` struct (`root`, `vaults_dir`, `backups_dir`,
+    `registry_db_path`, `vault_path`, `config_path`, `ensure_app_dirs`) in new `src-tauri/src/paths.rs`,
+    `mod paths;` added to `main.rs`, `tempfile = "3.10"` dev-dependency added. TDD followed (test
+    written first, confirmed failing, implemented, confirmed passing). Spec-compliance review: ✅,
+    independently re-ran tests and read the diff, no gaps.
+  - Code-quality review (first pass): **Approved with follow-ups.**
+    - **Important (fixed):** TOCTOU window — `ensure_app_dirs` did `create_dir_all` (umask-governed
+      permissions, e.g. group/other-readable) then a separate `chmod 0o700` afterward, leaving a real
+      window where another local user could see the directory before it was locked down. Directly
+      on-theme since this file's whole job is permission hardening (THREAT_MODEL A2), and this project
+      has caught this exact bug class before (see `core/src/registry.rs`'s TOCTOU note).
+    - **Minor (deferred, see "Deferred/tracked items" below):** Windows `restrict_to_owner`'s `icacls`
+      command construction has no unit test (only exercisable by actually running `icacls`); no
+      username sanitization in `vault_path(username)` (a `/`, `..`, or Windows-reserved character in a
+      username would misbehave — this is a registration-time concern upstream of this file, not a bug
+      in this file itself).
+    - Also noted (informational, not an issue): `AppPaths` is currently dead code (`cargo build`
+      warns unused) — expected, Task 9 wires it into `main.rs`'s real `AppState` per the plan.
+  - Commit `d0ae40c` — fix: replaced Unix `create_dir_all` + post-hoc `restrict_to_owner` chmod with
+    a new `create_dir_owner_only` helper using `std::fs::DirBuilder::new().mode(0o700).recursive(true)
+    .create(dir)`, so each directory is born at `0o700` atomically — no create-then-chmod window.
+    Windows path deliberately left unchanged (no atomic create-with-ACL primitive in std; already
+    best-effort/defense-in-depth, not the primary boundary). Removed the now-dead-code old
+    `#[cfg(unix)] restrict_to_owner`. Added a new test asserting `0o700` on all three directories (not
+    just root). `cargo test -p pwmgr-app paths::` → 2 passed (Windows); `cargo test --workspace` → all
+    green (2 paths:: + 40 pwmgr-core + 2 e2e), no regressions, per the implementer's own report.
+    **A fresh code-quality reviewer must independently re-verify this commit — see the banner at the
+    top of this file.** One implementer-flagged note worth carrying forward either way: the fix means
+    a directory that already exists on disk (e.g. a hypothetical future upgrade/migration scenario)
+    won't be retroactively `chmod`'d to `0o700` anymore, since `DirBuilder`'s recursive create is a
+    no-op for existing dirs. Not a live gap today (Task 5 is literally what first creates `~/.pwmgr`),
+    but worth remembering if a migration path is ever added later.
+- **Tasks 6–9 (rest of Slice 0):** not started. `TaskCreate` entries #1–#5 exist in this session's
+  task tracker (#1 "Task 5..." still shows `in_progress` pending the re-verification above; #2–#5 are
+  Tasks 6–9, `pending`) — a fresh session won't see those (session-local), so recreate equivalents
+  before resuming if you want the same visibility; the plan doc remains the actual source of truth
+  regardless.
 - **Slices 1–4 (Tasks 10–28):** not started, fully planned in the plan doc.
 
 ### What to do next
 
-Continue with Task 5 (`paths.rs` — `~/.pwmgr/` scaffolding + permission hardening, the first task
-with real TDD logic in this slice) exactly per the plan doc, subagent per task, review pair per task,
-pausing at the end of Slice 0 (after Task 9) to ask the user whether to continue — per their standing
-instruction, not just because this file says so. The user has twice now asked to pause mid-slice
-after a specific task (once after Task 3, once after Task 4) rather than waiting for the Slice 0
-boundary — treat each as a one-off override for that instance, not a permanent change to the default
-"pause at slice end" cadence, unless they say otherwise.
+1. **First**, dispatch a fresh code-quality reviewer subagent to independently re-verify commit
+   `d0ae40c` (the TOCTOU fix) per the banner at the top of this file. Do not skip this even though the
+   fix looks straightforward — this project's workflow requires re-verification after every review
+   finding gets fixed, no exceptions.
+2. Once that comes back clean, mark Task 5 fully closed out and continue with Task 6 (`config.rs` —
+   `config.json` load/save) exactly per the plan doc, same subagent-per-task + review-pair-per-task
+   process, pausing at the end of Slice 0 (after Task 9) to ask the user whether to continue — per
+   their standing instruction, not just because this file says so. The user has repeatedly asked to
+   pause mid-slice after a specific task (after Task 3, after Task 4, after Task 5) rather than
+   waiting for the Slice 0 boundary — treat each as a one-off override for that instance, not a
+   permanent change to the default "pause at slice end" cadence, unless they say otherwise.
 
 ## Toolchain (already installed, but NOT on PATH for fresh shells)
 
@@ -206,6 +259,13 @@ rest of Phase B and any future plan execution in this project:
   failed` with an API/connection error**, that's a transient infrastructure failure, not a real
   finding — resume it via `SendMessage` to the same agent ID rather than treating the partial/failed
   result as final or restarting from scratch.
+- **If the user asks to pause while a background subagent is still in flight (e.g. mid-re-verification),
+  the session ends before that agent's result is ever seen.** Don't assume it finished cleanly or that
+  its eventual result (if it ever notifies into a now-closed session) can be trusted sight-unseen —
+  treat it the same as a lost/failed dispatch: the next session must dispatch a fresh subagent to redo
+  that step from scratch. This happened at the end of Task 5's code-quality re-verification in this
+  Phase B session (agent `a2d44463df6b77fee` was re-verifying commit `d0ae40c`'s TOCTOU fix when the
+  user asked to pause) — the banner at the top of this file exists specifically because of this.
 
 ## Core-crate gaps this plan fills in `pwmgr-core` (all specified in the plan doc, TDD each)
 
