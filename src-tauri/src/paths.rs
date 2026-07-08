@@ -41,16 +41,29 @@ impl AppPaths {
     /// owns closing that gap too.
     pub fn ensure_app_dirs(&self) -> std::io::Result<()> {
         for dir in [self.root(), &self.vaults_dir(), &self.backups_dir()] {
-            std::fs::create_dir_all(dir)?;
-            Self::restrict_to_owner(dir)?;
+            Self::create_dir_owner_only(dir)?;
         }
         Ok(())
     }
 
+    /// Creates `dir` (and any missing parents) with owner-only permissions from the moment it
+    /// exists on disk — no window where the directory is briefly world/group-readable before a
+    /// follow-up chmod. On Unix this is atomic via `DirBuilder::mode`; on Windows there is no
+    /// equivalent atomic create-with-ACL primitive in std, so we fall back to create-then-restrict
+    /// via `restrict_to_owner` (documented there as best-effort defense-in-depth).
     #[cfg(unix)]
-    fn restrict_to_owner(dir: &Path) -> std::io::Result<()> {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+    fn create_dir_owner_only(dir: &Path) -> std::io::Result<()> {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .recursive(true)
+            .create(dir)
+    }
+
+    #[cfg(windows)]
+    fn create_dir_owner_only(dir: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(dir)?;
+        Self::restrict_to_owner(dir)
     }
 
     #[cfg(windows)]
@@ -118,5 +131,27 @@ mod tests {
 
         let mode = std::fs::metadata(paths.root()).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o700, "expected owner-only rwx, got {:o}", mode);
+    }
+
+    /// Proves each directory is born with mode 0o700 via the atomic `DirBuilder::mode` path
+    /// (no create-then-chmod TOCTOU window) — checks every directory `ensure_app_dirs` creates,
+    /// not just the root, since the atomic create happens per-directory in the loop.
+    #[cfg(unix)]
+    #[test]
+    fn ensure_app_dirs_creates_every_directory_with_owner_only_mode_atomically_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let paths = AppPaths::new(dir.path().to_path_buf());
+
+        paths.ensure_app_dirs().unwrap();
+
+        for created in [paths.root(), &paths.vaults_dir(), &paths.backups_dir()] {
+            let mode = std::fs::metadata(created).unwrap().permissions().mode() & 0o777;
+            assert_eq!(
+                mode, 0o700,
+                "expected {:?} to be created with owner-only rwx, got {:o}",
+                created, mode
+            );
+        }
     }
 }
