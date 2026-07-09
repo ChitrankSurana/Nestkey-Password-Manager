@@ -1,21 +1,20 @@
 # Resume Notes — Password Manager — M1 Phase B (in progress)
 
-**Written:** 2026-07-09, updated at a fourth pause point mid-Slice-0, per explicit user request
-("pause now and rerun the re-verification on resume") — not a crash. Original write-up was
-2026-07-06 after Task 1; updated after Task 3, after Task 4, now after Task 5.
+**Written:** 2026-07-10, updated at a fifth pause point mid-Slice-0, per explicit user request
+("pause after task 7 is complete and check for no errors/issues") — not a crash. Original write-up
+was 2026-07-06 after Task 1; updated after Task 3, after Task 4, after Task 5, now after Task 7.
 **Read this first in a new session before doing anything else.**
 
-> **⚠️ IMMEDIATE NEXT STEP ON RESUME — do this before touching Task 6:** Task 5's code is done and
-> the one Important code-quality finding (TOCTOU race) has been fixed and committed (`d0ae40c`), but
-> the **re-verification of that fix was still in flight (a resumed background subagent, agent id
-> `a2d44463df6b77fee`) when this session paused.** Its result was never seen/confirmed. Per this
-> project's own established rule ("if a dispatched subagent's result isn't seen, treat it as needing
-> to be redone, don't assume it finished cleanly"), **do not trust that in-flight run — dispatch a
-> fresh code-quality reviewer subagent to re-verify commit `d0ae40c` from scratch** (see "Task 5"
-> section below for exactly what to check: does `DirBuilder::mode(0o700)` genuinely close the
-> create-then-chmod window on Unix, do all tests still pass, are the two deferred Minor findings
-> untouched). Only mark Task 5 fully closed out and start Task 6 once that fresh re-verification
-> comes back clean.
+> **⚠️ Resume-time re-verification incident from the PREVIOUS pause (Task 5) — now fully resolved,
+> kept here only as a precedent/example, not an action item.** Last time, a code-quality
+> re-verification subagent was still in flight when the session paused and its result was never
+> seen; the correct response (redo it from scratch on resume, don't trust the in-flight run) worked
+> cleanly and is now the established pattern — see "Things that went wrong" below. **This pause point
+> is clean**: Tasks 5, 6, and 7 are all fully closed with every review (spec-compliance,
+> code-quality, and — for every fix — an independent re-verification pass) actually completed and
+> seen, not left in flight. There is no unresolved subagent and no outstanding finding as of this
+> write-up. Start fresh with Task 8 (see "What to do next" below) — no re-verification carryover
+> needed this time.
 
 ## Where everything stands
 
@@ -112,32 +111,103 @@
     `#[cfg(unix)] restrict_to_owner`. Added a new test asserting `0o700` on all three directories (not
     just root). `cargo test -p pwmgr-app paths::` → 2 passed (Windows); `cargo test --workspace` → all
     green (2 paths:: + 40 pwmgr-core + 2 e2e), no regressions, per the implementer's own report.
-    **A fresh code-quality reviewer must independently re-verify this commit — see the banner at the
-    top of this file.** One implementer-flagged note worth carrying forward either way: the fix means
-    a directory that already exists on disk (e.g. a hypothetical future upgrade/migration scenario)
-    won't be retroactively `chmod`'d to `0o700` anymore, since `DirBuilder`'s recursive create is a
-    no-op for existing dirs. Not a live gap today (Task 5 is literally what first creates `~/.pwmgr`),
-    but worth remembering if a migration path is ever added later.
-- **Tasks 6–9 (rest of Slice 0):** not started. `TaskCreate` entries #1–#5 exist in this session's
-  task tracker (#1 "Task 5..." still shows `in_progress` pending the re-verification above; #2–#5 are
-  Tasks 6–9, `pending`) — a fresh session won't see those (session-local), so recreate equivalents
-  before resuming if you want the same visibility; the plan doc remains the actual source of truth
-  regardless.
-- **Slices 1–4 (Tasks 10–28):** not started, fully planned in the plan doc.
+    A fresh code-quality reviewer independently re-verified this commit (agent re-dispatched at the
+    start of the 2026-07-10 session, since the prior in-flight run's result was never seen): confirmed
+    via direct inspection of the installed Rust std source that `DirBuilder::mode()` performs a single
+    atomic `libc::mkdir(path, mode)` syscall per directory (including any newly-created parents under
+    `recursive(true)`), so the directory never exists at any permission other than `0o700` — genuinely
+    closes the TOCTOU window. Full workspace suite (44/44 at the time) passed, both deferred Minor
+    findings confirmed untouched. **Task 5 is fully closed**, no follow-up needed.
+  - One implementer-flagged note worth carrying forward either way: the fix means a directory that
+    already exists on disk (e.g. a hypothetical future upgrade/migration scenario) won't be
+    retroactively `chmod`'d to `0o700` anymore, since `DirBuilder`'s recursive create is a no-op for
+    existing dirs. Not a live gap today (Task 5 is literally what first creates `~/.pwmgr`), but worth
+    remembering if a migration path is ever added later.
+- **Task 6 (`config.rs` — `config.json` load/save): DONE — implemented, spec-reviewed, code-quality
+  reviewed, one Important fix applied and independently re-verified. Fully closed out.**
+  - Commit `2f942b5` — initial implementation: `Config` struct (`theme`, `auto_lock_minutes`) with
+    `Default`, `load()`/`save()`, validated-set fallback for out-of-range `auto_lock_minutes` (matches
+    plan spec verbatim). Spec-compliance review: ✅, independently re-verified diff + re-ran tests
+    (3/3 `config::`, 5/5 crate).
+  - Code-quality review (first pass): **Approved with follow-ups.**
+    - **Important (fixed):** `Config::load`'s `serde_json::from_str(&raw).unwrap_or_default()` reset
+      **every** field on ANY deserialize error — since neither field had `#[serde(default)]`, a
+      `config.json` missing just `auto_lock_minutes` (e.g. saved by an older app version) would fail
+      to deserialize entirely and silently discard a validly-saved `theme` too. Confirmed empirically
+      by the reviewer (`{"theme":"light"}` loaded back as `theme="dark"`). A real forward-compatibility
+      data-loss trap once the schema grows (it will, in Slice 4).
+    - **Important (fixed):** the fallback logged nothing on parse failure, inconsistent with this same
+      crate's `paths.rs` precedent (`restrict_to_owner`'s `eprintln!` warning on its own best-effort
+      I/O fallback).
+  - Plan doc fixed first (`fix(plan)` commit `80c3d75`, per this project's "fix the plan, then
+    re-dispatch an implementer to copy it" workflow), then commit `4eaed4b` applied it: per-field
+    `#[serde(default = "default_theme")]` / `#[serde(default = "default_auto_lock_minutes")]` so a
+    missing field only loses that field's own default, plus an explicit `match` on
+    `serde_json::from_str` that `eprintln!`s a warning before falling back on genuine parse failure.
+    Two new tests added (`load_preserves_present_fields_when_another_field_is_missing`,
+    `load_falls_back_to_default_on_malformed_json`).
+  - Fresh re-verification (not the same reviewer): **confirmed both findings genuinely resolved**, via
+    an empirical differential test (grafted the new tests onto the OLD code, watched the
+    previously-failing assertion fail again exactly as predicted, then confirmed it passes on the
+    fixed code) and by observing the `eprintln!` warning actually fire on stderr during a live
+    malformed-JSON test run — not just reading the diff. Full workspace: 49/49 passing.
+- **Task 7 (`error.rs` — serializable `CommandError` DTO): DONE — implemented, spec-reviewed,
+  code-quality reviewed, one Important fix applied and independently re-verified. Fully closed out.**
+  - Commit `710ab03` — `CommandError { code, message }` (Serialize, Debug), exhaustive
+    `From<AuthError>`/`From<VaultError>` matches (no wildcard arms — verified against the real enum
+    definitions in `core/src/{auth,vault,registry}.rs`) collapsing every internal error variant to one
+    of a small set of hardcoded safe messages, plus `locked_error()` for the Tauri-layer-only
+    session-locked state. This is the security boundary that stops `pwmgr-core`'s internal error
+    detail (raw SQLite text, etc.) from ever reaching the frontend over IPC, and specifically preserves
+    Phase A's no-wrong-password-oracle property (`AuthError::InvalidCredentials` → one generic message,
+    no separate username/password variants exist upstream to leak). Spec-compliance review: ✅,
+    independently verified the enum shapes and the exhaustive-no-wildcard property itself, re-ran tests
+    (3/3 `error::`, 10/10 crate).
+  - Code-quality review (first pass): **Approved with follow-ups.**
+    - **Important (fixed):** `code`/`message` fields were `pub`, which — despite `CommandError::new`
+      already being private — let any future call site (e.g. a later `#[tauri::command]` handler)
+      construct a `CommandError` directly via struct literal, bypassing every sanitizing `From` impl
+      entirely. Since this file's whole purpose is being the *only* safe path for internal errors to
+      reach the frontend, a trivially-bypassable construction path was a real, near-certain-to-be-hit
+      gap in its own enforcement mechanism — not hypothetical.
+    - No leak found in the current code itself: traced every `From` impl and confirmed the original
+      `pwmgr_core` error is always discarded (matched, never formatted into the message, never stored,
+      never logged) — the `Debug` derive on `CommandError` is safe because the struct only ever holds
+      the two already-sanitized literal strings.
+    - Confirmed the project's known Tauri camelCase-DTO gotcha (return-value struct fields aren't
+      auto-renamed the way command *arguments* are) is genuinely inapplicable here — `code`/`message`
+      are both single lowercase words, snake_case and camelCase are byte-identical for them.
+    - Minor, deferred (not fixed): dead-code warnings until a later task wires IPC handlers to this
+      module (expected); the repeated `("internal_error", "...")` literal pair across the two `From`
+      impls (only 2 occurrences, judged not worth extracting yet); test coverage is spec-minimum (no
+      `VaultError` test, no `locked_error()` test, no literal-JSON-shape assertion) — none required by
+      the task spec and the camelCase concern was confirmed moot, so left as-is.
+  - Plan doc fixed first (`fix(plan)` commit `4c49be8`), then commit `e23cfed` applied it: dropped
+    `pub` from both fields (struct itself stays `pub`), added an explanatory doc comment.
+  - Fresh re-verification: **confirmed genuinely resolved**, and not just by reading the diff — the
+    reviewer wrote an actual temporary sibling module attempting the exact bypass construction pattern
+    from outside `error.rs`, ran `cargo check`, and observed the compiler reject it with
+    `error[E0451]: fields \`code\` and \`message\` of struct \`CommandError\` are private` before
+    reverting the probe file. Full workspace: 52/52 passing.
+- **Tasks 8–9 (rest of Slice 0):** not started.
 
 ### What to do next
 
-1. **First**, dispatch a fresh code-quality reviewer subagent to independently re-verify commit
-   `d0ae40c` (the TOCTOU fix) per the banner at the top of this file. Do not skip this even though the
-   fix looks straightforward — this project's workflow requires re-verification after every review
-   finding gets fixed, no exceptions.
-2. Once that comes back clean, mark Task 5 fully closed out and continue with Task 6 (`config.rs` —
-   `config.json` load/save) exactly per the plan doc, same subagent-per-task + review-pair-per-task
-   process, pausing at the end of Slice 0 (after Task 9) to ask the user whether to continue — per
-   their standing instruction, not just because this file says so. The user has repeatedly asked to
-   pause mid-slice after a specific task (after Task 3, after Task 4, after Task 5) rather than
-   waiting for the Slice 0 boundary — treat each as a one-off override for that instance, not a
-   permanent change to the default "pause at slice end" cadence, unless they say otherwise.
+Continue with **Task 8** (`state.rs` — `AppState` with `Mutex`-guarded fields; see plan doc line
+~699) exactly per the plan doc, same subagent-per-task process: implementer → spec-compliance reviewer
+→ code-quality reviewer, and if either reviewer finds a real issue, fix the plan doc first
+(`fix(plan): ...` commit) then re-dispatch a fresh implementer to copy that exact fix, then dispatch
+one more independent re-verification pass before moving on — this pattern has now been used cleanly
+twice in a row (Tasks 6 and 7) and is working well, keep using it verbatim.
+
+Then Task 9 (last of Slice 0), then **pause at the Slice 0 boundary** to ask the user whether to
+continue — per their standing instruction. The user has also repeatedly asked to pause mid-slice after
+a specific task (after Task 3, 4, 5, and now 7) rather than waiting for the Slice 0 boundary — treat
+each as a one-off override for that instance, not a permanent change to the default "pause at slice
+end" cadence, unless they say otherwise. If they ask to pause again before Task 9, refresh this file
+the same way this update did: record exact commit hashes, what each review found and fixed, and
+confirm every dispatched subagent's result was actually seen (not left in flight) before writing
+"fully closed out" for any task.
 
 ## Toolchain (already installed, but NOT on PATH for fresh shells)
 
@@ -302,8 +372,7 @@ Same as Phase A's list except items Phase B's own plan now closes are marked so:
 
 ## Task tracker state
 
-This session's `TaskCreate` list (#1–#9) covers Slice 0's Tasks 1–9 only; #1 is `in_progress`
-(Task 1 itself is functionally done pending the code-quality review confirmation above — update its
-status once that's resolved), #2–#9 are `pending`. These are session-local and won't carry to a new
-session — recreate equivalents (or just proceed task-by-task using the plan doc as the source of
-truth, which is what actually matters) when resuming.
+The 2026-07-10 session's `TaskCreate` list has #1 (Task 5 re-verify), #2 (Task 6), #3 (Task 7) all
+`completed`; #4 (Task 8) and #5 (Task 9) `pending`, not started. These are session-local and won't
+carry to a new session — recreate equivalents (or just proceed task-by-task using the plan doc as the
+source of truth, which is what actually matters) when resuming.
