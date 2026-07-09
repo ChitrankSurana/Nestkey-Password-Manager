@@ -6,10 +6,16 @@ use serde::Serialize;
 /// oracle (e.g. distinguishing "wrong password" from "unknown username" from "database
 /// corrupted"). Every `From` conversion here collapses internal error variants down to one of a
 /// small set of generic, user-facing `(code, message)` pairs.
+// Fields are private: the only way to construct a CommandError is through the From impls below
+// (or locked_error()), so every internal error variant is forced through a sanitizing match arm.
+// Public fields would let any future call site build one directly (e.g.
+// `CommandError { code: "...".into(), message: format!("{e}") }`), bypassing that guarantee and
+// defeating this file's whole purpose. serde's derive can still see private fields since its
+// generated code lives in this same module.
 #[derive(Debug, Serialize)]
 pub struct CommandError {
-    pub code: String,
-    pub message: String,
+    code: String,
+    message: String,
 }
 
 impl CommandError {
