@@ -11,8 +11,7 @@ use std::time::Duration;
 /// threadpool.
 pub struct AppState {
     pub registry: Mutex<Connection>,
-    pub vault: Mutex<Option<Connection>>,
-    pub vault_path: Mutex<Option<PathBuf>>,
+    pub vault: Mutex<Option<(Connection, PathBuf)>>,
     pub session: Mutex<Session>,
     pub config: Mutex<Config>,
 }
@@ -21,14 +20,24 @@ impl AppState {
     /// Test-only convenience constructor using an in-memory registry connection. The real
     /// constructor used by main.rs (Task 9) opens the on-disk registry via AppPaths instead.
     #[cfg(test)]
-    fn new(config: Config, timeout: Duration) -> Self {
+    pub(crate) fn new(config: Config, timeout: Duration) -> Self {
         AppState {
             registry: Mutex::new(Connection::open_in_memory().unwrap()),
             vault: Mutex::new(None),
-            vault_path: Mutex::new(None),
             session: Mutex::new(Session::new(timeout)),
             config: Mutex::new(config),
         }
+    }
+
+    /// Opens a vault connection and its on-disk path together, so a reader can never observe
+    /// one half without the other.
+    pub fn set_vault(&self, conn: Connection, path: PathBuf) {
+        *self.vault.lock().unwrap() = Some((conn, path));
+    }
+
+    /// Closes the vault connection (if any) and clears its path in the same step.
+    pub fn clear_vault(&self) {
+        *self.vault.lock().unwrap() = None;
     }
 }
 
@@ -44,6 +53,30 @@ mod tests {
 
         assert!(state.vault.lock().unwrap().is_none());
         assert!(state.session.lock().unwrap().is_locked());
-        assert!(state.vault_path.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn set_vault_stores_connection_and_path() {
+        let state = AppState::new(Config::default(), Duration::from_secs(300));
+        let path = PathBuf::from("/tmp/example.vault");
+
+        state.set_vault(Connection::open_in_memory().unwrap(), path.clone());
+
+        let guard = state.vault.lock().unwrap();
+        let (_, stored_path) = guard.as_ref().expect("vault should be set");
+        assert_eq!(stored_path, &path);
+    }
+
+    #[test]
+    fn clear_vault_resets_to_none() {
+        let state = AppState::new(Config::default(), Duration::from_secs(300));
+        state.set_vault(
+            Connection::open_in_memory().unwrap(),
+            PathBuf::from("/tmp/example.vault"),
+        );
+
+        state.clear_vault();
+
+        assert!(state.vault.lock().unwrap().is_none());
     }
 }
