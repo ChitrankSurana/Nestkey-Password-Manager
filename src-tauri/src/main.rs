@@ -4,6 +4,7 @@
 mod config;
 mod error;
 mod paths;
+mod state;
 
 fn main() {
     tauri_app_lib::run()

@@ -2785,6 +2785,7 @@ name = "pwmgr-app"
 version = "0.1.0"
 dependencies = [
  "pwmgr-core",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",
