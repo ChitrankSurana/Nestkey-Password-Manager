@@ -11,7 +11,7 @@ use std::time::Duration;
 /// threadpool.
 pub struct AppState {
     pub registry: Mutex<Connection>,
-    pub vault: Mutex<Option<(Connection, PathBuf)>>,
+    pub(crate) vault: Mutex<Option<(Connection, PathBuf)>>,
     pub session: Mutex<Session>,
     pub config: Mutex<Config>,
 }
