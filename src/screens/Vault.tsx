@@ -1,0 +1,109 @@
+import { useEffect, useState } from "react";
+import { api, SiteDto, SearchResultDto } from "../lib/api";
+import { SiteEditor } from "./SiteEditor";
+import { SiteDetail } from "./SiteDetail";
+
+export function Vault({ username }: { username: string }) {
+  const [sites, setSites] = useState<SiteDto[]>([]);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResultDto[] | null>(null);
+  const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
+  const [addingSite, setAddingSite] = useState(false);
+
+  async function refreshSites() {
+    setSites(await api.listSites());
+  }
+
+  useEffect(() => {
+    refreshSites();
+  }, []);
+
+  useEffect(() => {
+    if (query.trim() === "") {
+      setResults(null);
+      return;
+    }
+    // Real-time search (TRD NFR-3: results update within one UI frame of keystroke) - no debounce,
+    // this is a local IPC call against a SQLite index, not a network request.
+    api.search(query).then(setResults);
+  }, [query]);
+
+  if (selectedSiteId !== null) {
+    return (
+      <SiteDetail
+        site={sites.find((s) => s.id === selectedSiteId)!}
+        onBack={() => setSelectedSiteId(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-xl font-semibold">Vault — {username}</h1>
+        <div className="space-x-2">
+          <button
+            onClick={() => setAddingSite(true)}
+            className="rounded bg-blue-600 px-3 py-1"
+            title="Add a new site"
+          >
+            Add site
+          </button>
+          <button
+            onClick={() => api.lock()}
+            className="rounded bg-slate-700 px-3 py-1"
+            title="Lock the vault now"
+          >
+            Lock
+          </button>
+        </div>
+      </div>
+
+      <input
+        className="w-full rounded border px-2 py-1 mb-4 dark:bg-slate-800 dark:border-slate-600"
+        placeholder="Search by site, username, or remarks..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        title="Search your vault in real time"
+      />
+
+      {results !== null ? (
+        <ul className="space-y-1">
+          {results.map((r) => (
+            <li
+              key={r.credentialId}
+              className="cursor-pointer rounded border px-2 py-1 dark:border-slate-700"
+              onClick={() => setSelectedSiteId(r.siteId)}
+            >
+              {r.siteName} — {r.username ?? "(no username)"}
+            </li>
+          ))}
+          {results.length === 0 && <li className="text-sm opacity-70">No matches.</li>}
+        </ul>
+      ) : (
+        <ul className="space-y-1">
+          {sites.map((s) => (
+            <li
+              key={s.id}
+              className="cursor-pointer rounded border px-2 py-1 dark:border-slate-700"
+              onClick={() => setSelectedSiteId(s.id)}
+            >
+              {s.name}
+            </li>
+          ))}
+          {sites.length === 0 && <li className="text-sm opacity-70">No sites yet — add one.</li>}
+        </ul>
+      )}
+
+      {addingSite && (
+        <SiteEditor
+          onClose={() => setAddingSite(false)}
+          onSaved={() => {
+            setAddingSite(false);
+            refreshSites();
+          }}
+        />
+      )}
+    </div>
+  );
+}
