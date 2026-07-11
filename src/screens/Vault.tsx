@@ -13,6 +13,7 @@ export function Vault({ username }: { username: string }) {
 
   async function refreshSites() {
     try {
+      setError(null);
       setSites(await api.listSites());
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
@@ -25,6 +26,7 @@ export function Vault({ username }: { username: string }) {
       return;
     }
     try {
+      setError(null);
       // Real-time search (TRD NFR-3: results update within one UI frame of keystroke) - no debounce,
       // this is a local IPC call against a SQLite index, not a network request.
       setResults(await api.search(q));
@@ -69,6 +71,7 @@ export function Vault({ username }: { username: string }) {
           <button
             onClick={async () => {
               try {
+                setError(null);
                 await api.lock();
               } catch (err) {
                 setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");

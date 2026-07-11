@@ -9,6 +9,7 @@ export function SiteDetail({ site, onBack }: { site: SiteDto; onBack: () => void
 
   async function refresh() {
     try {
+      setError(null);
       setCredentials(await api.listCredentialsForSite(site.id));
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
@@ -48,6 +49,7 @@ export function SiteDetail({ site, onBack }: { site: SiteDto; onBack: () => void
               <button
                 onClick={async () => {
                   try {
+                    setError(null);
                     await api.softDeleteCredential(c.id);
                     refresh();
                   } catch (err) {
