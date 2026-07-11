@@ -40,6 +40,10 @@ impl Session {
         self.last_activity = None;
     }
 
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
+    }
+
     pub fn is_locked(&self) -> bool {
         self.key.is_none()
     }
@@ -139,6 +143,26 @@ mod tests {
         let clock = FakeClock::new();
         let mut session = Session::new(Duration::from_secs(300));
         session.check_expiry(&clock); // locked session, nothing to expire
+        assert!(session.is_locked());
+    }
+
+    #[test]
+    fn set_timeout_changes_the_idle_timeout_on_a_live_session() {
+        let clock = FakeClock::new();
+        let mut session = Session::new(Duration::from_secs(300));
+        session.unlock(derive_key("pw", &[1u8; 16]).unwrap(), &clock);
+
+        session.set_timeout(Duration::from_secs(60));
+        clock.advance(Duration::from_secs(61));
+        session.check_expiry(&clock);
+
+        assert!(session.is_locked(), "shortened timeout should have expired the session");
+    }
+
+    #[test]
+    fn set_timeout_on_a_locked_session_does_not_unlock_it() {
+        let mut session = Session::new(Duration::from_secs(300));
+        session.set_timeout(Duration::from_secs(60));
         assert!(session.is_locked());
     }
 }
