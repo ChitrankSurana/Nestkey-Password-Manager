@@ -242,6 +242,22 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
   layer concerns upstream of `paths.rs`.
 - The near-ceiling `vault::open_vault` PRAGMA-key zeroization gap in `pwmgr-core` — still not fully
   closable, still just documented, unchanged.
+- **New this session (Task 10) — `pwmgr_core::auth::register_user` checks vault-file collision
+  before registry-username-uniqueness, masking `username_taken` as `internal_error` on a real
+  duplicate-registration attempt:** `register_user` (`core/src/auth.rs`, ordering introduced in
+  Phase A commit `2e648e4`) calls `vault::open_vault` on the deterministic `vault_path(username)`
+  *before* `registry::create_user`'s uniqueness check. Since a real second registration attempt
+  with a taken username hits the same on-disk vault file (with a freshly-generated, different KDF
+  salt), `open_vault` fails with `VaultError::UnlockFailed` first, which `CommandError`'s `From`
+  impl maps to the generic `"internal_error"` — a real user gets "something went wrong" instead of
+  "username taken." Confirmed reachable in the real single-`AppPaths` app, not just a test artifact
+  (see Task 10 spec-compliance review). Out of scope for Task 10 (pure Tauri IPC wiring task,
+  pre-existing Phase A core behavior) — the Task 10 test for `username_taken` uses a second
+  `AppPaths` to isolate the registry-uniqueness path it's actually meant to prove, since the
+  literal single-path collision test from the plan doc no longer passes against current core
+  behavior. Fix candidate for a later core-layer task: check registry uniqueness before creating
+  the vault file, or make `register_user` tolerate/reuse an existing unclaimed vault file instead of
+  treating any unlock failure as fatal.
 - **Out of scope for all of Phase B** (unchanged): password generator, strength scoring/health
   dashboard, breach check, backup/restore, CSV import/export, light theme + accent colors,
   site-level trash.
