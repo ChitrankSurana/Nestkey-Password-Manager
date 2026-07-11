@@ -6,12 +6,18 @@ pausing, closed Slice 1 too, then closed out Slice 2's pause point from the prio
 this first in a new session before doing anything else.**
 
 > **All prior banners (Task 5 re-verification incident, the Slice 0 "pause and ask" framing, the
-> mid-Slice-2 pause) are now stale and removed. Slice 2 is CLOSED.** This write-up reflects the full
-> 2026-07-11 session's work end to end: Slice 0 close (Tasks 8, 9, 9.5), Slice 1 close (Tasks 10-13 +
-> 13.5), then Slice 2 close (Tasks 14-18, then — resuming from the prior pause — Task 18.5's two
-> Important fixes, the end-of-Slice-2 cross-task spec-compliance + code-quality reviews, and Task
-> 18.6's fix for the manual-Lock-doesn't-navigate-to-login bug the cross-task review found). **Slice
-> 3 (Trash UI + read-path fix) has not started — Task 19 is next.**
+> mid-Slice-2 pause) are now stale and removed. Slices 0, 1, 2, AND 3 are all CLOSED.** This write-up
+> reflects the full 2026-07-11 session's work end to end: Slice 0 close (Tasks 8, 9, 9.5), Slice 1
+> close (Tasks 10-13 + 13.5), Slice 2 close (Tasks 14-18 + 18.5 + 18.6, both cross-task reviews),
+> then Slice 3 close (Tasks 19-22: soft-deleted-site read-path fix, core `list_trash`/`purge_trash`,
+> Trash IPC commands, Trash UI screen with a `window.confirm()` guard + inline error handling added
+> to the plan before implementation, plus one controller-applied fix for a stale-search-after-Trash
+> bug the Task 22 review found). **No separate Slice 3 end-of-slice cross-task review was
+> dispatched** — the Task 22 code-quality reviewer explicitly reviewed all 4 Slice-3 commits together
+> (given the slice's small, linear scope) and recommended against a dedicated pass; this session
+> accepted that judgment rather than dispatching a fifth redundant reviewer. **Slice 4 (Tasks 23-27:
+> auto-lock timeout config, Settings screen, secret zeroization at the DTO boundary, accessible
+> Tooltip) has not started — Task 23 is next, followed by Task 28's final cross-module review.**
 
 **On pausing going forward:** a later user instruction this session ("continue... no more pausing
 unless i explicitly ask... don't ask confirmation for any command or edit, but only during this
@@ -31,10 +37,11 @@ applies rather than assuming — this project has now had "keep going," "pause e
   full auth-lifecycle integration test), **Task 18.5** (Slice 2 self-review fix — stale search
   results + unhandled api errors), and **Task 18.6** (Slice 2 self-review fix — manual Lock button
   didn't emit the event `App.tsx` needs to navigate back to Login). **Slice 0 (Tasks 1-9 + 9.5),
-  Slice 1 (Tasks 10-13 + 13.5), and Slice 2 (Tasks 14-18 + 18.5 + 18.6) are all fully done, reviewed,
-  and closed** — including the end-of-slice cross-task spec-compliance + code-quality review pair for
-  each. Slice 3 (Trash UI + read-path fix, starting at Task 19) has not started — that's the next
-  work.
+  Slice 1 (Tasks 10-13 + 13.5), Slice 2 (Tasks 14-18 + 18.5 + 18.6), and Slice 3 (Tasks 19-22) are
+  all fully done, reviewed, and closed.** Slice 4 (Tasks 23-27: `Session::set_timeout`,
+  config/settings IPC + UI, `CredentialDto.secret` zeroization, accessible `Tooltip`) has not
+  started — Task 23 is next, then Task 28's final cross-module verification checklist closes out
+  Phase B entirely.
 - **Execution mode:** Subagent-Driven Development — fresh implementer subagent per task, then a
   spec-compliance reviewer, then a code-quality reviewer, before moving to the next task. At slice
   boundaries: a cross-task spec-compliance reviewer + a cross-task code-quality reviewer against the
@@ -167,14 +174,22 @@ found one Important issue (Task 18.6, below) and two Minor ones (tracked in Defe
 
 ### What to do next
 
-**Slice 2 is closed. Next: Task 19**, first task of **Slice 3 — Trash UI + read-path fix**
-(`list_credentials_for_site` soft-deleted-site fix, see plan doc), continuing the same
-subagent-per-task process: implementer → spec-compliance reviewer → code-quality reviewer,
-fix-plan-doc-first convention for any real reviewer finding, re-verification after every fix. Brief
-every new implementer on the active ponytail (YAGNI) discipline. At the Task 16-adjacent
-lock-ordering/Mutex-poisoning decision (still open, now covering FOUR documented instances — see
-Deferred/tracked items), remember it needs to also reconcile the two different lock-nesting
-conventions now coexisting in `commands.rs`, not just merge locks.
+**Slices 2 and 3 are both closed. Next: Task 23**, first task of **Slice 4** (search plan doc for
+`## Task 23:`) — adding `Session::set_timeout` to `pwmgr-core` (TDD), followed by Task 24 (config IPC
+commands), Task 25 (Settings screen UI), Task 26 (zeroize `CredentialDto.secret` at the IPC
+boundary — closes one of the longest-standing deferred items, see below), Task 27 (accessible
+`Tooltip` component). Continue the same subagent-per-task process: implementer → spec-compliance
+reviewer → code-quality reviewer, fix-plan-doc-first convention for any real reviewer finding,
+re-verification after every fix. Brief every new implementer on the active ponytail (YAGNI)
+discipline. **After Task 27 (end of Slice 4 / end of the whole plan), dispatch Task 28's full-plan
+final verification checklist** per the plan doc's own instruction — this is the last gate before
+Phase B is considered complete and `superpowers:finishing-a-development-branch` gets invoked to ask
+the user how to merge/finish (no GitHub remote exists, so the Phase A precedent — fast-forward merge
+to `main`, remove the worktree, delete the branch — is what to offer). At the Task 16-adjacent
+lock-ordering/Mutex-poisoning decision (still open — see Deferred/tracked items), remember it needs
+to also reconcile the two different lock-nesting conventions coexisting in `commands.rs`, not just
+merge locks; Task 23's `Session::set_timeout` may be a natural place to finally make that call since
+it touches `Session` directly.
 
 ## Toolchain (already installed, but NOT on PATH for fresh shells)
 
@@ -487,6 +502,30 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
   `submitting`, but `Vault.tsx`'s Lock button and `SiteDetail.tsx`'s Delete button don't — a fast
   double-click on Delete fires `soft_delete_credential` twice, the second returning a confusing (but
   harmless) "That item no longer exists" error right after a delete that actually succeeded.
+- **New this session (Task 20/21 code-quality reviews) — `list_trash` doesn't filter out credentials
+  belonging to a soft-deleted site**, unlike `search()`/`list_credentials_for_site` (post-Task-19).
+  Confirmed currently unreachable: `soft_delete_site` (`core/src/vault.rs`) has zero callers outside
+  its own test module — no IPC command or UI wires it up, and the plan explicitly descopes
+  site-level trash for M1. If a future task ever wires up site-level soft-delete, revisit: a
+  credential could become invisible everywhere (not in its site's list, not distinguishable in Trash
+  from a normally-trashed one) after its parent site is soft-deleted, since `restore_credential`
+  only clears the credential's own `deleted_at`, not the site's.
+- **New this session (Task 20 core-layer design, confirmed correct) — `purge_trash` is unconditional
+  and unscoped by design** (`DELETE FROM credentials WHERE deleted_at IS NOT NULL`, no confirmation,
+  no site scoping). This is the right layering — confirmation UX belongs at the UI, not the core
+  crate or the IPC command — and Task 22's `Trash.tsx` correctly adds a `window.confirm()` guard
+  before calling it (added to the plan doc proactively, before implementation, once the Task 20/21
+  reviews flagged the plan's original draft was missing it).
+- **Task 22 code-quality review found and fixed (commit `c25bc90`)** — `Trash.tsx`'s `onBack` was
+  nav-only (`setShowTrash(false)`), unlike `SiteDetail`'s `onBack` (fixed in Task 18.5) — restoring a
+  credential from Trash then clicking Back left `Vault.tsx`'s search results stale until another
+  keystroke. Same fix pattern applied: `onBack` now also calls `runSearch(query)`.
+- **Slice 3 closed without a separate end-of-slice cross-task review** — the Task 22 code-quality
+  reviewer explicitly reviewed all four Slice-3 commits (`9a0f044`, `2cca3d6`, `f13a13f`, `97d8446`)
+  together given the slice's small, linear scope (4 tasks, each directly building on the last, no
+  complex cross-task interactions), and recommended against a dedicated fifth review pass. This
+  session accepted that judgment call rather than dispatching a redundant reviewer — noting the
+  deviation from the Slice 0/1/2 precedent explicitly here so it's not mistaken for an oversight.
 - **New this session (Task 17+18) — four Minor items, non-blocking:** `CredentialEditor`'s secret
   input is `type="text"` (unmasked) — deliberately matches the plan's own snippet, not a deviation;
   assessed as reasonable password-manager UX (you're actively composing/reviewing the value, unlike
@@ -509,7 +548,8 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
 ## Task tracker state
 
 This session's `TaskCreate` list covers Tasks 8, 9, 9.5, 10, 11, 12, 13, 13.5, 14, 15, 16, the
-combined 17+18 pair, 18.5, 18.6, the Slice 0/Slice 1 cross-task reviews, and the Slice 2 cross-task
-review pair — all `completed`. These tracker entries are session-local and won't carry to a new
-session — recreate equivalents when resuming, using the plan doc and this file as the source of
-truth. First new task to create on resume: Task 19 (Slice 3 start).
+combined 17+18 pair, 18.5, 18.6, the Slice 0/1/2 cross-task reviews, and Tasks 19, 20, 21, 22 (each
+with its own implement/spec-review/quality-review sub-tasks) — all `completed`. These tracker
+entries are session-local and won't carry to a new session — recreate equivalents when resuming,
+using the plan doc and this file as the source of truth. First new task to create on resume: Task 23
+(Slice 4 start).
