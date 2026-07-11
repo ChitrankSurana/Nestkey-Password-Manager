@@ -58,6 +58,13 @@ pub fn run() {
             commands::login,
             commands::lock,
             commands::touch,
+            commands::list_sites,
+            commands::add_site,
+            commands::add_credential,
+            commands::update_credential,
+            commands::list_credentials_for_site,
+            commands::search,
+            commands::soft_delete_credential,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

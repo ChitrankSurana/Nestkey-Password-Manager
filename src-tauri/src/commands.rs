@@ -1,4 +1,4 @@
-use crate::dto::AuthSuccess;
+use crate::dto::{AuthSuccess, CredentialDto, SearchResultDto, SiteDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -87,6 +87,132 @@ pub fn lock(state: State<AppState>) {
 #[tauri::command]
 pub fn touch(state: State<AppState>) {
     do_touch(&state);
+}
+
+pub fn do_list_sites(state: &AppState) -> Result<Vec<SiteDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let sites = pwmgr_core::vault::list_sites(conn)?;
+    Ok(sites.into_iter().map(SiteDto::from).collect())
+}
+
+pub fn do_add_site(
+    state: &AppState,
+    name: &str,
+    url: Option<&str>,
+    notes: Option<&str>,
+) -> Result<i64, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(pwmgr_core::vault::add_site(conn, name, url, notes)?)
+}
+
+pub fn do_add_credential(
+    state: &AppState,
+    site_id: i64,
+    username: Option<&str>,
+    secret: &str,
+    remarks: Option<&str>,
+) -> Result<i64, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    Ok(pwmgr_core::vault::add_credential(conn, key, site_id, username, secret, remarks)?)
+}
+
+pub fn do_update_credential(
+    state: &AppState,
+    credential_id: i64,
+    username: Option<&str>,
+    secret: &str,
+    remarks: Option<&str>,
+) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    Ok(pwmgr_core::vault::update_credential(conn, key, credential_id, username, secret, remarks)?)
+}
+
+pub fn do_list_credentials_for_site(
+    state: &AppState,
+    site_id: i64,
+) -> Result<Vec<CredentialDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let creds = pwmgr_core::vault::list_credentials_for_site(conn, key, site_id)?;
+    Ok(creds.into_iter().map(CredentialDto::from).collect())
+}
+
+pub fn do_search(state: &AppState, query: &str) -> Result<Vec<SearchResultDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let results = pwmgr_core::vault::search(conn, query)?;
+    Ok(results.into_iter().map(SearchResultDto::from).collect())
+}
+
+pub fn do_soft_delete_credential(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(pwmgr_core::vault::soft_delete_credential(conn, credential_id)?)
+}
+
+#[tauri::command]
+pub fn list_sites(state: State<AppState>) -> Result<Vec<SiteDto>, CommandError> {
+    do_list_sites(&state)
+}
+
+#[tauri::command]
+pub fn add_site(
+    state: State<AppState>,
+    name: String,
+    url: Option<String>,
+    notes: Option<String>,
+) -> Result<i64, CommandError> {
+    do_add_site(&state, &name, url.as_deref(), notes.as_deref())
+}
+
+#[tauri::command]
+pub fn add_credential(
+    state: State<AppState>,
+    site_id: i64,
+    username: Option<String>,
+    secret: String,
+    remarks: Option<String>,
+) -> Result<i64, CommandError> {
+    do_add_credential(&state, site_id, username.as_deref(), &secret, remarks.as_deref())
+}
+
+#[tauri::command]
+pub fn update_credential(
+    state: State<AppState>,
+    credential_id: i64,
+    username: Option<String>,
+    secret: String,
+    remarks: Option<String>,
+) -> Result<(), CommandError> {
+    do_update_credential(&state, credential_id, username.as_deref(), &secret, remarks.as_deref())
+}
+
+#[tauri::command]
+pub fn list_credentials_for_site(
+    state: State<AppState>,
+    site_id: i64,
+) -> Result<Vec<CredentialDto>, CommandError> {
+    do_list_credentials_for_site(&state, site_id)
+}
+
+#[tauri::command]
+pub fn search(state: State<AppState>, query: String) -> Result<Vec<SearchResultDto>, CommandError> {
+    do_search(&state, &query)
+}
+
+#[tauri::command]
+pub fn soft_delete_credential(state: State<AppState>, credential_id: i64) -> Result<(), CommandError> {
+    do_soft_delete_credential(&state, credential_id)
 }
 
 #[cfg(test)]
@@ -245,5 +371,63 @@ mod tests {
             assert!(state.vault.lock().unwrap().is_some());
             assert!(!state.session.lock().unwrap().is_locked());
         }
+    }
+
+    #[test]
+    fn vault_commands_require_an_unlocked_session() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        // No login/register has happened - vault is None, session is locked.
+        // CommandError's fields are private outside the `error` module by design (see error.rs) -
+        // its derived Debug output is the only cross-module way to observe the code/message
+        // without adding a new accessor purely for test visibility (same idiom as the
+        // `login_with_wrong_password_...` test above).
+
+        assert!(format!("{:?}", do_list_sites(&state).unwrap_err()).contains("locked"));
+        assert!(
+            format!("{:?}", do_add_site(&state, "x", None, None).unwrap_err()).contains("locked")
+        );
+        assert!(format!("{:?}", do_search(&state, "x").unwrap_err()).contains("locked"));
+    }
+
+    #[test]
+    fn add_site_then_list_sites_roundtrips_through_dtos() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let site_id = do_add_site(&state, "example.com", Some("https://example.com"), None).unwrap();
+        let sites = do_list_sites(&state).unwrap();
+
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].id, site_id);
+        assert_eq!(sites[0].name, "example.com");
+    }
+
+    #[test]
+    fn add_credential_update_then_list_reflects_the_update() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+
+        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None).unwrap();
+        do_update_credential(&state, cred_id, Some("bob2"), "new-secret", Some("updated")).unwrap();
+        let creds = do_list_credentials_for_site(&state, site_id).unwrap();
+
+        assert_eq!(creds.len(), 1);
+        assert_eq!(creds[0].username.as_deref(), Some("bob2"));
+        assert_eq!(creds[0].secret, "new-secret");
+    }
+
+    #[test]
+    fn search_and_soft_delete_credential_work_through_dtos() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "GitHub", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None).unwrap();
+
+        assert_eq!(do_search(&state, "github").unwrap().len(), 1);
+
+        do_soft_delete_credential(&state, cred_id).unwrap();
+
+        assert!(do_search(&state, "github").unwrap().is_empty());
     }
 }
