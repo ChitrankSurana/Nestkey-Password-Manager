@@ -1,5 +1,6 @@
 use pwmgr_core::vault::{Credential, SearchResult, Site, TrashedCredential};
 use serde::Serialize;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct AuthSuccess {
@@ -44,13 +45,21 @@ impl From<SearchResult> for SearchResultDto {
 // No #[derive(Debug)] here on purpose - mirrors pwmgr_core::vault::Credential's manual redacting
 // Debug impl (core/src/vault.rs:139) so this DTO can never leak the plaintext secret through a
 // stray `{:?}` or `dbg!()` on the Tauri side either.
+//
+// `secret` is wrapped in `zeroize::Zeroizing<String>` since this DTO is the last consumer before
+// the plaintext crosses the IPC boundary to the UI - the last real chance to zeroize on Drop.
+// Residual gap: `pwmgr_core::vault::Credential.secret` (upstream of this DTO) is still a plain
+// `String`, so the plaintext exists un-zeroized for the brief window between
+// `list_credentials_for_site` returning it and this `From` conversion wrapping it. Closing that
+// fully would mean changing `Credential`'s field type in `pwmgr-core` itself, which is out of
+// scope for this DTO-only task; tracked as a further-tightening opportunity (see Task 28).
 #[derive(Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CredentialDto {
     pub id: i64,
     pub site_id: i64,
     pub username: Option<String>,
-    pub secret: String,
+    pub secret: Zeroizing<String>,
     pub remarks: Option<String>,
 }
 
@@ -74,7 +83,7 @@ impl From<Credential> for CredentialDto {
             id: c.id,
             site_id: c.site_id,
             username: c.username,
-            secret: c.secret,
+            secret: Zeroizing::new(c.secret),
             remarks: c.remarks,
         }
     }
@@ -145,5 +154,22 @@ mod tests {
         let debug_output = format!("{:?}", dto);
         assert!(!debug_output.contains("extremely-unique-secret-xyz"));
         assert!(debug_output.contains("<redacted>"));
+    }
+
+    #[test]
+    fn credential_dto_secret_is_wrapped_in_zeroizing() {
+        let cred = Credential {
+            id: 1,
+            site_id: 1,
+            username: Some("alice".into()),
+            secret: "s3cret".into(),
+            remarks: None,
+        };
+        let dto = CredentialDto::from(cred);
+        // Zeroizing<String> derefs to &str, so equality/usage is transparent to callers - this test
+        // just documents the type-level guarantee (zeroizes on Drop) rather than trying to observe
+        // memory after drop, which isn't practical in safe Rust.
+        let secret_str: &str = &dto.secret;
+        assert_eq!(secret_str, "s3cret");
     }
 }

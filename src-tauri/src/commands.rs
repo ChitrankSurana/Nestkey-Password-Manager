@@ -492,7 +492,7 @@ mod tests {
 
         assert_eq!(creds.len(), 1);
         assert_eq!(creds[0].username.as_deref(), Some("bob2"));
-        assert_eq!(creds[0].secret, "new-secret");
+        assert_eq!(creds[0].secret.as_str(), "new-secret");
     }
 
     #[test]
