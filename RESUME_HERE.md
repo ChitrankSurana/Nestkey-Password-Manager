@@ -216,6 +216,18 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
   the Task 16 lock-ordering decision — either merge `session`+`vault` under one lock (same pattern
   Task 9.5 used to merge `vault`/`vault_path`), or have consumers gate on `vault.lock().unwrap().is_some()`
   directly instead of using `session.is_locked()` as a proxy for "vault is open."
+  **Second, worse instance found in Task 11's code-quality review:** `autolock::tick()`
+  (`src-tauri/src/autolock.rs`) computes `just_locked` under the `session` lock, drops it, then calls
+  `state.clear_vault()` as a separate later acquisition. Unlike the `do_login`/`do_lock` instance
+  (a single user-triggered action), this is a genuine TOCTOU: between the drop and `clear_vault()`, a
+  concurrent `do_login` on another thread could re-authenticate and call `state.set_vault(...)` with a
+  fresh connection, which `tick()` then wipes out — leaving the session validly unlocked with a fresh
+  key but `vault` incorrectly `None`. No plaintext leak (only the old, already-expired key is
+  involved), but a real, narrow-window (`OS`-thread-preemption-only, no `.await` in the gap)
+  availability bug: user re-authenticates successfully, is silently logged out again with no visible
+  cause. Now recurs automatically every 2s from a background thread against any concurrent command,
+  not just between two explicit user-triggered IPC calls — **Task 16's lock-merge decision must
+  explicitly cover `autolock::tick()`, not just the three `commands.rs` call sites.**
 - **Mutex poisoning strategy is still an open, deliberately-deferred decision for Task 16** (not a
   defect): every lock access in this codebase uses `.lock().unwrap()`, meaning a panic while holding
   any lock poisons it permanently for the rest of the process's life. Decide once, explicitly, before
@@ -223,6 +235,15 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
   lock: accept panic-on-poison (restart is the recovery path) or defuse via
   `.lock().unwrap_or_else(|e| e.into_inner())` at the real call sites. Record the decision in
   THREAT_MODEL or the Task 16 plan section, don't let it default silently.
+  **Sharper found in Task 11's code-quality review:** the auto-lock watcher (`lib.rs`'s `.setup()`
+  hook) spawns a detached `tauri::async_runtime::spawn` loop with no stored `JoinHandle`, no
+  supervisor, and no panic guard. For an IPC command a poisoned-lock panic is visible (that one
+  command's invocation fails); for this unattended background loop, a panic on any tick silently and
+  permanently kills the task with no crash dialog, no log, no restart — the idle-auto-lock *security
+  control* fails open for the rest of the process's life with zero observability. No exploitable
+  panic path exists in the current `tick()` body, but resolve this as part of the same Task 16
+  Mutex-poisoning decision (e.g. wrap the tick body in `std::panic::catch_unwind` and log+restart on
+  failure, or ensure whatever poisoning strategy is chosen can't silently end this loop).
 - **New this session — Task 9's silent-startup-panic finding, not yet fixed:** every fallible
   startup call in `lib.rs::run()` (`home_dir`, `ensure_app_dirs`, `open_registry`, `.run()`) uses
   `.expect(...)`, and since `windows_subsystem = "windows"` suppresses the console in release builds,
