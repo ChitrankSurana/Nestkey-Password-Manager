@@ -1,4 +1,4 @@
-use crate::dto::{AuthSuccess, CredentialDto, SearchResultDto, SiteDto};
+use crate::dto::{AuthSuccess, CredentialDto, SearchResultDto, SiteDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -163,6 +163,25 @@ pub fn do_soft_delete_credential(state: &AppState, credential_id: i64) -> Result
     Ok(pwmgr_core::vault::soft_delete_credential(conn, credential_id)?)
 }
 
+pub fn do_list_trash(state: &AppState) -> Result<Vec<TrashedCredentialDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let trash = pwmgr_core::vault::list_trash(conn)?;
+    Ok(trash.into_iter().map(TrashedCredentialDto::from).collect())
+}
+
+pub fn do_restore_credential(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(pwmgr_core::vault::restore_credential(conn, credential_id)?)
+}
+
+pub fn do_purge_trash(state: &AppState) -> Result<usize, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(pwmgr_core::vault::purge_trash(conn)?)
+}
+
 #[tauri::command]
 pub fn list_sites(state: State<AppState>) -> Result<Vec<SiteDto>, CommandError> {
     do_list_sites(&state)
@@ -216,6 +235,21 @@ pub fn search(state: State<AppState>, query: String) -> Result<Vec<SearchResultD
 #[tauri::command]
 pub fn soft_delete_credential(state: State<AppState>, credential_id: i64) -> Result<(), CommandError> {
     do_soft_delete_credential(&state, credential_id)
+}
+
+#[tauri::command]
+pub fn list_trash(state: State<AppState>) -> Result<Vec<TrashedCredentialDto>, CommandError> {
+    do_list_trash(&state)
+}
+
+#[tauri::command]
+pub fn restore_credential(state: State<AppState>, credential_id: i64) -> Result<(), CommandError> {
+    do_restore_credential(&state, credential_id)
+}
+
+#[tauri::command]
+pub fn purge_trash(state: State<AppState>) -> Result<usize, CommandError> {
+    do_purge_trash(&state)
 }
 
 #[cfg(test)]
@@ -432,5 +466,27 @@ mod tests {
         do_soft_delete_credential(&state, cred_id).unwrap();
 
         assert!(do_search(&state, "github").unwrap().is_empty());
+    }
+
+    #[test]
+    fn trash_lifecycle_list_restore_purge() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None).unwrap();
+
+        do_soft_delete_credential(&state, cred_id).unwrap();
+        let trash = do_list_trash(&state).unwrap();
+        assert_eq!(trash.len(), 1);
+        assert_eq!(trash[0].credential_id, cred_id);
+
+        do_restore_credential(&state, cred_id).unwrap();
+        assert!(do_list_trash(&state).unwrap().is_empty());
+        assert_eq!(do_list_credentials_for_site(&state, site_id).unwrap().len(), 1);
+
+        do_soft_delete_credential(&state, cred_id).unwrap();
+        let purged = do_purge_trash(&state).unwrap();
+        assert_eq!(purged, 1);
+        assert!(do_list_trash(&state).unwrap().is_empty());
     }
 }

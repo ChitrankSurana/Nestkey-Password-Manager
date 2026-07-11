@@ -1,4 +1,4 @@
-use pwmgr_core::vault::{Credential, SearchResult, Site};
+use pwmgr_core::vault::{Credential, SearchResult, Site, TrashedCredential};
 use serde::Serialize;
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -76,6 +76,29 @@ impl From<Credential> for CredentialDto {
             username: c.username,
             secret: c.secret,
             remarks: c.remarks,
+        }
+    }
+}
+
+// No secret field here at all (matches `list_trash`'s core signature - nothing to redact).
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashedCredentialDto {
+    pub credential_id: i64,
+    pub site_id: i64,
+    pub site_name: String,
+    pub username: Option<String>,
+    pub deleted_at: String,
+}
+
+impl From<TrashedCredential> for TrashedCredentialDto {
+    fn from(t: TrashedCredential) -> Self {
+        TrashedCredentialDto {
+            credential_id: t.credential_id,
+            site_id: t.site_id,
+            site_name: t.site_name,
+            username: t.username,
+            deleted_at: t.deleted_at,
         }
     }
 }
