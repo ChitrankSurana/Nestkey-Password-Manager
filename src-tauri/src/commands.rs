@@ -93,9 +93,28 @@ pub fn touch(state: State<AppState>) {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use pwmgr_core::session::Session;
+    use pwmgr_core::session::{Clock, Session};
+    use std::cell::RefCell;
     use std::sync::Mutex;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
+
+    // `autolock.rs` has its own `FakeClock` in its private `#[cfg(test)] mod tests`, which is not
+    // reachable from here (the module itself isn't `pub`). Duplicating this ~10-line helper is
+    // cheaper and clearer than inventing a shared test-support module for two call sites.
+    struct FakeClock(RefCell<Instant>);
+    impl FakeClock {
+        fn new() -> Self {
+            FakeClock(RefCell::new(Instant::now()))
+        }
+        fn advance(&self, d: Duration) {
+            *self.0.borrow_mut() += d;
+        }
+    }
+    impl Clock for FakeClock {
+        fn now(&self) -> Instant {
+            *self.0.borrow()
+        }
+    }
 
     #[test]
     fn unlock_status_inner_reflects_locked_session() {
@@ -185,5 +204,46 @@ mod tests {
         do_touch(&state);
 
         assert!(!state.session.lock().unwrap().is_locked());
+    }
+
+    /// Cross-task self-review finding (Task 13.5): every other test exercises only one hop of the
+    /// auth lifecycle in isolation (`commands.rs` tests never call `autolock::tick`; `autolock.rs`
+    /// tests never call `do_login`/`do_register`). This test drives the full
+    /// register -> idle timeout -> auto-lock -> relogin cycle on one shared `AppState`, proving
+    /// the registry connection, vault connection, and session all survive the cycle without
+    /// corruption or a stuck state - then repeats the lock/relogin half a second time to catch
+    /// anything that only breaks on reuse (e.g. a vault file handle or SQLite lock left over from
+    /// the first reopen), not on first use.
+    #[test]
+    fn full_register_autolock_relogin_lifecycle_survives_on_shared_state() {
+        let (state, paths, _dir) = test_state_and_paths();
+        let clock = FakeClock::new();
+        let timeout = Duration::from_secs(300);
+
+        // 1-2: register, assert unlocked and vault open.
+        let reg = do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        assert_eq!(reg.username, "alice");
+        assert!(state.vault.lock().unwrap().is_some());
+        assert!(!state.session.lock().unwrap().is_locked());
+
+        for _ in 0..2 {
+            // 3-4: advance the fake clock past timeout, tick, assert just-locked and vault closed.
+            // The margin over `timeout` must comfortably exceed the real wall-clock time
+            // `do_register`/`do_login` spend on Argon2id (deliberately ~100ms-1s by design, see
+            // `core/src/auth.rs`'s timing-oracle-defense comment) between capturing
+            // `last_activity` (via the real `SystemClock`) and this `clock.advance` call (on the
+            // separate `FakeClock`) - a 1s margin was flaky under that KDF cost; 30s is not.
+            clock.advance(timeout + Duration::from_secs(30));
+            assert!(crate::autolock::tick(&state, &clock));
+            assert!(state.vault.lock().unwrap().is_none());
+            assert!(state.session.lock().unwrap().is_locked());
+
+            // 5-6: relogin on the SAME AppState, assert success and vault/session reopened.
+            let login =
+                do_login(&state, &paths, "alice", "correct horse battery staple").unwrap();
+            assert_eq!(login.username, "alice");
+            assert!(state.vault.lock().unwrap().is_some());
+            assert!(!state.session.lock().unwrap().is_locked());
+        }
     }
 }
