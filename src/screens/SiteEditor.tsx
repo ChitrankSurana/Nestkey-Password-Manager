@@ -1,18 +1,22 @@
 import { useState, FormEvent } from "react";
-import { api } from "../lib/api";
+import { api, isCommandError } from "../lib/api";
 
 export function SiteEditor({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+    setError(null);
     try {
       await api.addSite(name, url || null, notes || null);
       onSaved();
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -50,6 +54,7 @@ export function SiteEditor({ onClose, onSaved }: { onClose: () => void; onSaved:
             title="Any notes about this site"
           />
         </label>
+        {error && <p className="text-sm text-red-400">{error}</p>}
         <div className="flex justify-end space-x-2">
           <button type="button" onClick={onClose} className="px-3 py-1" title="Cancel">
             Cancel

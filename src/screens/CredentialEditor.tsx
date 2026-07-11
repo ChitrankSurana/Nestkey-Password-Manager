@@ -1,5 +1,5 @@
 import { useState, FormEvent } from "react";
-import { api, CredentialDto } from "../lib/api";
+import { api, isCommandError, CredentialDto } from "../lib/api";
 
 export function CredentialEditor({
   siteId,
@@ -16,10 +16,12 @@ export function CredentialEditor({
   const [secret, setSecret] = useState(existing?.secret ?? "");
   const [remarks, setRemarks] = useState(existing?.remarks ?? "");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+    setError(null);
     try {
       if (existing) {
         await api.updateCredential(existing.id, username || null, secret, remarks || null);
@@ -27,6 +29,8 @@ export function CredentialEditor({
         await api.addCredential(siteId, username || null, secret, remarks || null);
       }
       onSaved();
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -64,6 +68,7 @@ export function CredentialEditor({
             title="Any notes about this login"
           />
         </label>
+        {error && <p className="text-sm text-red-400">{error}</p>}
         <div className="flex justify-end space-x-2">
           <button type="button" onClick={onClose} className="px-3 py-1" title="Cancel">
             Cancel

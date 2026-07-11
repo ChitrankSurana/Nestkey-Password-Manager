@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, SiteDto, SearchResultDto } from "../lib/api";
+import { api, isCommandError, SiteDto, SearchResultDto } from "../lib/api";
 import { SiteEditor } from "./SiteEditor";
 import { SiteDetail } from "./SiteDetail";
 
@@ -9,9 +9,28 @@ export function Vault({ username }: { username: string }) {
   const [results, setResults] = useState<SearchResultDto[] | null>(null);
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [addingSite, setAddingSite] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function refreshSites() {
-    setSites(await api.listSites());
+    try {
+      setSites(await api.listSites());
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    }
+  }
+
+  async function runSearch(q: string) {
+    if (q.trim() === "") {
+      setResults(null);
+      return;
+    }
+    try {
+      // Real-time search (TRD NFR-3: results update within one UI frame of keystroke) - no debounce,
+      // this is a local IPC call against a SQLite index, not a network request.
+      setResults(await api.search(q));
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    }
   }
 
   useEffect(() => {
@@ -19,20 +38,18 @@ export function Vault({ username }: { username: string }) {
   }, []);
 
   useEffect(() => {
-    if (query.trim() === "") {
-      setResults(null);
-      return;
-    }
-    // Real-time search (TRD NFR-3: results update within one UI frame of keystroke) - no debounce,
-    // this is a local IPC call against a SQLite index, not a network request.
-    api.search(query).then(setResults);
+    runSearch(query);
   }, [query]);
 
   if (selectedSiteId !== null) {
     return (
       <SiteDetail
         site={sites.find((s) => s.id === selectedSiteId)!}
-        onBack={() => setSelectedSiteId(null)}
+        onBack={() => {
+          setSelectedSiteId(null);
+          refreshSites();
+          runSearch(query);
+        }}
       />
     );
   }
@@ -50,7 +67,13 @@ export function Vault({ username }: { username: string }) {
             Add site
           </button>
           <button
-            onClick={() => api.lock()}
+            onClick={async () => {
+              try {
+                await api.lock();
+              } catch (err) {
+                setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+              }
+            }}
             className="rounded bg-slate-700 px-3 py-1"
             title="Lock the vault now"
           >
@@ -58,6 +81,8 @@ export function Vault({ username }: { username: string }) {
           </button>
         </div>
       </div>
+
+      {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
       <input
         className="w-full rounded border px-2 py-1 mb-4 dark:bg-slate-800 dark:border-slate-600"

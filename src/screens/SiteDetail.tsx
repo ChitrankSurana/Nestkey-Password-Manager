@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
-import { api, CredentialDto, SiteDto } from "../lib/api";
+import { api, isCommandError, CredentialDto, SiteDto } from "../lib/api";
 import { CredentialEditor } from "./CredentialEditor";
 
 export function SiteDetail({ site, onBack }: { site: SiteDto; onBack: () => void }) {
   const [credentials, setCredentials] = useState<CredentialDto[]>([]);
   const [editing, setEditing] = useState<CredentialDto | null | "new">(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
-    setCredentials(await api.listCredentialsForSite(site.id));
+    try {
+      setCredentials(await api.listCredentialsForSite(site.id));
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    }
   }
 
   useEffect(() => {
@@ -30,6 +35,8 @@ export function SiteDetail({ site, onBack }: { site: SiteDto; onBack: () => void
         </button>
       </div>
 
+      {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+
       <ul className="space-y-2">
         {credentials.map((c) => (
           <li key={c.id} className="rounded border px-2 py-1 dark:border-slate-700 flex justify-between">
@@ -40,8 +47,12 @@ export function SiteDetail({ site, onBack }: { site: SiteDto; onBack: () => void
               </button>
               <button
                 onClick={async () => {
-                  await api.softDeleteCredential(c.id);
-                  refresh();
+                  try {
+                    await api.softDeleteCredential(c.id);
+                    refresh();
+                  } catch (err) {
+                    setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+                  }
                 }}
                 className="underline text-sm"
                 title="Move this credential to Trash"
