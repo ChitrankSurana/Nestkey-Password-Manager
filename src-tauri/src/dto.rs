@@ -54,6 +54,8 @@ pub struct CredentialDto {
     pub remarks: Option<String>,
 }
 
+// If you add a field to CredentialDto, add it here too - a manual Debug impl gets no compiler
+// warning for a field the derive macro would otherwise cover automatically.
 impl std::fmt::Debug for CredentialDto {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CredentialDto")
