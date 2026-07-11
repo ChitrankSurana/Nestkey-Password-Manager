@@ -120,6 +120,8 @@ impl From<TrashedCredential> for TrashedCredentialDto {
     }
 }
 
+// #[derive(Debug)] is safe here - neither field is secret (unlike CredentialDto above, which
+// redacts manually).
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigDto {

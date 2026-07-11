@@ -370,6 +370,14 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
   panic path exists in the current `tick()` body, but resolve this as part of the same Task 16
   Mutex-poisoning decision (e.g. wrap the tick body in `std::panic::catch_unwind` and log+restart on
   failure, or ensure whatever poisoning strategy is chosen can't silently end this loop).
+  **Widened in Slice 4's cross-task code-quality review (Task 23-27.5):** `do_update_auto_lock_minutes`
+  (`src-tauri/src/commands.rs`) is the first function to nest `config` and `session` together (holds
+  `state.config`'s guard across the disk save AND the nested `state.session.lock().unwrap()` call for
+  `set_timeout`). No deadlock risk (only `config → session` order exists, never reversed), but it does
+  add a new poisoning-cascade path: if `session`'s mutex is ever poisoned elsewhere, this function's
+  `.unwrap()` panics while still holding `config`'s guard, poisoning `config` too. The Task 16 decision
+  needs to cover this `config`+`session` pair explicitly, not just the already-tracked `vault`/`session`
+  conventions above.
 - **New this session — Task 9's silent-startup-panic finding, not yet fixed:** every fallible
   startup call in `lib.rs::run()` (`home_dir`, `ensure_app_dirs`, `open_registry`, `.run()`) uses
   `.expect(...)`, and since `windows_subsystem = "windows"` suppresses the console in release builds,
