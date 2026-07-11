@@ -249,6 +249,44 @@ pub fn restore_credential(conn: &Connection, credential_id: i64) -> Result<(), V
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TrashedCredential {
+    pub credential_id: i64,
+    pub site_id: i64,
+    pub site_name: String,
+    pub username: Option<String>,
+    pub deleted_at: String,
+}
+
+pub fn list_trash(conn: &Connection) -> Result<Vec<TrashedCredential>, VaultError> {
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.site_id, s.name, c.username, c.deleted_at
+         FROM credentials c
+         JOIN sites s ON s.id = c.site_id
+         WHERE c.deleted_at IS NOT NULL
+         ORDER BY c.deleted_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(TrashedCredential {
+            credential_id: row.get(0)?,
+            site_id: row.get(1)?,
+            site_name: row.get(2)?,
+            username: row.get(3)?,
+            deleted_at: row.get(4)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+pub fn purge_trash(conn: &Connection) -> Result<usize, VaultError> {
+    let count = conn.execute("DELETE FROM credentials WHERE deleted_at IS NOT NULL", [])?;
+    Ok(count)
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct SearchResult {
     pub site_id: i64,
     pub site_name: String,
@@ -471,6 +509,45 @@ mod tests {
 
         restore_credential(&conn, cred_id).unwrap();
         assert_eq!(list_credentials_for_site(&conn, &key, site_id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn list_trash_returns_soft_deleted_credentials_with_site_name() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[24u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret", None).unwrap();
+
+        assert!(list_trash(&conn).unwrap().is_empty());
+
+        soft_delete_credential(&conn, cred_id).unwrap();
+        let trash = list_trash(&conn).unwrap();
+
+        assert_eq!(trash.len(), 1);
+        assert_eq!(trash[0].credential_id, cred_id);
+        assert_eq!(trash[0].site_name, "example.com");
+    }
+
+    #[test]
+    fn purge_trash_permanently_removes_soft_deleted_credentials_only() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[25u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let kept_id = add_credential(&conn, &key, site_id, Some("alice"), "keep-me", None).unwrap();
+        let trashed_id = add_credential(&conn, &key, site_id, Some("bob"), "purge-me", None).unwrap();
+        soft_delete_credential(&conn, trashed_id).unwrap();
+
+        let purged_count = purge_trash(&conn).unwrap();
+
+        assert_eq!(purged_count, 1);
+        assert!(list_trash(&conn).unwrap().is_empty());
+        assert_eq!(list_credentials_for_site(&conn, &key, site_id).unwrap().len(), 1);
+        assert_eq!(list_credentials_for_site(&conn, &key, site_id).unwrap()[0].id, kept_id);
+
+        // Purged rows must be gone, not just re-hidden - restore_credential on a purged id is a NotFound.
+        assert!(matches!(restore_credential(&conn, trashed_id), Err(VaultError::NotFound)));
     }
 
     #[test]
