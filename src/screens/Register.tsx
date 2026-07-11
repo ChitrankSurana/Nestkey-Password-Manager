@@ -56,7 +56,7 @@ export function Register({
           />
         </label>
         {error && <p className="text-red-400 text-sm">{error}</p>}
-        <Tooltip text="Create your account and vault" className="block w-full">
+        <Tooltip text="Create your account and vault" className="w-full">
           <button
             type="submit"
             disabled={submitting}
@@ -65,7 +65,7 @@ export function Register({
             Register
           </button>
         </Tooltip>
-        <Tooltip text="Already have an account? Log in" className="block w-full">
+        <Tooltip text="Already have an account? Log in" className="w-full">
           <button
             type="button"
             onClick={onSwitchToLogin}

@@ -59,7 +59,7 @@ export function Login({
           />
         </label>
         {error && <p className="text-red-400 text-sm">{error}</p>}
-        <Tooltip text="Log in to your vault" className="block w-full">
+        <Tooltip text="Log in to your vault" className="w-full">
           <button
             type="submit"
             disabled={submitting}
@@ -68,7 +68,7 @@ export function Login({
             Log in
           </button>
         </Tooltip>
-        <Tooltip text="Create a new account" className="block w-full">
+        <Tooltip text="Create a new account" className="w-full">
           <button
             type="button"
             onClick={onSwitchToRegister}
