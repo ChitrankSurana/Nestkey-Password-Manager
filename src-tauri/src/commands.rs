@@ -266,11 +266,11 @@ pub fn do_update_auto_lock_minutes(
     if !VALID_AUTO_LOCK_MINUTES.contains(&minutes) {
         return Err(crate::error::invalid_input_error("Auto-lock must be 1, 5, or 15 minutes."));
     }
-    {
-        let mut config = state.config.lock().unwrap();
-        config.auto_lock_minutes = minutes;
-        config.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
-    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.auto_lock_minutes = minutes;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
     state
         .session
         .lock()
@@ -556,5 +556,25 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         let result = do_update_auto_lock_minutes(&state, &paths, 7);
         assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_auto_lock_minutes_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+
+        // config.save() calls std::fs::write(path, ...), which fails (does not create parent dirs)
+        // when the parent directory doesn't exist - a deterministic, cross-platform way to force a
+        // save failure without touching real filesystem permissions.
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).auto_lock_minutes;
+        let result = do_update_auto_lock_minutes(&state, &bad_paths, 1);
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).auto_lock_minutes,
+            before,
+            "state.config must not change when the save fails"
+        );
     }
 }
