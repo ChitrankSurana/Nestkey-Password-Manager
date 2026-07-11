@@ -171,8 +171,11 @@ pub fn list_credentials_for_site(
     site_id: i64,
 ) -> Result<Vec<Credential>, VaultError> {
     let mut stmt = conn.prepare(
-        "SELECT id, site_id, username, secret_enc, secret_nonce, remarks
-         FROM credentials WHERE site_id = ?1 AND deleted_at IS NULL ORDER BY id",
+        "SELECT c.id, c.site_id, c.username, c.secret_enc, c.secret_nonce, c.remarks
+         FROM credentials c
+         JOIN sites s ON s.id = c.site_id
+         WHERE c.site_id = ?1 AND c.deleted_at IS NULL AND s.deleted_at IS NULL
+         ORDER BY c.id",
     )?;
     let rows = stmt.query_map(rusqlite::params![site_id], |row| {
         let id: i64 = row.get(0)?;
@@ -203,6 +206,26 @@ pub fn list_credentials_for_site(
     Ok(out)
 }
 
+pub fn update_credential(
+    conn: &Connection,
+    key: &VaultKey,
+    credential_id: i64,
+    username: Option<&str>,
+    secret: &str,
+    remarks: Option<&str>,
+) -> Result<(), VaultError> {
+    let (secret_enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
+    let updated = conn.execute(
+        "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
+         updated_at = datetime('now') WHERE id = ?5 AND deleted_at IS NULL",
+        rusqlite::params![username, secret_enc, nonce.to_vec(), remarks, credential_id],
+    )?;
+    if updated == 0 {
+        return Err(VaultError::NotFound);
+    }
+    Ok(())
+}
+
 pub fn soft_delete_credential(conn: &Connection, credential_id: i64) -> Result<(), VaultError> {
     let updated = conn.execute(
         "UPDATE credentials SET deleted_at = datetime('now') WHERE id = ?1 AND deleted_at IS NULL",
@@ -223,6 +246,44 @@ pub fn restore_credential(conn: &Connection, credential_id: i64) -> Result<(), V
         return Err(VaultError::NotFound);
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TrashedCredential {
+    pub credential_id: i64,
+    pub site_id: i64,
+    pub site_name: String,
+    pub username: Option<String>,
+    pub deleted_at: String,
+}
+
+pub fn list_trash(conn: &Connection) -> Result<Vec<TrashedCredential>, VaultError> {
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.site_id, s.name, c.username, c.deleted_at
+         FROM credentials c
+         JOIN sites s ON s.id = c.site_id
+         WHERE c.deleted_at IS NOT NULL
+         ORDER BY c.deleted_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(TrashedCredential {
+            credential_id: row.get(0)?,
+            site_id: row.get(1)?,
+            site_name: row.get(2)?,
+            username: row.get(3)?,
+            deleted_at: row.get(4)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+pub fn purge_trash(conn: &Connection) -> Result<usize, VaultError> {
+    let count = conn.execute("DELETE FROM credentials WHERE deleted_at IS NOT NULL", [])?;
+    Ok(count)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -394,6 +455,48 @@ mod tests {
     }
 
     #[test]
+    fn update_credential_changes_username_secret_and_remarks() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[20u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "old-secret", Some("old note")).unwrap();
+
+        update_credential(&conn, &key, cred_id, Some("alice2"), "new-secret", Some("new note")).unwrap();
+
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+        assert_eq!(creds.len(), 1);
+        assert_eq!(creds[0].username.as_deref(), Some("alice2"));
+        assert_eq!(creds[0].secret, "new-secret");
+        assert_eq!(creds[0].remarks.as_deref(), Some("new note"));
+    }
+
+    #[test]
+    fn update_credential_on_nonexistent_id_returns_not_found() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[21u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let result = update_credential(&conn, &key, 9999, Some("x"), "y", None);
+
+        assert!(matches!(result, Err(VaultError::NotFound)));
+    }
+
+    #[test]
+    fn update_credential_on_soft_deleted_credential_returns_not_found() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[22u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None).unwrap();
+        soft_delete_credential(&conn, cred_id).unwrap();
+
+        let result = update_credential(&conn, &key, cred_id, Some("alice2"), "new-secret", None);
+
+        assert!(matches!(result, Err(VaultError::NotFound)));
+    }
+
+    #[test]
     fn soft_delete_then_restore_credential_round_trips() {
         let dir = tempdir().unwrap();
         let key = derive_key("pw", &[7u8; 16]).unwrap();
@@ -406,6 +509,45 @@ mod tests {
 
         restore_credential(&conn, cred_id).unwrap();
         assert_eq!(list_credentials_for_site(&conn, &key, site_id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn list_trash_returns_soft_deleted_credentials_with_site_name() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[24u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret", None).unwrap();
+
+        assert!(list_trash(&conn).unwrap().is_empty());
+
+        soft_delete_credential(&conn, cred_id).unwrap();
+        let trash = list_trash(&conn).unwrap();
+
+        assert_eq!(trash.len(), 1);
+        assert_eq!(trash[0].credential_id, cred_id);
+        assert_eq!(trash[0].site_name, "example.com");
+    }
+
+    #[test]
+    fn purge_trash_permanently_removes_soft_deleted_credentials_only() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[25u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let kept_id = add_credential(&conn, &key, site_id, Some("alice"), "keep-me", None).unwrap();
+        let trashed_id = add_credential(&conn, &key, site_id, Some("bob"), "purge-me", None).unwrap();
+        soft_delete_credential(&conn, trashed_id).unwrap();
+
+        let purged_count = purge_trash(&conn).unwrap();
+
+        assert_eq!(purged_count, 1);
+        assert!(list_trash(&conn).unwrap().is_empty());
+        assert_eq!(list_credentials_for_site(&conn, &key, site_id).unwrap().len(), 1);
+        assert_eq!(list_credentials_for_site(&conn, &key, site_id).unwrap()[0].id, kept_id);
+
+        // Purged rows must be gone, not just re-hidden - restore_credential on a purged id is a NotFound.
+        assert!(matches!(restore_credential(&conn, trashed_id), Err(VaultError::NotFound)));
     }
 
     #[test]
@@ -425,6 +567,22 @@ mod tests {
 
         let creds_b = list_credentials_for_site(&conn, &key, site_b).unwrap();
         assert_eq!(creds_b.len(), 1);
+    }
+
+    #[test]
+    fn list_credentials_for_site_excludes_credentials_whose_site_is_soft_deleted() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[23u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        add_credential(&conn, &key, site_id, Some("alice"), "s3cret", None).unwrap();
+
+        soft_delete_site(&conn, site_id).unwrap();
+
+        // Before this fix, list_credentials_for_site only checked the credential's own deleted_at,
+        // not its parent site's - so a credential under a soft-deleted site still showed up here even
+        // though it's invisible to search()/list_sites().
+        assert!(list_credentials_for_site(&conn, &key, site_id).unwrap().is_empty());
     }
 
     #[test]

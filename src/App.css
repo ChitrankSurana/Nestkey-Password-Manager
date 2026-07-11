@@ -1,0 +1,18 @@
+/* Tailwind v4 auto-detects content sources across the whole repo by default,
+   which would also pick up Tailwind-looking class names from planning docs
+   under docs/. Disable auto-detection and declare explicit sources instead,
+   mirroring the v3-style content globs (index.html plus src js/ts/jsx/tsx files). */
+@import "tailwindcss" source(none);
+@source "../index.html";
+@source "./**/*.js";
+@source "./**/*.ts";
+@source "./**/*.jsx";
+@source "./**/*.tsx";
+/* Adding a new source file extension under src/? Add a matching @source line above -
+   Tailwind v4 doesn't support brace-expansion globs here, and an uncovered extension
+   fails silently (classes just render unstyled, no build error). */
+
+/* Tailwind v4 defaults the `dark:` variant to `prefers-color-scheme`.
+   M1 is dark-theme-only and forces dark mode via a `dark` class on <html>
+   (see index.html), so override the variant to be class-based instead. */
+@custom-variant dark (&:where(.dark, .dark *));
