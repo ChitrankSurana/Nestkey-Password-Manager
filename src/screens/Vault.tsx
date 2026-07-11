@@ -4,6 +4,7 @@ import { SiteEditor } from "./SiteEditor";
 import { SiteDetail } from "./SiteDetail";
 import { Trash } from "./Trash";
 import { Settings } from "./Settings";
+import { Tooltip } from "../components/Tooltip";
 
 export function Vault({ username }: { username: string }) {
   const [sites, setSites] = useState<SiteDto[]>([]);
@@ -80,37 +81,42 @@ export function Vault({ username }: { username: string }) {
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-semibold">Vault — {username}</h1>
         <div className="space-x-2">
-          <button
-            onClick={() => setAddingSite(true)}
-            className="rounded bg-blue-600 px-3 py-1"
-            title="Add a new site"
-          >
-            Add site
-          </button>
-          <button onClick={() => setShowTrash(true)} className="rounded bg-slate-700 px-3 py-1" title="View trash">
-            Trash
-          </button>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="rounded bg-slate-700 px-3 py-1"
-            title="Open settings"
-          >
-            Settings
-          </button>
-          <button
-            onClick={async () => {
-              try {
-                setError(null);
-                await api.lock();
-              } catch (err) {
-                setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
-              }
-            }}
-            className="rounded bg-slate-700 px-3 py-1"
-            title="Lock the vault now"
-          >
-            Lock
-          </button>
+          <Tooltip text="Add a new site">
+            <button
+              onClick={() => setAddingSite(true)}
+              className="rounded bg-blue-600 px-3 py-1"
+            >
+              Add site
+            </button>
+          </Tooltip>
+          <Tooltip text="View trash">
+            <button onClick={() => setShowTrash(true)} className="rounded bg-slate-700 px-3 py-1">
+              Trash
+            </button>
+          </Tooltip>
+          <Tooltip text="Open settings">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="rounded bg-slate-700 px-3 py-1"
+            >
+              Settings
+            </button>
+          </Tooltip>
+          <Tooltip text="Lock the vault now">
+            <button
+              onClick={async () => {
+                try {
+                  setError(null);
+                  await api.lock();
+                } catch (err) {
+                  setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+                }
+              }}
+              className="rounded bg-slate-700 px-3 py-1"
+            >
+              Lock
+            </button>
+          </Tooltip>
         </div>
       </div>
 

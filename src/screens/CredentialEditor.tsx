@@ -1,5 +1,6 @@
 import { useState, FormEvent } from "react";
 import { api, isCommandError, CredentialDto } from "../lib/api";
+import { Tooltip } from "../components/Tooltip";
 
 export function CredentialEditor({
   siteId,
@@ -70,17 +71,20 @@ export function CredentialEditor({
         </label>
         {error && <p className="text-sm text-red-400">{error}</p>}
         <div className="flex justify-end space-x-2">
-          <button type="button" onClick={onClose} className="px-3 py-1" title="Cancel">
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting || secret.trim() === ""}
-            className="rounded bg-blue-600 px-3 py-1 disabled:opacity-50"
-            title="Save this credential"
-          >
-            Save
-          </button>
+          <Tooltip text="Cancel">
+            <button type="button" onClick={onClose} className="px-3 py-1">
+              Cancel
+            </button>
+          </Tooltip>
+          <Tooltip text="Save this credential">
+            <button
+              type="submit"
+              disabled={submitting || secret.trim() === ""}
+              className="rounded bg-blue-600 px-3 py-1 disabled:opacity-50"
+            >
+              Save
+            </button>
+          </Tooltip>
         </div>
       </form>
     </div>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, isCommandError } from "../lib/api";
+import { Tooltip } from "../components/Tooltip";
 
 const OPTIONS = [1, 5, 15] as const;
 
@@ -36,28 +37,31 @@ export function Settings({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-4">
-      <button onClick={onBack} className="mb-4 underline text-sm" title="Back to vault">
-        ← Back
-      </button>
+      <Tooltip text="Back to vault">
+        <button onClick={onBack} className="mb-4 underline text-sm">
+          ← Back
+        </button>
+      </Tooltip>
       <h1 className="text-xl font-semibold mb-4">Settings</h1>
 
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
       <label className="block max-w-xs">
         <span className="text-sm">Auto-lock after idle for</span>
-        <select
-          className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600 disabled:opacity-50"
-          value={autoLockMinutes ?? ""}
-          onChange={(e) => handleChange(Number(e.target.value))}
-          disabled={submitting}
-          title="How long to wait before auto-locking the vault"
-        >
-          {OPTIONS.map((m) => (
-            <option key={m} value={m}>
-              {m} minute{m === 1 ? "" : "s"}
-            </option>
-          ))}
-        </select>
+        <Tooltip text="How long to wait before auto-locking the vault">
+          <select
+            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600 disabled:opacity-50"
+            value={autoLockMinutes ?? ""}
+            onChange={(e) => handleChange(Number(e.target.value))}
+            disabled={submitting}
+          >
+            {OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m} minute{m === 1 ? "" : "s"}
+              </option>
+            ))}
+          </select>
+        </Tooltip>
       </label>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useState, FormEvent } from "react";
 import { api, isCommandError } from "../lib/api";
+import { Tooltip } from "../components/Tooltip";
 
 export function Register({
   onSuccess,
@@ -55,22 +56,24 @@ export function Register({
           />
         </label>
         {error && <p className="text-red-400 text-sm">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded bg-blue-600 py-1.5 disabled:opacity-50"
-          title="Create your account and vault"
-        >
-          Register
-        </button>
-        <button
-          type="button"
-          onClick={onSwitchToLogin}
-          className="w-full text-sm underline"
-          title="Already have an account? Log in"
-        >
-          Already have an account? Log in
-        </button>
+        <Tooltip text="Create your account and vault">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded bg-blue-600 py-1.5 disabled:opacity-50"
+          >
+            Register
+          </button>
+        </Tooltip>
+        <Tooltip text="Already have an account? Log in">
+          <button
+            type="button"
+            onClick={onSwitchToLogin}
+            className="w-full text-sm underline"
+          >
+            Already have an account? Log in
+          </button>
+        </Tooltip>
       </form>
     </div>
   );
