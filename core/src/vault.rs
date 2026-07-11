@@ -203,6 +203,26 @@ pub fn list_credentials_for_site(
     Ok(out)
 }
 
+pub fn update_credential(
+    conn: &Connection,
+    key: &VaultKey,
+    credential_id: i64,
+    username: Option<&str>,
+    secret: &str,
+    remarks: Option<&str>,
+) -> Result<(), VaultError> {
+    let (secret_enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
+    let updated = conn.execute(
+        "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
+         updated_at = datetime('now') WHERE id = ?5 AND deleted_at IS NULL",
+        rusqlite::params![username, secret_enc, nonce.to_vec(), remarks, credential_id],
+    )?;
+    if updated == 0 {
+        return Err(VaultError::NotFound);
+    }
+    Ok(())
+}
+
 pub fn soft_delete_credential(conn: &Connection, credential_id: i64) -> Result<(), VaultError> {
     let updated = conn.execute(
         "UPDATE credentials SET deleted_at = datetime('now') WHERE id = ?1 AND deleted_at IS NULL",
@@ -391,6 +411,48 @@ mod tests {
         let debug_output = format!("{:?}", creds[0]);
         assert!(!debug_output.contains("extremely-unique-secret-xyz"));
         assert!(debug_output.contains("<redacted>"));
+    }
+
+    #[test]
+    fn update_credential_changes_username_secret_and_remarks() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[20u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "old-secret", Some("old note")).unwrap();
+
+        update_credential(&conn, &key, cred_id, Some("alice2"), "new-secret", Some("new note")).unwrap();
+
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+        assert_eq!(creds.len(), 1);
+        assert_eq!(creds[0].username.as_deref(), Some("alice2"));
+        assert_eq!(creds[0].secret, "new-secret");
+        assert_eq!(creds[0].remarks.as_deref(), Some("new note"));
+    }
+
+    #[test]
+    fn update_credential_on_nonexistent_id_returns_not_found() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[21u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let result = update_credential(&conn, &key, 9999, Some("x"), "y", None);
+
+        assert!(matches!(result, Err(VaultError::NotFound)));
+    }
+
+    #[test]
+    fn update_credential_on_soft_deleted_credential_returns_not_found() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[22u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None).unwrap();
+        soft_delete_credential(&conn, cred_id).unwrap();
+
+        let result = update_credential(&conn, &key, cred_id, Some("alice2"), "new-secret", None);
+
+        assert!(matches!(result, Err(VaultError::NotFound)));
     }
 
     #[test]
