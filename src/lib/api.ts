@@ -43,6 +43,11 @@ export interface TrashedCredentialDto {
   deletedAt: string;
 }
 
+export interface ConfigDto {
+  theme: string;
+  autoLockMinutes: number;
+}
+
 export const api = {
   registerUser: (username: string, masterPassword: string) =>
     invoke<AuthSuccess>("register_user", { username, masterPassword }),
@@ -66,4 +71,6 @@ export const api = {
   listTrash: () => invoke<TrashedCredentialDto[]>("list_trash"),
   restoreCredential: (credentialId: number) => invoke<void>("restore_credential", { credentialId }),
   purgeTrash: () => invoke<number>("purge_trash"),
+  getConfig: () => invoke<ConfigDto>("get_config"),
+  updateAutoLockMinutes: (minutes: number) => invoke<void>("update_auto_lock_minutes", { minutes }),
 };

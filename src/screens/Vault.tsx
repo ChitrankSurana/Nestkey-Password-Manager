@@ -3,6 +3,7 @@ import { api, isCommandError, SiteDto, SearchResultDto } from "../lib/api";
 import { SiteEditor } from "./SiteEditor";
 import { SiteDetail } from "./SiteDetail";
 import { Trash } from "./Trash";
+import { Settings } from "./Settings";
 
 export function Vault({ username }: { username: string }) {
   const [sites, setSites] = useState<SiteDto[]>([]);
@@ -11,6 +12,7 @@ export function Vault({ username }: { username: string }) {
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [addingSite, setAddingSite] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function refreshSites() {
@@ -69,6 +71,10 @@ export function Vault({ username }: { username: string }) {
     );
   }
 
+  if (showSettings) {
+    return <Settings onBack={() => setShowSettings(false)} />;
+  }
+
   return (
     <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-4">
       <div className="flex justify-between items-center mb-4">
@@ -83,6 +89,13 @@ export function Vault({ username }: { username: string }) {
           </button>
           <button onClick={() => setShowTrash(true)} className="rounded bg-slate-700 px-3 py-1" title="View trash">
             Trash
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="rounded bg-slate-700 px-3 py-1"
+            title="Open settings"
+          >
+            Settings
           </button>
           <button
             onClick={async () => {
