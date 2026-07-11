@@ -1,30 +1,23 @@
 # Resume Notes — Password Manager — M1 Phase B (in progress)
 
-**Written:** 2026-07-11, at a clean stopping point right after Slice 2 (Vault CRUD + list/search/
-editor) was fully closed, in the same session that resumed from the Slice 0 boundary and, without
-pausing, closed Slice 1 too, then closed out Slice 2's pause point from the prior write-up. **Read
-this first in a new session before doing anything else.**
+**Written:** 2026-07-11, mid-Slice-4, at a session-limit-driven stop (user hit their Claude session
+cap, chose to start a fresh session rather than wait for reset — not a crash, not a deliberate task
+boundary). **Read this first in a new session before doing anything else.**
 
-> **All prior banners (Task 5 re-verification incident, the Slice 0 "pause and ask" framing, the
-> mid-Slice-2 pause) are now stale and removed. Slices 0, 1, 2, AND 3 are all CLOSED.** This write-up
-> reflects the full 2026-07-11 session's work end to end: Slice 0 close (Tasks 8, 9, 9.5), Slice 1
-> close (Tasks 10-13 + 13.5), Slice 2 close (Tasks 14-18 + 18.5 + 18.6, both cross-task reviews),
-> then Slice 3 close (Tasks 19-22: soft-deleted-site read-path fix, core `list_trash`/`purge_trash`,
-> Trash IPC commands, Trash UI screen with a `window.confirm()` guard + inline error handling added
-> to the plan before implementation, plus one controller-applied fix for a stale-search-after-Trash
-> bug the Task 22 review found). **No separate Slice 3 end-of-slice cross-task review was
-> dispatched** — the Task 22 code-quality reviewer explicitly reviewed all 4 Slice-3 commits together
-> (given the slice's small, linear scope) and recommended against a dedicated pass; this session
-> accepted that judgment rather than dispatching a fifth redundant reviewer. **Slice 4 (Tasks 23-27:
-> auto-lock timeout config, Settings screen, secret zeroization at the DTO boundary, accessible
-> Tooltip) has not started — Task 23 is next, followed by Task 28's final cross-module review.**
+> **All prior banners are now stale and removed. Slices 0, 1, 2, AND 3 are all CLOSED. Slice 4 is
+> IN PROGRESS.** Tasks 23 (`Session::set_timeout`), 24 (`get_config`/`update_auto_lock_minutes` IPC,
+> amended pre-implementation to fix a plan doc that wouldn't compile), 24.5 (self-review fix — config
+> state no longer mutated before a confirmed disk save), and 25 (Settings screen UI) are all
+> **implemented and committed**, but **Task 25's spec-compliance review did not complete** — the
+> reviewer subagent hit a session/usage-limit failure (`status: failed`, "session limit · resets
+> 8:30pm"), not a real finding. **Task 25 has NOT been independently verified yet.** Tasks 26
+> (zeroize `CredentialDto.secret`) and 27 (accessible `Tooltip`) have not started. Task 28 (final
+> cross-module review) is last. See "What to do next" below for the exact resume point.
 
-**On pausing going forward:** a later user instruction this session ("continue... no more pausing
-unless i explicitly ask... don't ask confirmation for any command or edit, but only during this
-session — reask what to be done in each session start") **overrides the earlier mid-Slice-2 pause
-request for the remainder of this session.** For a genuinely new session, ask again which mode
-applies rather than assuming — this project has now had "keep going," "pause every slice/task," and
-"keep going, no confirmations" all be true at different points across two different days.
+**On pausing/confirmation going forward:** the prior session's standing instruction was "keep going,
+no pausing, no confirmation needed for commands/edits, but only for that session — reask at the start
+of each new session." That instruction does NOT automatically carry into this new session — ask the
+user again rather than assuming either "keep going" or "pause and confirm."
 
 ## Where everything stands
 
@@ -33,15 +26,45 @@ applies rather than assuming — this project has now had "keep going," "pause e
 - **M1 Phase B is IN PROGRESS**, isolated in a worktree + branch: `.worktrees/m1-phase-b` on branch
   `m1-phase-b`, branched from `main` at `ea102ae`. **All Phase B work happens there.**
 - **The plan:** `docs/superpowers/plans/2026-07-05-m1-phase-b.md` — Task 0 + 28 original tasks across
-  4 slices, plus **Task 9.5** (Slice 0 self-review fixes), **Task 13.5** (Slice 1 self-review fix — a
-  full auth-lifecycle integration test), **Task 18.5** (Slice 2 self-review fix — stale search
-  results + unhandled api errors), and **Task 18.6** (Slice 2 self-review fix — manual Lock button
-  didn't emit the event `App.tsx` needs to navigate back to Login). **Slice 0 (Tasks 1-9 + 9.5),
-  Slice 1 (Tasks 10-13 + 13.5), Slice 2 (Tasks 14-18 + 18.5 + 18.6), and Slice 3 (Tasks 19-22) are
-  all fully done, reviewed, and closed.** Slice 4 (Tasks 23-27: `Session::set_timeout`,
-  config/settings IPC + UI, `CredentialDto.secret` zeroization, accessible `Tooltip`) has not
-  started — Task 23 is next, then Task 28's final cross-module verification checklist closes out
-  Phase B entirely.
+  4 slices, plus several `Task N.5` self-review-fix addenda (9.5, 13.5, 18.5, 18.6, and now **24.5**).
+  **Slices 0, 1, 2, 3 fully closed.** **Slice 4 (Tasks 23-27) in progress: 23, 24, 24.5, 25 done;
+  26, 27 not started.**
+
+### Slice 4 progress (this session, 2026-07-11)
+
+- **Task 23** (`Session::set_timeout`, TDD): commit `8b5ffd7`. Spec-compliance ✅, code-quality ✅
+  ("Ready to merge: Yes", no findings — confirmed no new lock-ordering risk, confirmed validation is
+  correctly deferred to Task 24).
+- **Task 24** (`get_config`/`update_auto_lock_minutes` IPC): **amended before implementation** — the
+  original plan snippet constructed `CommandError { code, message }` via struct literal, but
+  `CommandError`'s fields are deliberately private (only `From` impls / `locked_error()` can
+  construct one); it would not compile. Fixed by adding `invalid_input_error()`/`internal_error()`
+  constructor functions to `error.rs` (commit `d59896e`, plan fix). Also de-duplicated
+  `VALID_AUTO_LOCK_MINUTES` (already existed in `config.rs`, widened to `pub(crate)` instead of
+  redefining in `commands.rs`). Implementation: commit `54dcc64`. Spec-compliance ✅ (implementer also
+  independently caught and fixed a SECOND compile issue — a test's `.unwrap_err().code` direct field
+  access, same private-field problem; fixed with a `#[cfg(test)] pub(crate) fn code(&self) -> &str`
+  read-only accessor, empirically confirmed necessary and safe by the reviewer). Code-quality:
+  **"Not ready: Blocking"** — `do_update_auto_lock_minutes` mutated `state.config` in place BEFORE
+  confirming `config.save()` succeeded, no rollback on I/O failure → became **Task 24.5**.
+- **Task 24.5** (self-review fix): plan addendum `c13b88a`, implemented `0af26e6` — mutate a
+  `Config` clone, save the clone, only `*config = updated` after `save()` returns `Ok`; also widened
+  the `config` lock's scope to cover the `session.set_timeout()` call too (closes a related
+  config/session non-atomicity the same review flagged). Independently verified ✅ PASS — confirmed
+  both halves of the fix (rollback-on-error AND lock-scope widening), confirmed no deadlock risk
+  (grepped for any site acquiring `session` then `config` in the opposite order — none exists).
+- **Task 25** (Settings screen UI): **amended before implementation** — the original `Settings.tsx`
+  snippet had no error handling on either `api.*()` call, reverting to the pre-Task-18.5 unhandled-
+  promise pattern; fixed proactively (commit `eff090d`, plan fix) to add `isCommandError`-based
+  handling matching every other screen. Implementation: commit `7ef3c3a` — `api.ts` additions,
+  `Settings.tsx`, `Vault.tsx` wiring (`showSettings` state + nav button + early return, same pattern
+  as Task 22's Trash). `npm run build` and `cargo test --workspace` (84/84) both confirmed passing by
+  the implementer. **Spec-compliance review was dispatched but did NOT complete** — failed with
+  `status: failed`, "session limit · resets 8:30pm (Asia/Calcutta)" — a genuine subagent
+  infrastructure/usage-limit failure, not a real finding (same class as the Task 16 code-quality
+  reviewer's earlier session-limit failure this project has already hit once before). **Task 25 is
+  therefore UNVERIFIED — re-dispatch a fresh spec-compliance reviewer for it before trusting it's
+  correct**, then a code-quality reviewer, before moving on.
 - **Execution mode:** Subagent-Driven Development — fresh implementer subagent per task, then a
   spec-compliance reviewer, then a code-quality reviewer, before moving to the next task. At slice
   boundaries: a cross-task spec-compliance reviewer + a cross-task code-quality reviewer against the
@@ -174,22 +197,34 @@ found one Important issue (Task 18.6, below) and two Minor ones (tracked in Defe
 
 ### What to do next
 
-**Slices 2 and 3 are both closed. Next: Task 23**, first task of **Slice 4** (search plan doc for
-`## Task 23:`) — adding `Session::set_timeout` to `pwmgr-core` (TDD), followed by Task 24 (config IPC
-commands), Task 25 (Settings screen UI), Task 26 (zeroize `CredentialDto.secret` at the IPC
-boundary — closes one of the longest-standing deferred items, see below), Task 27 (accessible
-`Tooltip` component). Continue the same subagent-per-task process: implementer → spec-compliance
-reviewer → code-quality reviewer, fix-plan-doc-first convention for any real reviewer finding,
+**Immediate next step: re-dispatch Task 25's spec-compliance review** (the prior attempt failed on a
+subagent session/usage-limit error, not a real finding — safe to just re-dispatch fresh, don't
+`SendMessage` to the dead agent). Verify against `docs/superpowers/plans/2026-07-05-m1-phase-b.md`'s
+`## Task 25:` section (amended — has `isCommandError` error handling) and commit `7ef3c3a`. Then a
+code-quality reviewer for Task 25. Then:
+- **Task 26** (zeroize `CredentialDto.secret` at the IPC boundary via `zeroize::Zeroizing` — closes
+  one of the longest-standing deferred items, search plan doc for `## Task 26:`),
+- **Task 27** (accessible `Tooltip` component, replacing `title=` on every button — note: Task 25's
+  implementer flagged that `Vault.tsx`'s new "Settings" button uses `title=`, matching the existing
+  convention, expected to be swept up by Task 27's `Tooltip` replacement, not fixed early),
+- **Task 28** (final cross-module verification checklist — last gate before Phase B is complete;
+  then invoke `superpowers:finishing-a-development-branch` and ask the user how to merge/finish — no
+  GitHub remote exists, so the Phase A precedent, fast-forward merge to `main` + remove worktree +
+  delete branch, is what to offer).
+
+Continue the same subagent-per-task process throughout: implementer → spec-compliance reviewer →
+code-quality reviewer, fix-plan-doc-first convention for any real reviewer finding (check the plan
+snippet actually compiles/matches the current codebase before dispatching — this session caught two
+separate plan-doc-doesn't-compile issues, in Tasks 24 and indirectly via Task 24's own test), full
 re-verification after every fix. Brief every new implementer on the active ponytail (YAGNI)
-discipline. **After Task 27 (end of Slice 4 / end of the whole plan), dispatch Task 28's full-plan
-final verification checklist** per the plan doc's own instruction — this is the last gate before
-Phase B is considered complete and `superpowers:finishing-a-development-branch` gets invoked to ask
-the user how to merge/finish (no GitHub remote exists, so the Phase A precedent — fast-forward merge
-to `main`, remove the worktree, delete the branch — is what to offer). At the Task 16-adjacent
-lock-ordering/Mutex-poisoning decision (still open — see Deferred/tracked items), remember it needs
-to also reconcile the two different lock-nesting conventions coexisting in `commands.rs`, not just
-merge locks; Task 23's `Session::set_timeout` may be a natural place to finally make that call since
-it touches `Session` directly.
+discipline. **First thing in the new session: re-ask the user whether "keep going, no pausing/
+confirmation" still applies** — it was scoped to the prior session only.
+
+At the Task 16-adjacent lock-ordering/Mutex-poisoning decision (still open — see Deferred/tracked
+items below), remember it needs to also reconcile the two different lock-nesting conventions
+coexisting in `commands.rs`, not just merge locks. Task 23-25 didn't touch this (Task 23 confirmed
+`set_timeout` introduces no new lock risk; Task 24/24.5 only ever nest `config`-then-`session`, never
+`session`-then-`config`, so no new deadlock risk either) — it's still deferred, still not urgent.
 
 ## Toolchain (already installed, but NOT on PATH for fresh shells)
 
@@ -547,9 +582,11 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
 
 ## Task tracker state
 
-This session's `TaskCreate` list covers Tasks 8, 9, 9.5, 10, 11, 12, 13, 13.5, 14, 15, 16, the
-combined 17+18 pair, 18.5, 18.6, the Slice 0/1/2 cross-task reviews, and Tasks 19, 20, 21, 22 (each
-with its own implement/spec-review/quality-review sub-tasks) — all `completed`. These tracker
-entries are session-local and won't carry to a new session — recreate equivalents when resuming,
-using the plan doc and this file as the source of truth. First new task to create on resume: Task 23
-(Slice 4 start).
+Prior session's `TaskCreate` list (Tasks 8 through 22 plus all their self-review/cross-task-review
+sub-tasks) are `completed`. This session's list additionally covers Task 23 (implement/spec/quality,
+all completed), Task 24 (implement/spec/quality — quality found the Task 24.5 bug), Task 24.5
+(implement+verify, completed), and Task 25 implement (completed) — **Task 25's spec-compliance and
+code-quality review tasks are still open/not completed** (the spec-compliance one is what failed on
+the session-limit error). These tracker entries are session-local and won't carry to a new session —
+recreate equivalents when resuming, using the plan doc and this file as the source of truth. **First
+new task to create on resume: Task 25 spec-compliance review** (re-dispatch, don't skip it).
