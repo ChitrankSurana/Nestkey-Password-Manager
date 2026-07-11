@@ -1,3 +1,4 @@
+mod autolock;
 mod commands;
 mod config;
 mod dto;
@@ -10,6 +11,7 @@ use paths::AppPaths;
 use state::AppState;
 use std::sync::Mutex;
 use std::time::Duration;
+use tauri::{Emitter, Manager};
 
 pub fn run() {
     let home = dirs::home_dir().expect("could not resolve home directory");
@@ -35,6 +37,19 @@ pub fn run() {
     tauri::Builder::default()
         .manage(app_state)
         .manage(app_paths)
+        .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    let state = handle.state::<AppState>();
+                    if autolock::tick(&state, &pwmgr_core::session::SystemClock) {
+                        let _ = handle.emit("vault-locked", ());
+                    }
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::unlock_status,
             commands::register_user,
