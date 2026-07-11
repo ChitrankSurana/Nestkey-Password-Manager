@@ -18,9 +18,10 @@ export function useActivityWatcher(enabled: boolean) {
       const now = Date.now();
       if (now - lastSent.current < THROTTLE_MS) return;
       lastSent.current = now;
-      api.touch().catch(() => {
-        // Best-effort - a failed touch just means the next activity event retries. Not worth
-        // surfacing to the user; it doesn't affect correctness of the idle lock itself.
+      api.touch().catch((e) => {
+        // `touch` is infallible on the Rust side, so a rejection here is always an IPC-transport
+        // break or a panic, never a benign "session already expired" - log it rather than swallow.
+        console.error("touch failed:", e);
       });
     };
 
