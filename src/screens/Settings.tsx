@@ -48,7 +48,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
 
       <label className="block max-w-xs">
         <span className="text-sm">Auto-lock after idle for</span>
-        <Tooltip text="How long to wait before auto-locking the vault">
+        <Tooltip text="How long to wait before auto-locking the vault" className="block w-full">
           <select
             className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600 disabled:opacity-50"
             value={autoLockMinutes ?? ""}
