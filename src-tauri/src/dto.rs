@@ -44,15 +44,23 @@ impl From<SearchResult> for SearchResultDto {
 
 // No #[derive(Debug)] here on purpose - mirrors pwmgr_core::vault::Credential's manual redacting
 // Debug impl (core/src/vault.rs:139) so this DTO can never leak the plaintext secret through a
-// stray `{:?}` or `dbg!()` on the Tauri side either.
+// stray `{:?}` or `dbg!()` on the Tauri side either. This matters more than it looks: Zeroizing<Z>
+// itself derives Debug and prints the plaintext value unredacted, so this manual impl is the only
+// thing preventing a leak - a `#[derive(Debug)]` here would silently defeat the wrapper below.
 //
 // `secret` is wrapped in `zeroize::Zeroizing<String>` since this DTO is the last consumer before
 // the plaintext crosses the IPC boundary to the UI - the last real chance to zeroize on Drop.
-// Residual gap: `pwmgr_core::vault::Credential.secret` (upstream of this DTO) is still a plain
-// `String`, so the plaintext exists un-zeroized for the brief window between
-// `list_credentials_for_site` returning it and this `From` conversion wrapping it. Closing that
-// fully would mean changing `Credential`'s field type in `pwmgr-core` itself, which is out of
-// scope for this DTO-only task; tracked as a further-tightening opportunity (see Task 28).
+// Residual gaps (neither closable at this layer):
+// 1. `pwmgr_core::vault::Credential.secret` (upstream of this DTO) is still a plain `String`, so
+//    the plaintext exists un-zeroized for the brief window between `list_credentials_for_site`
+//    returning it and this `From` conversion wrapping it. Closing that fully would mean changing
+//    `Credential`'s field type in `pwmgr-core` itself, which is out of scope for this DTO-only
+//    task; tracked as a further-tightening opportunity (see Task 28).
+// 2. Serializing this DTO (serde_json, on the way over Tauri IPC) copies the plaintext into the
+//    serializer's own non-zeroizing output buffer, and the resulting JS string in the WebView is
+//    never zeroizable either - `zeroize` can't reach into serde_json's buffer or the JS runtime.
+//    Already covered by THREAT_MODEL.md's out-of-scope adversary O1 and Residual Risk #1
+//    (credentials in active use are exposed); not a gap this task can close.
 #[derive(Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CredentialDto {
