@@ -171,8 +171,11 @@ pub fn list_credentials_for_site(
     site_id: i64,
 ) -> Result<Vec<Credential>, VaultError> {
     let mut stmt = conn.prepare(
-        "SELECT id, site_id, username, secret_enc, secret_nonce, remarks
-         FROM credentials WHERE site_id = ?1 AND deleted_at IS NULL ORDER BY id",
+        "SELECT c.id, c.site_id, c.username, c.secret_enc, c.secret_nonce, c.remarks
+         FROM credentials c
+         JOIN sites s ON s.id = c.site_id
+         WHERE c.site_id = ?1 AND c.deleted_at IS NULL AND s.deleted_at IS NULL
+         ORDER BY c.id",
     )?;
     let rows = stmt.query_map(rusqlite::params![site_id], |row| {
         let id: i64 = row.get(0)?;
@@ -487,6 +490,22 @@ mod tests {
 
         let creds_b = list_credentials_for_site(&conn, &key, site_b).unwrap();
         assert_eq!(creds_b.len(), 1);
+    }
+
+    #[test]
+    fn list_credentials_for_site_excludes_credentials_whose_site_is_soft_deleted() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[23u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        add_credential(&conn, &key, site_id, Some("alice"), "s3cret", None).unwrap();
+
+        soft_delete_site(&conn, site_id).unwrap();
+
+        // Before this fix, list_credentials_for_site only checked the credential's own deleted_at,
+        // not its parent site's - so a credential under a soft-deleted site still showed up here even
+        // though it's invisible to search()/list_sites().
+        assert!(list_credentials_for_site(&conn, &key, site_id).unwrap().is_empty());
     }
 
     #[test]
