@@ -302,6 +302,23 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
   unused; tighten (`typeof e.code === "string"`, or validate against an expected code union at
   call sites) only if/when this guard becomes load-bearing for security-relevant branching
   (e.g. distinguishing `invalid_credentials` from `internal_error` in the login/register UI, Task 13).
+- **New this session (Task 13) — no synchronous double-submit guard on Login/Register forms:**
+  `submitting` only disables the button via React's render cycle, not a synchronous ref check, so a
+  very fast double-Enter could in theory fire `handleSubmit` twice before the disabled state commits.
+  Not currently exploitable (`do_register`/`do_login` serialize through `state.registry.lock()` for
+  the full check+insert, so a second concurrent attempt just blocks and correctly gets
+  `UsernameTaken` — doesn't reopen the Task 10 TOCTOU). Low-cost defense-in-depth fix if ever
+  revisited: `if (submitting) return;` as `handleSubmit`'s first line.
+- **New this session (Task 13) — no password-confirmation field or minimum-length check on
+  Register:** matches the plan doc's own snippet (not an implementation bug), but worth a Slice 2+
+  follow-up given the master password is explicitly unrecoverable if mistyped or forgotten. Neither
+  `core/src/auth.rs` nor `commands.rs` enforce non-empty/minimum length today.
+- **Elevated priority (not new) — username sanitization gap in `vault_path(username)`
+  (`src-tauri/src/paths.rs`):** already tracked below as a pre-existing, deferred,
+  "registration-layer concern upstream of `paths.rs`" item. Task 13's code-quality review noted this
+  is now reachable via a live, unrestricted free-text username `<input>` (no `maxLength`/pattern) in
+  the real UI for the first time, rather than only hardcoded test strings — worth bumping priority
+  before Register sees real-world use, still not urgent for Phase B scaffolding.
 - **Out of scope for all of Phase B** (unchanged): password generator, strength scoring/health
   dashboard, breach check, backup/restore, CSV import/export, light theme + accent colors,
   site-level trash.
