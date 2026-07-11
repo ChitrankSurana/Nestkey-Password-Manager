@@ -35,6 +35,14 @@ export interface SearchResultDto {
   username: string | null;
 }
 
+export interface TrashedCredentialDto {
+  credentialId: number;
+  siteId: number;
+  siteName: string;
+  username: string | null;
+  deletedAt: string;
+}
+
 export const api = {
   registerUser: (username: string, masterPassword: string) =>
     invoke<AuthSuccess>("register_user", { username, masterPassword }),
@@ -55,4 +63,7 @@ export const api = {
   search: (query: string) => invoke<SearchResultDto[]>("search", { query }),
   softDeleteCredential: (credentialId: number) =>
     invoke<void>("soft_delete_credential", { credentialId }),
+  listTrash: () => invoke<TrashedCredentialDto[]>("list_trash"),
+  restoreCredential: (credentialId: number) => invoke<void>("restore_credential", { credentialId }),
+  purgeTrash: () => invoke<number>("purge_trash"),
 };

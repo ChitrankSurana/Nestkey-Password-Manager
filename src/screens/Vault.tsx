@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, isCommandError, SiteDto, SearchResultDto } from "../lib/api";
 import { SiteEditor } from "./SiteEditor";
 import { SiteDetail } from "./SiteDetail";
+import { Trash } from "./Trash";
 
 export function Vault({ username }: { username: string }) {
   const [sites, setSites] = useState<SiteDto[]>([]);
@@ -9,6 +10,7 @@ export function Vault({ username }: { username: string }) {
   const [results, setResults] = useState<SearchResultDto[] | null>(null);
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [addingSite, setAddingSite] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function refreshSites() {
@@ -56,6 +58,10 @@ export function Vault({ username }: { username: string }) {
     );
   }
 
+  if (showTrash) {
+    return <Trash onBack={() => setShowTrash(false)} />;
+  }
+
   return (
     <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-4">
       <div className="flex justify-between items-center mb-4">
@@ -67,6 +73,9 @@ export function Vault({ username }: { username: string }) {
             title="Add a new site"
           >
             Add site
+          </button>
+          <button onClick={() => setShowTrash(true)} className="rounded bg-slate-700 px-3 py-1" title="View trash">
+            Trash
           </button>
           <button
             onClick={async () => {
