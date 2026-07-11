@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod dto;
 mod error;
 mod paths;
 mod state;
@@ -34,7 +35,13 @@ pub fn run() {
     tauri::Builder::default()
         .manage(app_state)
         .manage(app_paths)
-        .invoke_handler(tauri::generate_handler![commands::unlock_status])
+        .invoke_handler(tauri::generate_handler![
+            commands::unlock_status,
+            commands::register_user,
+            commands::login,
+            commands::lock,
+            commands::touch,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
