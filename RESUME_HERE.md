@@ -378,6 +378,13 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
   with no structural enforcement" shape Task 9.5 already fixed once on the backend
   (`vault`/`vault_path` merge). Consider collapsing into a discriminated union before Slice 2 adds
   more per-session frontend state that must travel with "logged in as X."
+- **New this session (Task 14) — `update_credential` has no test clearing a `username`/`remarks`
+  field from `Some` to `None`:** only success/not-found/soft-deleted-not-found are covered. Almost
+  certainly correct (`Option<&str>` → SQL `NULL` is standard rusqlite behavior) but untested; add a
+  test if this file is touched again. Also noted: `update_credential` doesn't verify the credential
+  belongs to a given `site_id` (not a vulnerability today — single-vault-per-connection — but the
+  IPC layer, Task 16, should still sanity-check `credential_id` against the UI's believed context as
+  a defense-in-depth/correctness measure, not a security boundary).
 - **Out of scope for all of Phase B** (unchanged): password generator, strength scoring/health
   dashboard, breach check, backup/restore, CSV import/export, light theme + accent colors,
   site-level trash.
