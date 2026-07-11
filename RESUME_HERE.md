@@ -295,6 +295,13 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
   behavior. Fix candidate for a later core-layer task: check registry uniqueness before creating
   the vault file, or make `register_user` tolerate/reuse an existing unclaimed vault file instead of
   treating any unlock failure as fatal.
+- **New this session (Task 12) — `isCommandError` (`src/lib/api.ts`) is a structural/duck-typed guard**
+  (`"code" in e && "message" in e`), not validated against a known set of error codes or value types.
+  Fails closed correctly today (rejects raw strings and plain `Error` instances), but would silently
+  accept any future unrelated object shape that happens to carry both field names. Low risk while
+  unused; tighten (`typeof e.code === "string"`, or validate against an expected code union at
+  call sites) only if/when this guard becomes load-bearing for security-relevant branching
+  (e.g. distinguishing `invalid_credentials` from `internal_error` in the login/register UI, Task 13).
 - **Out of scope for all of Phase B** (unchanged): password generator, strength scoring/health
   dashboard, breach check, backup/restore, CSV import/export, light theme + accent colors,
   site-level trash.
