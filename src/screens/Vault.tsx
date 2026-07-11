@@ -59,7 +59,14 @@ export function Vault({ username }: { username: string }) {
   }
 
   if (showTrash) {
-    return <Trash onBack={() => setShowTrash(false)} />;
+    return (
+      <Trash
+        onBack={() => {
+          setShowTrash(false);
+          runSearch(query);
+        }}
+      />
+    );
   }
 
   return (
