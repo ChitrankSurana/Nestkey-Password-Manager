@@ -44,7 +44,9 @@ pub fn run() {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     let state = handle.state::<AppState>();
                     if autolock::tick(&state, &pwmgr_core::session::SystemClock) {
-                        let _ = handle.emit("vault-locked", ());
+                        if let Err(e) = handle.emit("vault-locked", ()) {
+                            eprintln!("warning: failed to emit vault-locked event ({e})");
+                        }
                     }
                 }
             });
