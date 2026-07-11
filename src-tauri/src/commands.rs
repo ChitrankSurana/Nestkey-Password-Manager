@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn touch_resets_activity_without_changing_lock_state() {
+    fn touch_does_not_lock_the_session() {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
 

@@ -197,9 +197,25 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
 - `Credential.secret` not wrapped in `zeroize::Zeroizing` at the `pwmgr-core` level — still deferred
   to a later Slice 4 DTO-boundary task per the original Phase B plan (Task 26 closes it at the DTO
   layer only; the upstream core field stays a plain `String`, documented residual gap).
+- **New this session (Task 10) — `master_password` is never zeroized anywhere in the new auth IPC
+  path:** `register_user`/`login`'s Tauri wrappers receive it as a fresh owned `String` from IPC
+  deserialization, then pass it down as `&str` into `do_register`/`do_login` and
+  `pwmgr_core::auth::register_user`/`login`, none of which zeroize it. Predates Task 10 (core's
+  `register_user`/`login` have taken bare `&str` since Phase A), so not a regression here, but the
+  Tauri wrapper is the first natural chokepoint (freshly-owned `String` from deserialization) to
+  start closing this gap in a future task — same class of concern as the `Credential.secret` item
+  above, per TRD §3.4.
 - `list_credentials_for_site` soft-deleted-site read-path inconsistency — still scheduled for Task 19.
 - IPC concurrency / lock-ordering strategy (`vault` before `session`) — still decided at Task 16, not
-  yet reached.
+  yet reached. **Concrete instance found in Task 10's code-quality review:** `do_register`/
+  `do_login`/`do_lock` (`src-tauri/src/commands.rs`) update `state.session` and `state.vault` via two
+  separate, non-atomic `Mutex` acquisitions (session lock released before the vault lock is taken),
+  leaving a window where a concurrent reader could observe "session unlocked" but `vault` still
+  `None` (or vice versa on lock). No command shipped as of Task 10 reads both together, so not
+  exploitable yet, but address before Slice 1's vault CRUD commands land and definitely as part of
+  the Task 16 lock-ordering decision — either merge `session`+`vault` under one lock (same pattern
+  Task 9.5 used to merge `vault`/`vault_path`), or have consumers gate on `vault.lock().unwrap().is_some()`
+  directly instead of using `session.is_locked()` as a proxy for "vault is open."
 - **Mutex poisoning strategy is still an open, deliberately-deferred decision for Task 16** (not a
   defect): every lock access in this codebase uses `.lock().unwrap()`, meaning a panic while holding
   any lock poisons it permanently for the rest of the process's life. Decide once, explicitly, before
