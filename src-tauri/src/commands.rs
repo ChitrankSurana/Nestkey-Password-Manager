@@ -3,7 +3,7 @@ use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
 use pwmgr_core::session::SystemClock;
-use tauri::State;
+use tauri::{Emitter, State};
 
 /// Smoke-test command for Slice 0: proves the IPC round trip (state access, Mutex lock, DTO
 /// return) works end-to-end before Slice 1 adds real auth commands on the same pattern.
@@ -80,8 +80,11 @@ pub fn login(
 }
 
 #[tauri::command]
-pub fn lock(state: State<AppState>) {
+pub fn lock(state: State<AppState>, app: tauri::AppHandle) {
     do_lock(&state);
+    if let Err(e) = app.emit("vault-locked", ()) {
+        eprintln!("warning: failed to emit vault-locked event ({e})");
+    }
 }
 
 #[tauri::command]
