@@ -39,6 +39,7 @@ export function Register({
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoFocus
+            autoComplete="username"
             title="A unique username for this vault"
           />
         </label>
@@ -49,6 +50,7 @@ export function Register({
             className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
             title="This encrypts your vault - there is no recovery if you forget it"
           />
         </label>

@@ -42,6 +42,7 @@ export function Login({
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoFocus
+            autoComplete="username"
             title="Your registered username"
           />
         </label>
@@ -52,6 +53,7 @@ export function Login({
             className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
             title="The master password you registered with"
           />
         </label>
