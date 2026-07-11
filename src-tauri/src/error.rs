@@ -66,6 +66,28 @@ pub fn locked_error() -> CommandError {
     CommandError::new("locked", "Vault is locked. Please log in again.")
 }
 
+/// A value from the frontend failed a business-rule check server-side.
+pub fn invalid_input_error(message: &str) -> CommandError {
+    CommandError::new("invalid_input", message)
+}
+
+/// Generic catch-all for internal failures that must not leak detail to the frontend.
+pub fn internal_error() -> CommandError {
+    CommandError::new("internal_error", "Something went wrong. Please try again.")
+}
+
+impl CommandError {
+    // `code`/`message` are deliberately private (see the doc comment on the struct) so no call
+    // site can construct a CommandError by hand - but callers outside this module (e.g.
+    // commands.rs's tests) still need read access to assert on the code without falling back to
+    // matching on the derived Debug string. A read-only accessor preserves the "no external
+    // construction" guarantee (it can't be used to build an instance) while allowing that.
+    #[cfg(test)]
+    pub(crate) fn code(&self) -> &str {
+        &self.code
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

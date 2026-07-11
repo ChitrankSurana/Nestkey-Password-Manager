@@ -68,6 +68,8 @@ pub fn run() {
             commands::list_trash,
             commands::restore_credential,
             commands::purge_trash,
+            commands::get_config,
+            commands::update_auto_lock_minutes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

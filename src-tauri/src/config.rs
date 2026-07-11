@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-const VALID_AUTO_LOCK_MINUTES: [u32; 3] = [1, 5, 15];
+pub(crate) const VALID_AUTO_LOCK_MINUTES: [u32; 3] = [1, 5, 15];
 
 fn default_theme() -> String {
     "dark".to_string()

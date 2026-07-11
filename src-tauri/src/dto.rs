@@ -103,6 +103,13 @@ impl From<TrashedCredential> for TrashedCredentialDto {
     }
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigDto {
+    pub theme: String,
+    pub auto_lock_minutes: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

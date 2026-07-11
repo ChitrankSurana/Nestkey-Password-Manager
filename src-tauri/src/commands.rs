@@ -1,4 +1,5 @@
-use crate::dto::{AuthSuccess, CredentialDto, SearchResultDto, SiteDto, TrashedCredentialDto};
+use crate::config::VALID_AUTO_LOCK_MINUTES;
+use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, SearchResultDto, SiteDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -252,6 +253,46 @@ pub fn purge_trash(state: State<AppState>) -> Result<usize, CommandError> {
     do_purge_trash(&state)
 }
 
+pub fn do_get_config(state: &AppState) -> ConfigDto {
+    let config = state.config.lock().unwrap();
+    ConfigDto { theme: config.theme.clone(), auto_lock_minutes: config.auto_lock_minutes }
+}
+
+pub fn do_update_auto_lock_minutes(
+    state: &AppState,
+    paths: &AppPaths,
+    minutes: u32,
+) -> Result<(), CommandError> {
+    if !VALID_AUTO_LOCK_MINUTES.contains(&minutes) {
+        return Err(crate::error::invalid_input_error("Auto-lock must be 1, 5, or 15 minutes."));
+    }
+    {
+        let mut config = state.config.lock().unwrap();
+        config.auto_lock_minutes = minutes;
+        config.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    }
+    state
+        .session
+        .lock()
+        .unwrap()
+        .set_timeout(std::time::Duration::from_secs(minutes as u64 * 60));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_config(state: State<AppState>) -> ConfigDto {
+    do_get_config(&state)
+}
+
+#[tauri::command]
+pub fn update_auto_lock_minutes(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    minutes: u32,
+) -> Result<(), CommandError> {
+    do_update_auto_lock_minutes(&state, &paths, minutes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,5 +529,32 @@ mod tests {
         let purged = do_purge_trash(&state).unwrap();
         assert_eq!(purged, 1);
         assert!(do_list_trash(&state).unwrap().is_empty());
+    }
+
+    #[test]
+    fn get_config_returns_current_theme_and_auto_lock_minutes() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        let config = do_get_config(&state);
+        assert_eq!(config.theme, "dark");
+        assert_eq!(config.auto_lock_minutes, 5);
+    }
+
+    #[test]
+    fn update_auto_lock_minutes_persists_and_updates_live_session_timeout() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        do_update_auto_lock_minutes(&state, &paths, 1).unwrap();
+
+        assert_eq!(do_get_config(&state).auto_lock_minutes, 1);
+        let reloaded = crate::config::Config::load(&paths.config_path()).unwrap();
+        assert_eq!(reloaded.auto_lock_minutes, 1);
+    }
+
+    #[test]
+    fn update_auto_lock_minutes_rejects_an_out_of_range_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        let result = do_update_auto_lock_minutes(&state, &paths, 7);
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
     }
 }
