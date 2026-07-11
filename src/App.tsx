@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Login } from "./screens/Login";
 import { Register } from "./screens/Register";
+import { Vault } from "./screens/Vault";
 import { useActivityWatcher } from "./hooks/useActivityWatcher";
 import "./App.css";
 
@@ -47,12 +48,7 @@ function App() {
     );
   }
 
-  // Slice 2 replaces this placeholder with the real vault list/search/editor screen.
-  return (
-    <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-4">
-      <p>Logged in as {username}. Vault UI lands in Slice 2.</p>
-    </div>
-  );
+  return <Vault username={username!} />;
 }
 
 export default App;
