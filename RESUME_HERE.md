@@ -1,19 +1,24 @@
 # Resume Notes — Password Manager — M1 Phase B (in progress)
 
-**Written:** 2026-07-11, updated after Slice 1 (Tasks 10-13 + self-review fix pass, Task 13.5) was
-closed in the same session that resumed from the Slice 0 boundary. Slice 0 AND Slice 1 are now both
-fully done, reviewed, and closed. **This session, the user gave a standing instruction overriding
-the old "pause per slice" default: do not pause between tasks or slices unless explicitly told to —
-keep working straight through, including past slice boundaries.** That instruction is scoped to
-"this session" (re-confirm permission style at the start of a new session), but there's no reason to
-assume the next session reverts to pausing either unless the user says so — ask, don't assume.
-**Read this first in a new session before doing anything else.**
+**Written:** 2026-07-11, updated at an explicit user-requested pause point mid-Slice-2, in the same
+session that resumed from the Slice 0 boundary and, without pausing, closed all of Slice 1 too. This
+is a clean, deliberate pause ("pause after this task, we will continue later") — not a crash, not a
+slice boundary, just the user wanting to stop for now. **Read this first in a new session before
+doing anything else.**
 
 > **All prior banners (Task 5 re-verification incident, the Slice 0 "pause and ask" framing) are now
 > stale and removed.** This write-up reflects the full 2026-07-11 session's work end to end: Slice 0
-> close (Tasks 8, 9, 9.5), then — without pausing — all of Slice 1 (Tasks 10-13, plus a Task 13.5
-> self-review fix pass), taking the project from "Task 7 done" to "Slice 1 fully closed, Slice 2
-> about to start."
+> close (Tasks 8, 9, 9.5), then — without pausing — all of Slice 1 (Tasks 10-13 + 13.5), then —
+> again without pausing — Slice 2 through Task 18 (Tasks 14-18, all implemented and individually
+> reviewed), stopping mid-Slice-2 at the user's request: **the end-of-Slice-2 cross-task review
+> (Tasks 14-18 together) has NOT run yet**, and two Important findings from the Task 17+18
+> code-quality review are unresolved. See "What to do next" below — don't assume either is done.
+
+**On pausing going forward:** this session's earlier standing instruction was "don't pause between
+tasks/slices unless told to." The user has now explicitly told this session to pause. Treat that as
+the current instruction overriding the earlier one **for the rest of this session** if it resumes
+before ending; for a genuinely new session, ask again which mode applies rather than assuming either
+"keep going" or "pause every slice" — both have been true at different points in this same day.
 
 ## Where everything stands
 
@@ -24,8 +29,11 @@ assume the next session reverts to pausing either unless the user says so — as
 - **The plan:** `docs/superpowers/plans/2026-07-05-m1-phase-b.md` — Task 0 + 28 original tasks across
   4 slices, plus **Task 9.5** (Slice 0 self-review fixes) and **Task 13.5** (Slice 1 self-review fix
   — a full auth-lifecycle integration test). **Slice 0 (Tasks 1-9 + 9.5) and Slice 1 (Tasks 10-13 +
-  13.5) are both fully done.** Slice 2 (Vault CRUD + list/search/editor, starting at Task 14) has
-  **not started**.
+  13.5) are both fully done.** **Slice 2 (Vault CRUD + list/search/editor) is implemented through
+  Task 18 (all 5 tasks: 14, 15, 16, 17, 18) and individually reviewed, but the slice is NOT yet
+  closed** — the end-of-slice cross-task review (Tasks 14-18 together, per the plan's own
+  instruction) has not run, and two Important findings from the Task 17+18 review are still open.
+  Slice 3 (Trash UI + read-path fix, starting at Task 19) has not started.
 - **Execution mode:** Subagent-Driven Development — fresh implementer subagent per task, then a
   spec-compliance reviewer, then a code-quality reviewer, before moving to the next task. At slice
   boundaries: a cross-task spec-compliance reviewer + a cross-task code-quality reviewer against the
@@ -98,28 +106,88 @@ to `pub(crate)`) done and reviewed, 56/56 tests passing at that point. Full deta
   *real* `SystemClock` while the test's `autolock::tick` call uses the `FakeClock` — the deliberately
   slow (~100ms-1s) Argon2id KDF latency could eat a too-tight margin before the fake-clock advance
   ran. Fixed by widening the margin to `timeout + 30s` (commented why). 64/64 tests passing after the
-  fix. Verification review (independent, not the implementer) still pending as of this line being
-  written — check git log / this file's next update for its outcome.
+  fix. Independent verification review then ran and passed (✅ PASS — meaningful, non-vacuous test
+  confirmed, 4 repeat runs with no flakiness, margin-widening reasoning independently confirmed
+  correct).
+
+**Slice 2 (Tasks 14-18) — all implemented and individually reviewed this session, slice NOT yet closed:**
+- **Task 14** (`vault::update_credential` in `pwmgr-core`, TDD): commit `69fd929`. Spec-compliance ✅
+  (fresh-nonce-per-call and soft-delete-aware `WHERE` clause both independently confirmed).
+  Code-quality: "Ready to merge: Yes" — two Minor items tracked below (no test clearing a field to
+  `None`; `update_credential` doesn't scope-check `site_id`, deferred to the IPC layer).
+- **Task 15** (`SiteDto`/`SearchResultDto`/`CredentialDto` in `src-tauri/src/dto.rs`): commit
+  `4f78dbd`. Spec-compliance ✅ (reviewer independently wrote a throwaway test to visually confirm
+  the redacted-Debug output, not just trusted the existing test). Code-quality: "Ready to merge:
+  Yes" — one Minor (add a "remember to update this field too" comment on the manual `Debug` impl)
+  fixed directly (`4109918`).
+- **Task 16** (vault CRUD IPC commands — `list_sites`/`add_site`/`add_credential`/
+  `update_credential`/`list_credentials_for_site`/`search`/`soft_delete_credential`): commit
+  `93790da`. Spec-compliance ✅ (lock ordering vault-before-session confirmed in every function
+  touching both; locked-state rejection confirmed on all 7). **Code-quality review for this task was
+  done by the controller directly, not a dispatched subagent** — the reviewer subagent hit an
+  account-wide session/usage limit (`status: failed`, "resets 3:30pm", not a transient error) rather
+  than complete; per the user's "keep going" instruction active at the time, the controller reviewed
+  it directly instead of waiting. Finding: the three new vault-touching functions
+  (`do_add_credential`/`do_update_credential`/`do_list_credentials_for_site`) hold `state.vault`'s
+  lock for their entire duration (nested with `state.session`), which is actually SAFER than the
+  already-tracked `do_login`/`do_lock`/`autolock::tick()` pattern (blocks `tick()`'s `clear_vault()`
+  from interleaving) — not a new race instance, but a second, undocumented lock-nesting convention
+  now coexists in `commands.rs` (docs commit `0f0eba3`, full reasoning in Deferred/tracked items
+  below).
+- **Task 17** (frontend `api.ts` additions + `Vault.tsx`): commit `f4c25da`. **Deliberately leaves
+  the app non-building** — `Vault.tsx` imports `SiteEditor`/`SiteDetail`, created in Task 18. Not
+  independently reviewed for that reason (see combined review below).
+- **Task 18** (`SiteEditor`/`CredentialEditor`/`SiteDetail` + wiring `Vault` into `App.tsx`, last
+  task of Slice 2): commit `3e24d51`. Fixes the build. **Task 17 + 18 reviewed together as one
+  combined pair** (spec-compliance + code-quality), since Task 17 alone wasn't meaningfully
+  testable. Spec-compliance ✅ (camelCase field mapping `site_id`→`siteId` etc. independently
+  verified against real Rust DTO output; both `npm run build` and `cargo build -p pwmgr-app`
+  confirmed to succeed together; 74/74 tests, no regressions). Code-quality: "Ready to merge: With
+  fixes (non-blocking)" — **two Important findings, NOT yet fixed, this is the actual pause point:**
+  1. **Stale `results` in `Vault.tsx` after a credential edit/delete via `SiteDetail`:** `onBack`
+     only clears `selectedSiteId`, never re-runs `api.search(query)` or clears `results` — search →
+     open a result → edit/delete the credential → click Back shows the pre-edit/phantom stale entry
+     until another keystroke re-triggers the search effect. Concretely reachable, not hypothetical.
+  2. **No error handling anywhere on `api.*()` calls in the new components**
+     (`CredentialEditor`/`SiteEditor`'s `handleSubmit`, `Vault`'s `refreshSites`/`search`,
+     `SiteDetail`'s `refresh`) — a rejected promise (e.g. an IPC/backend error) becomes an unhandled
+     rejection with zero user feedback; the modal just silently fails to close, or the list silently
+     fails to update. Worth fixing before Slice 3, more so than the already-fixed Task 12 `touch()`
+     case, because this is the primary credential-save path.
+  Four Minor items also tracked below (secret field not masked — deliberately matches the plan,
+  informational; missing `autoComplete` on the new forms; no delete-confirmation dialog; a
+  non-null-assertion in `Vault.tsx` that could throw if `sites` ever goes stale).
+
+**The end-of-Slice-2 cross-task review (Tasks 14-18 together, per the plan doc's own instruction at
+that point) has NOT been dispatched yet.** Don't skip it when resuming — it may find additional
+cross-task issues beyond what the per-task/per-pair reviews above already surfaced.
 
 ### What to do next
 
-Continue with **Task 14** (`vault::update_credential` in `pwmgr-core`, TDD — see plan doc line
-~1844, first task of **Slice 2 — Vault CRUD + list/search/editor**). Per this session's standing
-instruction, proceed directly without pausing to ask, unless the user has said otherwise by the time
-you read this.
+**This is a deliberate pause point, not "keep going" — confirm with the user before proceeding,**
+per their explicit "pause after this task, we will continue later" instruction. When they say to
+continue, in order:
 
-Same subagent-per-task process: implementer → spec-compliance reviewer → code-quality reviewer, and
-if either reviewer finds a real issue, fix the plan doc first (`fix(plan): ...` commit) then
-re-dispatch a fresh implementer to copy that exact fix, then dispatch one more independent
-re-verification pass before moving on. Brief every new implementer on the active ponytail (YAGNI)
-discipline. At the Task 16 boundary (`vault`/`session` lock-ordering discipline is decided there per
-the plan), remember the now-three-instance lock-ordering gap and the Mutex-poisoning-strategy
-question, both tracked below — Task 16 must explicitly cover `autolock::tick()` too, not just the
-`commands.rs` call sites. At the end of Slice 2, repeat the cross-task spec-compliance + code-quality
-review pattern (Task 9.5 and Task 13.5 are both working precedents: write a `Task N.5`-style plan
-addendum for anything worth fixing now, defer the rest with a clear note, dispatch accordingly) —
-and, per the current standing instruction, keep going into Slice 3 afterward rather than pausing,
-unless told otherwise.
+1. **Decide on the two Important Task 17+18 findings** (stale `Vault.tsx` results after
+   `SiteDetail` navigation; silent unhandled-promise-rejection on every `api.*()` call in the new
+   components). Both are cheap, well-understood fixes. Per the Task 9.5/13.5 precedent: either ask
+   the user how much to fix now vs. defer (fix everything / fix Important only / defer all), or — if
+   a "keep going, use your judgment" instruction is active instead — just fix both as a
+   `Task 18.5`-style plan addendum (write the addendum into the plan doc first, `fix(plan): ...`
+   commit, then implementer + verification, same as Task 9.5/13.5).
+2. **Dispatch the end-of-Slice-2 cross-task spec-compliance + code-quality review** (Tasks 14-18
+   together), calibrated per the plan doc's own instruction at that point: check the new
+   `update_credential` SQL for the same injection/TOCTOU discipline as `search`/`create_user`, check
+   lock ordering in the new commands, check `CredentialDto`'s Debug redaction actually works
+   end-to-end through the new IPC commands (not just in isolation, which Task 15 already confirmed).
+3. **Then Task 19** (`list_credentials_for_site` soft-deleted-site fix, see plan doc — first task of
+   **Slice 3 — Trash UI + read-path fix**), continuing the same subagent-per-task process:
+   implementer → spec-compliance reviewer → code-quality reviewer, fix-plan-doc-first convention for
+   any real reviewer finding, re-verification after every fix. Brief every new implementer on the
+   active ponytail (YAGNI) discipline. At the Task 16-adjacent lock-ordering/Mutex-poisoning
+   decision (still open, now covering FOUR documented instances — see Deferred/tracked items),
+   remember it needs to also reconcile the two different lock-nesting conventions now coexisting in
+   `commands.rs`, not just merge locks.
 
 ## Toolchain (already installed, but NOT on PATH for fresh shells)
 
@@ -413,13 +481,38 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
   Task-16-flagged lock-merge/Mutex-poisoning decision is finally made (still open, still not
   urgent — no exploit exists today under either pattern), it should also reconcile these two patterns
   into one documented convention, not just address the `do_login`/`do_lock`/`tick()` instances.
+- **New this session (Task 17+18) — the two Important findings from this pair's code-quality
+  review are NOT yet fixed** (see "What to do next" above for the exact plan): stale `Vault.tsx`
+  `results` after a `SiteDetail` edit/delete + Back navigation; no error handling on any `api.*()`
+  call in `CredentialEditor`/`SiteEditor`/`Vault`/`SiteDetail` (unhandled promise rejections, silent
+  failures). These are the actual "unfinished work" at this pause point — don't treat Slice 2 as
+  closed until they're addressed (or explicitly deferred with the user's sign-off) and the
+  end-of-Slice-2 cross-task review has run.
+- **New this session (Task 17+18) — four Minor items, non-blocking:** `CredentialEditor`'s secret
+  input is `type="text"` (unmasked) — deliberately matches the plan's own snippet, not a deviation;
+  assessed as reasonable password-manager UX (you're actively composing/reviewing the value, unlike
+  a login field) rather than a defect, but paired with the next item. No `autoComplete` attribute on
+  any `CredentialEditor`/`SiteEditor` input, unlike `Login.tsx`/`Register.tsx`'s deliberate Task 13
+  convention — low-risk today only because the secret field is `type="text"` (WebView2's
+  password-autosave heuristics target `type="password"`), but becomes load-bearing the moment
+  someone masks the secret field for UX reasons without also adding `autoComplete="off"`/
+  `"new-password"` — add proactively if the field is ever masked. `SiteDetail.tsx`'s delete button
+  has no confirmation dialog (matches the plan's own snippet; mitigated by soft-delete + the
+  upcoming Task 22 trash/restore UI, but a misclick is unrecoverable from the UI's perspective until
+  Task 22 ships — a one-line `confirm()` now, or explicitly bundle with Task 22, either is fine).
+  `Vault.tsx`'s `sites.find((s) => s.id === selectedSiteId)!` non-null assertion would throw if
+  `selectedSiteId` ever points to a site missing from a stale `sites` array — not reachable today
+  (no site-delete UI exists yet), worth a defensive fallback once Slice 3+ adds site-level operations.
 - **Out of scope for all of Phase B** (unchanged): password generator, strength scoring/health
   dashboard, breach check, backup/restore, CSV import/export, light theme + accent colors,
   site-level trash.
 
 ## Task tracker state
 
-This session's `TaskCreate` list (Tasks 8, 9, 9.5, 10, 11, 12, 13, 13.5 and their review stages, plus
-both the Slice 0 and Slice 1 cross-task reviews) are all `completed`. These are session-local and
-won't carry to a new session — recreate equivalents for Task 14 onward when resuming, using the plan
-doc as the source of truth.
+This session's `TaskCreate` list (Tasks 8, 9, 9.5, 10, 11, 12, 13, 13.5, 14, 15, 16, and the combined
+17+18 pair, plus the Slice 0 and Slice 1 cross-task reviews) are all `completed`. **The end-of-Slice-2
+cross-task review (Tasks 14-18 together) has no task entries yet — it hasn't been dispatched.** These
+tracker entries are session-local and won't carry to a new session — recreate equivalents when
+resuming, using the plan doc and this file as the source of truth. First new tasks to create on
+resume: the Task 17+18 findings fix (however scoped per "What to do next" above), then the Slice 2
+cross-task review pair, then Task 19 onward.
