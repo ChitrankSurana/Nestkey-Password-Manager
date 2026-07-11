@@ -385,6 +385,34 @@ Carried from Phase A + Slice 0 tasks, plus new items from this session:
   belongs to a given `site_id` (not a vulnerability today — single-vault-per-connection — but the
   IPC layer, Task 16, should still sanity-check `credential_id` against the UI's believed context as
   a defense-in-depth/correctness measure, not a security boundary).
+- **New this session (Task 16) — Task 16's own code-quality review was done by the controller
+  directly, not a dispatched subagent:** the code-quality reviewer subagent hit an account-wide
+  session/usage limit mid-task (`status: failed`, "session limit · resets 3:30pm") rather than a
+  transient API error, so re-dispatching immediately would very likely fail identically. Per the
+  user's "keep going" instruction, the controller did the review directly instead of waiting. Findings
+  below reflect that review; if resuming a future session and subagent capacity is available again,
+  treat this as lower-confidence than a normal independently-dispatched review and re-verify if the
+  lock-ordering reasoning below ever becomes load-bearing for a real decision.
+- **New this session (Task 16) — three new vault-touching functions use a DIFFERENT lock-nesting
+  pattern than the already-tracked `do_login`/`do_lock`/`autolock::tick()` instances, and it's
+  actually safer, not a new instance of the same race:** `do_add_credential`/`do_update_credential`/
+  `do_list_credentials_for_site` hold `state.vault`'s `MutexGuard` for their ENTIRE duration
+  (including while separately acquiring `state.session`), rather than acquiring-and-dropping each
+  lock separately. Traced concretely: since `autolock::tick()`'s `clear_vault()` call needs
+  `state.vault.lock()`, and these three functions hold that lock for their whole body, `tick()`
+  blocks on the vault mutex until the credential operation completes — it cannot interleave and clear
+  the vault mid-operation the way it can with `do_login`/`do_lock`'s acquire-drop-reacquire pattern.
+  If `tick()`'s session-check runs and expires the session while one of these three functions is
+  already holding `vault` and about to acquire `session`, the function's own
+  `session.key().ok_or_else(locked_error)?` correctly observes the now-locked session and returns a
+  clean error — no corruption, no stale write. **This means the three-instance race described above
+  (do_login/do_lock/tick) is NOT a four-or-more-instance problem — Task 16 didn't add a new instance,
+  it used a different, more conservative pattern.** But two different lock-nesting strategies now
+  coexist in `commands.rs` with no comment explaining why, which is real inconsistency debt: a future
+  reader/editor could reasonably copy the WRONG (less safe) pattern for a new function. When the
+  Task-16-flagged lock-merge/Mutex-poisoning decision is finally made (still open, still not
+  urgent — no exploit exists today under either pattern), it should also reconcile these two patterns
+  into one documented convention, not just address the `do_login`/`do_lock`/`tick()` instances.
 - **Out of scope for all of Phase B** (unchanged): password generator, strength scoring/health
   dashboard, breach check, backup/restore, CSV import/export, light theme + accent colors,
   site-level trash.
