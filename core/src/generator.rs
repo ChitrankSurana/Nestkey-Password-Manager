@@ -54,7 +54,14 @@ pub fn generate_random(opts: &RandomOptions) -> Result<Zeroizing<String>, GenErr
     }
     let mut rng = rand::thread_rng();
     // `choose` is uniform/bias-free over the pool (same primitive family as crypto.rs's CSPRNG use).
-    let mut s = String::with_capacity(opts.length); // ASCII-only alphabet => exact capacity, zero reallocation
+    // Explicit with_capacity+push, not `.collect()`: functionally equivalent today (Range/Map report
+    // an exact size_hint, and String's Extend<char> impl already reserves once from that hint before
+    // pushing - verified empirically, zero reallocations either way), but this form doesn't depend on
+    // that iterator-chain invariant holding. A later edit that inserts a `.filter()`/`.take_while()`
+    // into the iterator would silently make the size_hint inexact and reopen a real gap (reallocation
+    // during growth copies plaintext into a new heap block and frees the old one unzeroized); this
+    // form can't regress that way since it reserves directly from `opts.length`, not a hint.
+    let mut s = String::with_capacity(opts.length);
     for _ in 0..opts.length {
         s.push(*pool.choose(&mut rng).unwrap());
     }
@@ -105,11 +112,20 @@ mod tests {
 
     #[test]
     fn random_output_allocates_exact_capacity_no_reallocation() {
-        // A String built via with_capacity(n) + n pushes of 1-byte chars has capacity exactly n,
-        // never more - collect()'s doubling growth would almost certainly overshoot n instead.
+        // Regression guard, not a red->green bug demonstration: with_capacity(n) + n pushes of
+        // 1-byte chars has capacity exactly n by construction, independent of any iterator's
+        // size_hint. Checked at a representative length and at both boundaries (below) so a future
+        // edit can't silently regress capacity-exactness at the edges of the valid range.
         let opts = RandomOptions { length: 50, uppercase: true, lowercase: true, digits: true, symbols: true };
         let pw = generate_random(&opts).unwrap();
         assert_eq!(pw.capacity(), 50);
+    }
+
+    #[test]
+    fn random_output_allocates_exact_capacity_at_length_boundaries() {
+        let mk = |length| RandomOptions { length, uppercase: true, lowercase: true, digits: true, symbols: true };
+        assert_eq!(generate_random(&mk(MIN_LENGTH)).unwrap().capacity(), MIN_LENGTH);
+        assert_eq!(generate_random(&mk(MAX_LENGTH)).unwrap().capacity(), MAX_LENGTH);
     }
 
     #[test]

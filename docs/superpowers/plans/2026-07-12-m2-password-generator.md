@@ -227,15 +227,23 @@ git commit -m "feat(core): add generator module with CSPRNG random-password meth
 
 **Files:** Modify `core/src/generator.rs`
 
-**Why:** the Task 1 code-quality review found `generate_random` builds its output via
-`(0..opts.length).map(...).collect::<String>()`. `String`'s default growth strategy starts from an
-empty buffer and reallocates (doubling) as it grows — each reallocation copies the plaintext-so-far
-into a new heap block and **frees the old block without zeroizing it first**. `Zeroizing::new(s)`
-only protects the *final* buffer on drop; it cannot reach buffers already freed during growth, so
-partial-password fragments are left in reclaimed heap memory until some other allocation overwrites
-them. Fix: pre-size the buffer to the exact final length (every character here is ASCII, one byte
-each, so `opts.length` is an exact capacity, not just an estimate) and `push` in a loop instead of
-collecting — this produces zero reallocations, so there is nothing to leave behind.
+**Why (corrected after the Task 1.5 code-quality review):** the Task 1 code-quality review flagged
+`generate_random`'s `(0..opts.length).map(...).collect::<String>()` as a reallocation-copy
+zeroization gap, reasoning that `String`'s doubling growth would copy plaintext into new heap blocks
+without zeroizing the freed ones. **This turned out to be empirically false for this specific call
+site** — a follow-up review instrumented an allocation-counting `GlobalAlloc` and confirmed
+`collect()` here already did exactly 1 allocation, 0 reallocations, at every length from
+`MIN_LENGTH` to `MAX_LENGTH`: `Range`/`Map` both report an exact `size_hint()`, and `String`'s
+`Extend<char>` impl reserves once from that hint before pushing, rather than growing incrementally.
+So the fix below is **not** closing an active leak (there wasn't one). It's still worth keeping,
+for a narrower, real reason: `collect()`'s safety here is *derived* — it depends on the iterator
+chain continuing to report an exact size hint forever, an invariant the type system doesn't enforce
+and that a future edit (e.g. inserting a `.filter()`) could silently break, which WOULD reopen a
+real reallocation-copy gap on a secret buffer at that point. The explicit
+`String::with_capacity(opts.length)` + `push`-in-a-loop form is self-contained — its correctness
+follows from "n pushes into a buffer of capacity n," independent of any iterator's behavior — so it
+removes that fragile external dependency from a security-relevant path, even though it changes
+nothing about today's actual allocation count.
 
 This same `String::new()`-then-collect/push-without-presizing shape was also in Task 3's and Task
 4's (not yet implemented) code sketches below — both have been corrected in place as part of this
