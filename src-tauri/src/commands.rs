@@ -1,5 +1,5 @@
 use crate::config::VALID_AUTO_LOCK_MINUTES;
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, GenerateRequest, SearchResultDto, SiteDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, GenerateRequest, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -313,6 +313,23 @@ pub fn generate_password(request: GenerateRequest) -> Result<Zeroizing<String>, 
     do_generate_password(&request)
 }
 
+pub fn do_analyze_strength(password: &str) -> StrengthDto {
+    if password.is_empty() {
+        return StrengthDto { score: 0, guesses_log10: 0.0, label: "Very weak".into() };
+    }
+    let est = zxcvbn::zxcvbn(password, &[]);
+    let score = u8::from(est.score());
+    let label = match score {
+        0 => "Very weak", 1 => "Weak", 2 => "Fair", 3 => "Strong", _ => "Very strong",
+    }.to_string();
+    StrengthDto { score, guesses_log10: est.guesses_log10(), label }
+}
+
+#[tauri::command]
+pub fn analyze_strength(password: String) -> StrengthDto {
+    do_analyze_strength(&password)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -616,5 +633,21 @@ mod tests {
     fn generate_password_maps_gen_error_to_invalid_input() {
         let req = GenerateRequest::Random { length: 0, uppercase: true, lowercase: false, digits: false, symbols: false };
         assert_eq!(do_generate_password(&req).unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn analyze_strength_scores_a_weak_password_low() {
+        assert!(do_analyze_strength("password").score <= 1);
+    }
+
+    #[test]
+    fn analyze_strength_scores_a_strong_password_high() {
+        assert!(do_analyze_strength("7#kLp!qZ2r@Vx9W").score >= 3);
+    }
+
+    #[test]
+    fn analyze_strength_handles_empty_without_panicking() {
+        let s = do_analyze_strength("");
+        assert_eq!(s.score, 0);
     }
 }

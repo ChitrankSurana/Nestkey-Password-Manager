@@ -129,6 +129,15 @@ pub struct ConfigDto {
     pub auto_lock_minutes: u32,
 }
 
+// Non-secret score/label output - normal `Debug` derive is fine (unlike CredentialDto above).
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StrengthDto {
+    pub score: u8,           // zxcvbn 0..=4
+    pub guesses_log10: f64,  // log10(estimated guesses)
+    pub label: String,       // "Very weak" .. "Very strong"
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", tag = "method")]
 pub enum GenerateRequest {

@@ -865,7 +865,7 @@ crosses the IPC boundary in the request (same exposure class as the existing `ad
 secret arg; covered by THREAT_MODEL residual risk on credentials-in-use). The **return**
 (`StrengthDto`) is a non-secret score/label, so it derives `Debug` normally.
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 ```toml
 # src-tauri/Cargo.toml, [dependencies]
@@ -877,7 +877,7 @@ Expected: resolves and compiles `zxcvbn`. **Confirm the installed 3.x API** befo
 `Score` enum convertible to `u8`; `.guesses_log10()` returns `f64`. If the resolved version differs,
 adapt the two accessor lines in Step 4 accordingly.
 
-- [ ] **Step 2: Add `StrengthDto`** (non-secret → normal `Debug`)
+- [x] **Step 2: Add `StrengthDto`** (non-secret → normal `Debug`)
 
 ```rust
 // src-tauri/src/dto.rs
@@ -890,7 +890,7 @@ pub struct StrengthDto {
 }
 ```
 
-- [ ] **Step 3: Write the failing tests** (pure fn, no `State`)
+- [x] **Step 3: Write the failing tests** (pure fn, no `State`)
 
 ```rust
 #[test]
@@ -910,7 +910,7 @@ fn analyze_strength_handles_empty_without_panicking() {
 }
 ```
 
-- [ ] **Step 4: Implement** (guard empty first — some zxcvbn versions dislike an empty input)
+- [x] **Step 4: Implement** (guard empty first — some zxcvbn versions dislike an empty input)
 
 ```rust
 // src-tauri/src/commands.rs  (add `use crate::dto::StrengthDto;`)
@@ -932,12 +932,12 @@ pub fn analyze_strength(password: String) -> StrengthDto {
 }
 ```
 
-- [ ] **Step 5: Register** in `lib.rs` — add `commands::analyze_strength,`.
+- [x] **Step 5: Register** in `lib.rs` — add `commands::analyze_strength,`.
 
-- [ ] **Step 6: Confirm pass** — `cargo test -p pwmgr-app analyze_strength`, then
+- [x] **Step 6: Confirm pass** — `cargo test -p pwmgr-app analyze_strength`, then
   `cargo test --workspace`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A

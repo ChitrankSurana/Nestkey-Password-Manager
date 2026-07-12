@@ -27,6 +27,7 @@ rusqlite = { version = "0.31", features = ["bundled-sqlcipher-vendored-openssl"]
 dirs = "5"
 tokio = { version = "1", features = ["time"] }
 zeroize = { version = "1.7", features = ["serde"] }
+zxcvbn = "3"
 
 [dev-dependencies]
 tempfile = "3.10"
