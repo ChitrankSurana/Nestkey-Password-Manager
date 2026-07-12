@@ -223,6 +223,97 @@ git commit -m "feat(core): add generator module with CSPRNG random-password meth
 
 ---
 
+## Task 1.5: fix reallocation-copy zeroization gap in `generate_random`
+
+**Files:** Modify `core/src/generator.rs`
+
+**Why:** the Task 1 code-quality review found `generate_random` builds its output via
+`(0..opts.length).map(...).collect::<String>()`. `String`'s default growth strategy starts from an
+empty buffer and reallocates (doubling) as it grows — each reallocation copies the plaintext-so-far
+into a new heap block and **frees the old block without zeroizing it first**. `Zeroizing::new(s)`
+only protects the *final* buffer on drop; it cannot reach buffers already freed during growth, so
+partial-password fragments are left in reclaimed heap memory until some other allocation overwrites
+them. Fix: pre-size the buffer to the exact final length (every character here is ASCII, one byte
+each, so `opts.length` is an exact capacity, not just an estimate) and `push` in a loop instead of
+collecting — this produces zero reallocations, so there is nothing to leave behind.
+
+This same `String::new()`-then-collect/push-without-presizing shape was also in Task 3's and Task
+4's (not yet implemented) code sketches below — both have been corrected in place as part of this
+fix, so those tasks don't reintroduce the same gap. No separate addendum needed for them.
+
+- [ ] **Step 1: Write the failing test** (proves capacity is pre-sized, not grown)
+
+```rust
+// core/src/generator.rs, mod tests
+#[test]
+fn random_output_allocates_exact_capacity_no_reallocation() {
+    // A String built via with_capacity(n) + n pushes of 1-byte chars has capacity exactly n,
+    // never more - collect()'s doubling growth would almost certainly overshoot n instead.
+    let opts = RandomOptions { length: 50, uppercase: true, lowercase: true, digits: true, symbols: true };
+    let pw = generate_random(&opts).unwrap();
+    assert_eq!(pw.capacity(), 50);
+}
+```
+
+- [ ] **Step 2: Run to confirm it fails** — `cargo test -p pwmgr-core random_output_allocates_exact_capacity`
+  Expected: FAIL (or passes by luck of doubling landing on the same number — if so, note it in your
+  report, the fix is still correct and Step 4's assertion becomes a regression guard either way).
+
+- [ ] **Step 3: Fix `generate_random`**
+
+```rust
+// core/src/generator.rs — replace the collect() line in generate_random
+let mut s = String::with_capacity(opts.length); // ASCII-only alphabet => exact capacity, zero reallocation
+for _ in 0..opts.length {
+    s.push(*pool.choose(&mut rng).unwrap());
+}
+Ok(Zeroizing::new(s))
+```
+
+- [ ] **Step 4: Also add two boundary-exact tests** (Task 1's code-quality review flagged
+  `MIN_LENGTH`/`MAX_LENGTH` only had a grossly-invalid-length test, not a boundary one — an
+  accidental `..` vs `..=` typo wouldn't be caught):
+
+```rust
+#[test]
+fn random_accepts_min_and_max_length() {
+    let mk = |length| RandomOptions { length, uppercase: true, lowercase: true, digits: true, symbols: true };
+    assert_eq!(generate_random(&mk(MIN_LENGTH)).unwrap().chars().count(), MIN_LENGTH);
+    assert_eq!(generate_random(&mk(MAX_LENGTH)).unwrap().chars().count(), MAX_LENGTH);
+}
+
+#[test]
+fn random_rejects_one_past_min_and_max_length() {
+    let mk = |length| RandomOptions { length, uppercase: true, lowercase: true, digits: true, symbols: true };
+    assert!(matches!(generate_random(&mk(MIN_LENGTH - 1)), Err(GenError::InvalidLength)));
+    assert!(matches!(generate_random(&mk(MAX_LENGTH + 1)), Err(GenError::InvalidLength)));
+}
+```
+
+- [ ] **Step 5: Add a one-line comment near `SYMBOLS`** (Task 1's review noted `SYMBOLS` contains
+  `#`/`?`, two of Task 3's pattern-DSL reserved tokens — harmless since those are input-template
+  tokens vs. output-alphabet characters, never re-parsed, but worth a note so a future reader
+  doesn't "fix" the overlap by mistake):
+
+```rust
+// SYMBOLS intentionally overlaps with a couple of Task 3's pattern-DSL reserved tokens (# and ?) -
+// those are template-input tokens, this is output-alphabet content; a generated password
+// containing a literal '#' is never re-parsed as a template, so the overlap is harmless.
+const SYMBOLS: &str = "!@#$%^&*()-_=+[]{};:,.?";
+```
+
+- [ ] **Step 6: Run to confirm pass** — `cargo test -p pwmgr-core generator` (expect 8 tests: the
+  original 5 plus the 3 new ones), then `cargo test --workspace` for a full regression check.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "fix(core): pre-size generate_random's buffer to avoid unzeroized reallocation copies"
+```
+
+---
+
 ## Task 2: `memorable` (diceware) method + bundled EFF short wordlist
 
 **Files:**
@@ -378,7 +469,11 @@ fn pick(set: &str, rng: &mut impl rand::Rng) -> char {
 
 pub fn generate_pattern(template: &str) -> Result<Zeroizing<String>, GenError> {
     let mut rng = rand::thread_rng();
-    let mut out = String::new();
+    // Pre-sized to the template's char count: each iteration consumes >=1 input char and produces
+    // <=1 output char, so this is a safe upper bound - zero reallocations, matching Task 1.5's fix
+    // (an unsized String::new()+push would leave unzeroized plaintext fragments in freed heap
+    // memory on each reallocation).
+    let mut out = String::with_capacity(template.chars().count());
     let mut chars = template.chars();
     while let Some(c) = chars.next() {
         match c {
@@ -452,9 +547,11 @@ pub fn generate_pronounceable(length: usize) -> Result<Zeroizing<String>, GenErr
         return Err(GenError::InvalidLength);
     }
     let mut rng = rand::thread_rng();
-    let s: String = (0..length)
-        .map(|i| if i % 2 == 0 { pick(CONSONANTS, &mut rng) } else { pick(VOWELS, &mut rng) })
-        .collect();
+    // ASCII-only alphabet => exact capacity, zero reallocation (see Task 1.5).
+    let mut s = String::with_capacity(length);
+    for i in 0..length {
+        s.push(if i % 2 == 0 { pick(CONSONANTS, &mut rng) } else { pick(VOWELS, &mut rng) });
+    }
     Ok(Zeroizing::new(s))
 }
 ```
