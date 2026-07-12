@@ -1437,8 +1437,9 @@ Close the window when confirmed.
 Run: `cargo test --workspace` (Expected: all pass) and `npm run build` (Expected: `tsc` clean, Vite
 build succeeds).
 
-> Ran both: `cargo test --workspace` → 76 + 2 tests passed, 0 failed. `npm run build` → `tsc` clean,
-> Vite build succeeded (`dist/assets/index-C5D4ulbx.js`, 217.89 kB).
+> Ran both: `cargo test --workspace` → 124 tests passed, 0 failed (46 pwmgr-app + 76 pwmgr-core + 2
+> end-to-end). `npm run build` → `tsc` clean, Vite build succeeded
+> (`dist/assets/index-C5D4ulbx.js`, 217.89 kB).
 
 - [x] **Step 6: Commit**
 
