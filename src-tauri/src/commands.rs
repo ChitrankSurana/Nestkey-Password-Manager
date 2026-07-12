@@ -383,6 +383,42 @@ pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), Comm
     Ok(())
 }
 
+pub fn do_create_backup(state: &AppState, paths: &AppPaths) -> Result<String, CommandError> {
+    let vault_path = {
+        let vault_guard = state.vault.lock().unwrap();
+        let (_, path) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+        path.clone()
+    };
+    let username = vault_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(crate::error::internal_error)?
+        .to_string();
+
+    let user_record = {
+        let registry = state.registry.lock().unwrap();
+        pwmgr_core::registry::find_user(&registry, &username)
+            .map_err(|_| crate::error::internal_error())?
+    };
+
+    let vault_bytes = std::fs::read(&vault_path).map_err(|_| crate::error::internal_error())?;
+    let bundle = pwmgr_core::backup::encode_bundle(&user_record, &vault_bytes);
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let backup_path = paths.backups_dir().join(format!("{}-{}.bak", username, timestamp));
+    std::fs::write(&backup_path, &bundle).map_err(|_| crate::error::internal_error())?;
+
+    Ok(backup_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn create_backup(state: State<AppState>, paths: State<AppPaths>) -> Result<String, CommandError> {
+    do_create_backup(&state, &paths)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -740,5 +776,28 @@ mod tests {
     fn analyze_strength_handles_empty_without_panicking() {
         let s = do_analyze_strength("");
         assert_eq!(s.score, 0);
+    }
+
+    #[test]
+    fn create_backup_writes_a_decodable_bundle_under_backups_dir() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let path = do_create_backup(&state, &paths).unwrap();
+
+        assert!(std::path::Path::new(&path).starts_with(paths.backups_dir()));
+        let bytes = std::fs::read(&path).unwrap();
+        let (user, vault_bytes) = pwmgr_core::backup::decode_bundle(&bytes).unwrap();
+        assert_eq!(user.username, "alice");
+        assert!(!vault_bytes.is_empty());
+    }
+
+    #[test]
+    fn create_backup_when_locked_returns_locked_error() {
+        let (state, paths, _dir) = test_state_and_paths();
+
+        let result = do_create_backup(&state, &paths);
+
+        assert_eq!(result.unwrap_err().code(), "locked");
     }
 }

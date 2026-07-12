@@ -438,7 +438,7 @@ state field.
 once), avoiding introducing a new nested-lock ordering the existing lock-ordering review would need
 to re-verify. Neither lock needs to be held while writing the backup file to disk.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 // src-tauri/src/commands.rs, mod tests
@@ -467,12 +467,12 @@ fn create_backup_when_locked_returns_locked_error() {
 }
 ```
 
-- [ ] **Step 2: Run to confirm they fail**
+- [x] **Step 2: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-app create_backup`
 Expected: FAIL — `cannot find function do_create_backup`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 // src-tauri/src/commands.rs
@@ -513,13 +513,13 @@ pub fn create_backup(state: State<AppState>, paths: State<AppPaths>) -> Result<S
 }
 ```
 
-- [ ] **Step 4: Register in `lib.rs`** — add `commands::create_backup,` to `generate_handler!`.
+- [x] **Step 4: Register in `lib.rs`** — add `commands::create_backup,` to `generate_handler!`.
 
-- [ ] **Step 5: Run to confirm pass**
+- [x] **Step 5: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-app create_backup`, then `cargo test --workspace`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A

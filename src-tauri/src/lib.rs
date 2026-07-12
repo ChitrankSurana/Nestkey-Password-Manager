@@ -76,6 +76,7 @@ pub fn run() {
             commands::generate_password,
             commands::analyze_strength,
             commands::copy_to_clipboard,
+            commands::create_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
