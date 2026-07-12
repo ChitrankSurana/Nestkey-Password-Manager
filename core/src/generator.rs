@@ -11,6 +11,9 @@ pub const MAX_WORDS: usize = 12;
 const UPPERCASE: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const LOWERCASE: &str = "abcdefghijklmnopqrstuvwxyz";
 const DIGITS: &str = "0123456789";
+// SYMBOLS intentionally overlaps with a couple of Task 3's pattern-DSL reserved tokens (# and ?) -
+// those are template-input tokens, this is output-alphabet content; a generated password
+// containing a literal '#' is never re-parsed as a template, so the overlap is harmless.
 const SYMBOLS: &str = "!@#$%^&*()-_=+[]{};:,.?";
 const VOWELS: &str = "aeiou";
 const CONSONANTS: &str = "bcdfghjklmnpqrstvwxyz";
@@ -51,7 +54,10 @@ pub fn generate_random(opts: &RandomOptions) -> Result<Zeroizing<String>, GenErr
     }
     let mut rng = rand::thread_rng();
     // `choose` is uniform/bias-free over the pool (same primitive family as crypto.rs's CSPRNG use).
-    let s: String = (0..opts.length).map(|_| *pool.choose(&mut rng).unwrap()).collect();
+    let mut s = String::with_capacity(opts.length); // ASCII-only alphabet => exact capacity, zero reallocation
+    for _ in 0..opts.length {
+        s.push(*pool.choose(&mut rng).unwrap());
+    }
     Ok(Zeroizing::new(s))
 }
 
@@ -95,5 +101,28 @@ mod tests {
     fn random_rejects_out_of_range_length() {
         let opts = RandomOptions { length: 0, uppercase: true, lowercase: false, digits: false, symbols: false };
         assert!(matches!(generate_random(&opts), Err(GenError::InvalidLength)));
+    }
+
+    #[test]
+    fn random_output_allocates_exact_capacity_no_reallocation() {
+        // A String built via with_capacity(n) + n pushes of 1-byte chars has capacity exactly n,
+        // never more - collect()'s doubling growth would almost certainly overshoot n instead.
+        let opts = RandomOptions { length: 50, uppercase: true, lowercase: true, digits: true, symbols: true };
+        let pw = generate_random(&opts).unwrap();
+        assert_eq!(pw.capacity(), 50);
+    }
+
+    #[test]
+    fn random_accepts_min_and_max_length() {
+        let mk = |length| RandomOptions { length, uppercase: true, lowercase: true, digits: true, symbols: true };
+        assert_eq!(generate_random(&mk(MIN_LENGTH)).unwrap().chars().count(), MIN_LENGTH);
+        assert_eq!(generate_random(&mk(MAX_LENGTH)).unwrap().chars().count(), MAX_LENGTH);
+    }
+
+    #[test]
+    fn random_rejects_one_past_min_and_max_length() {
+        let mk = |length| RandomOptions { length, uppercase: true, lowercase: true, digits: true, symbols: true };
+        assert!(matches!(generate_random(&mk(MIN_LENGTH - 1)), Err(GenError::InvalidLength)));
+        assert!(matches!(generate_random(&mk(MAX_LENGTH + 1)), Err(GenError::InvalidLength)));
     }
 }
