@@ -1,25 +1,65 @@
 # Resume Notes — Password Manager — M3 Backup/Restore + CSV Export/Import (in progress)
 
-**Written:** 2026-07-12, paused mid-session because the account hit its usage limit
-(resets 11:20pm Asia/Calcutta) — not a crash, not a task boundary, a forced stop. **Read this first
-in a new session before doing anything else.**
+**Written:** 2026-07-13, paused mid-session at the user's request (not a crash, not a usage-limit
+hit this time — just "pause after current task done, I will continue later"). **Read this first in
+a new session before doing anything else.**
 
 ## Where everything stands
 
 - **Project root:** `E:\Coding_Projects-CS\Account_1\Password_Manager` — standalone git repo.
-- **M1 and M2 are DONE and merged to `main`** (unchanged — see `main`'s own `RESUME_HERE.md`/git log).
+- **M1 and M2 are DONE and merged to `main`** (unchanged — see `main`'s own `RESUME_HERE.md`/git log;
+  note the M2 `RESUME_HERE.md` at repo root is now stale/superseded — M2 was already merged and this
+  M3 worktree/branch already existed by the time that session ended).
 - **M3 (encrypted backup/restore + CSV export/import) is IN PROGRESS**, isolated in
   `.worktrees/m3-backup-csv` on branch `m3-backup-csv`, branched from `main` at `252e74c`.
 - **The plan:** `docs/superpowers/plans/2026-07-12-m3-backup-csv.md` — 19 tasks across 4 slices
   (Task 0 baseline check, Slice 1 backup/restore Tasks 1-6, Slice 2 CSV export Tasks 7-10, Slice 3
   CSV import Tasks 11-18, Slice 4 wiring+review Task 19).
+- **This session's pacing instruction:** "keep going, pause only if something needs a real decision"
+  — re-ask this fresh at the start of the next session per the standing note below; don't assume it
+  carries over.
 
-### Slice 1 (backup/restore) — implementation COMPLETE, cross-task review NOT YET RUN
+### Slice 1 (backup/restore) — COMPLETE including cross-task review
 
-Tasks 0-6 all implemented, individually spec-compliance + code-quality reviewed. **The Slice 1
-cross-task review (dispatched to review Tasks 1-6 together) was interrupted mid-run by the account
-usage-limit hit — it had not produced any findings yet.** This is the very next thing to do on
-resume: re-dispatch a fresh Slice 1 cross-task review before moving to Slice 2.
+Tasks 0-6 implemented, individually spec-compliance + code-quality reviewed, AND the Slice 1
+cross-task review (Tasks 1-6 together) is now done and clean. One real finding, fixed: `do_restore_backup`
+could leave a stray `<username>.vault.tmp` file behind if the final rename failed (no matching cleanup
+on that path, unlike the sibling error branch) — fixed with the same best-effort `remove_file` cleanup,
+commit `850a30f`. Everything else checked out solid (lock ordering across `create_backup`/`restore_backup`
+and existing commands, Windows rename atomicity via `MOVEFILE_REPLACE_EXISTING`, `confirm_required`
+error-code plumbing end-to-end, `decode_bundle` panic/OOM safety against adversarial `.bak` input, no
+Debug-impl secret leaks, no shared-constant drift). Task 6's code-quality review was explicitly skipped
+by user decision (small/mechanical diff, spec-compliance already passed) — judged fine in hindsight,
+nothing surfaced in the cross-task pass that traces back to Task 6.
+
+### Slice 2 (CSV export, Tasks 7-10) — Task 7 done, Tasks 8-10 not started
+
+**Task 7** (`core::portio` module: `CsvRow` struct + `rows_to_csv`, `core/src/portio.rs`) is DONE:
+implemented via TDD, spec-compliance ✅, code-quality ✅ Approved. Two non-blocking minor polish notes
+from code-quality review (fine to pick up later or ignore): (1) `PortioError::Write` collapses 3
+distinct failure paths into one unit variant with no source context — low real-world impact since two
+of the three paths are believed-unreachable for an in-memory `Vec<u8>` writer; (2) no doc comments on
+the new module's public items, unlike sibling `backup.rs`/`generator.rs`. Commits: `1fb6116` (feat),
+`8b7ed21` (docs — see next paragraph).
+
+**Real finding during Task 7, already resolved:** the plan's dependency-justification comments (in
+4 places in the plan doc) claimed `csv = "1"` "does not pull in serde" because its serde feature is
+"opt-in and never enabled." **This was independently verified to be factually wrong** — read the
+actual published `Cargo.toml` for both `csv` 1.3.0 and 1.4.0 directly (not just `cargo tree`): `serde`
+is an unconditional, non-optional dependency of the `csv` crate, not gated by any feature flag, and
+has been since at least 1.3.0. `pwmgr-core`'s dependency tree now transitively includes `serde_core`
+(the lightweight, macro-free trait-only crate serde split out — no `serde_derive` proc-macro codegen
+runs anywhere as a result). The load-bearing invariant was always "no serde derive/codegen in
+`pwmgr-core`'s own types," which still holds and was not violated — only the literal "zero serde-family
+crates anywhere in the tree" phrasing was wrong. Fixed by correcting the plan doc's wording in 4 spots
+(commit `8b7ed21`), not by reworking onto the lower-level `csv-core` crate (not worth the rewrite for a
+documentation-accuracy issue with no actual security/behavior impact). **If revisited:** no code change
+needed, just be aware `serde_core` will legitimately appear in `cargo tree` output for `pwmgr-core` from
+here on, and that's expected/accepted, not a regression to chase.
+
+**Next up on resume:** Task 8 (`core::portio` — sealed-CSV envelope encoder, same file) — implementer →
+spec-reviewer → code-quality-reviewer, exactly the same pattern used for Task 7. Then Tasks 9-10, then
+the Slice 2 cross-task review (Tasks 7-10 together) before moving to Slice 3.
 
 **Real bugs found and fixed during Slice 1 (all closed, worth knowing about if revisited):**
 - Task 3 (`core::backup`): a `BackupError::InvalidUsername` variant was defined but never tested —
@@ -41,27 +81,25 @@ resume: re-dispatch a fresh Slice 1 cross-task review before moving to Slice 2.
      (`8d5e300`): lock the session in the same step. Verified via an actual mutation test (comment
      out the fix, confirm the regression test catches it, restore it) — genuinely load-bearing, not
      vacuous.
-- Task 6 (frontend Backup screen): spec-compliance passed clean. **Code-quality review for this task
-  did NOT complete** — the reviewer subagent hit the account-wide usage-limit failure before
-  producing any findings. Re-dispatch a fresh one, or judge it low-risk given the diff is small/
-  mechanical and spec-compliance already passed. Nothing suggests a problem, just genuinely
-  unverified by that second pass yet.
+- Task 6 (frontend Backup screen): spec-compliance passed clean; code-quality review was skipped by
+  user decision (mechanical diff, judged low-risk) rather than interrupted — the Slice 1 cross-task
+  review has since run clean and turned up nothing traceable to Task 6, so this is considered resolved.
+- **Task 7 (`core::portio` CsvRow/rows_to_csv):** implemented, spec-compliant, code-quality approved.
+  See the Slice 2 section above for the csv-crate/serde correction that came out of this task.
 
-**Test count as of `eb8641f`:** `cargo test --workspace` → 139 passed, 0 failed (54 pwmgr-app + 83
-pwmgr-core + 2 end-to-end). `npm run build` clean.
+**Test count as of `1fb6116`:** `cargo test -p pwmgr-core portio::` → 3 passed; `cargo test --workspace`
+→ 86 pwmgr-core lib + 2 end-to-end passed (full workspace count not re-run after Task 7, expect ~142
+given +3 from Task 7 over the prior 139). `npm run build` last confirmed clean at end of Slice 1.
 
 ## What to do next
 
-1. **Finish Task 6's code-quality review** (interrupted by usage limit, no findings reported yet) —
-   or judge it low-risk and skip straight to the cross-task review if you want to move faster; your
-   call, the implementation itself is small and mechanical.
-2. **Run the Slice 1 cross-task review** (Tasks 1-6 together) — this project's established pattern
-   catches things per-task review misses (shared-constant drift, secret-handling consistency across
-   the whole slice, etc. — see M1/M2's own cross-task reviews for the kind of thing that turns up).
-3. **Slice 2 — CSV export** (Tasks 7-10): `core::portio`'s `CsvRow`/`rows_to_csv`, the sealed-CSV
-   envelope encoder, the `export_csv` command (3 modes: this-device / with-password / plaintext, the
-   last one gated behind a typed-confirmation UI field AND a backend `confirmed: bool` check, plus a
-   local plaintext-export log per `THREAT_MODEL.md`'s explicit requirement), and the export UI.
+1. **Task 8** — `core::portio`'s sealed-CSV envelope encoder (`encode_sealed_csv`, same file as Task 7).
+   Full spec is in the plan doc, Task 8 section (~line 962 as of this writing, but line numbers have
+   shifted from this session's doc edits — search for "Task 8" heading). Implementer → spec-reviewer →
+   code-quality-reviewer, same pattern as Task 7.
+2. **Tasks 9-10** — `export_csv` IPC command (3 modes + plaintext confirm-gate + THREAT_MODEL-mandated
+   local export log) and the frontend CSV Export screen. Same per-task pattern.
+3. **Slice 2 cross-task review** (Tasks 7-10 together) before moving to Slice 3.
 4. **Slice 3 — CSV import** (Tasks 11-18, the largest slice): Chromium/Firefox/generic-mapper
    parsers, `vault::import_credentials` (transactional, rollback-on-failure, dedup by
    site-name+username), the two-phase preview→commit IPC commands, and the import UI with a
@@ -108,14 +146,21 @@ One final full-milestone review before finishing.
   restarting from scratch (worked cleanly for Task 5's implementer this session). If it hadn't made
   progress, just re-dispatch fresh.
 - **On pausing/confirmation:** whether to "keep going without pausing" is a per-session decision —
-  re-ask the user at the start of each new session. (This session's instruction was "complete M3,
-  pause only if asked" — honored through Task 6's implementation and spec-review; the session ended
-  via a forced usage-limit pause, not the user asking mid-flow, so this instruction's status for a
-  NEW session is unknown — re-ask rather than assume either way.)
+  re-ask the user at the start of each new session. (This session's instruction was "keep going,
+  pause only if something needs a real decision" — honored through Task 7's full review cycle; the
+  session ended because the user explicitly said "pause after current task done, I will continue
+  later," a genuine mid-flow stop, not a crash/limit. Re-ask fresh next session, don't assume either
+  way.)
+- **This session also independently verified and corrected a factual error in the plan doc itself**
+  (the csv-crate/serde claim in the Slice 2 section above) rather than just trusting the plan's stated
+  rationale — worth remembering that plan docs can be wrong about third-party dependency behavior and
+  are worth spot-checking against the actual vendored `Cargo.toml`, not just `cargo tree` output, when
+  something looks off.
 
-## Task tracker state
+## Task tracker state (this session)
 
-This session's `TaskCreate` list covers Task 0 through Task 6 (all `completed` except Task 6 itself,
-left `in_progress` since its code-quality review didn't finish), plus placeholders for the Slice 1
-cross-task review and Tasks 7-19 (all `pending`). These entries are session-local; recreate
-equivalents on resume, using this file and the plan doc as the source of truth.
+This session's `TaskCreate` list: #1 Slice 1 cross-task review (completed), #2 Slice 2 CSV export
+Tasks 7-10 (in_progress — Task 7 done, Task 8 next), #3 Slice 3 CSV import Tasks 11-18 (pending), #4
+Slice 4 wiring + full-milestone review (pending). These are session-local; recreate equivalents on
+resume using this file and the plan doc as source of truth.
+
