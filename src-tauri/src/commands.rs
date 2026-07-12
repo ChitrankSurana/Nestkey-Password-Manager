@@ -1,10 +1,11 @@
 use crate::config::VALID_AUTO_LOCK_MINUTES;
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, SearchResultDto, SiteDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, GenerateRequest, SearchResultDto, SiteDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
 use pwmgr_core::session::SystemClock;
 use tauri::{Emitter, State};
+use zeroize::Zeroizing;
 
 /// Smoke-test command for Slice 0: proves the IPC round trip (state access, Mutex lock, DTO
 /// return) works end-to-end before Slice 1 adds real auth commands on the same pattern.
@@ -293,6 +294,25 @@ pub fn update_auto_lock_minutes(
     do_update_auto_lock_minutes(&state, &paths, minutes)
 }
 
+pub fn do_generate_password(req: &GenerateRequest) -> Result<Zeroizing<String>, CommandError> {
+    use pwmgr_core::generator as gen;
+    let pw = match req {
+        GenerateRequest::Random { length, uppercase, lowercase, digits, symbols } =>
+            gen::generate_random(&gen::RandomOptions {
+                length: *length, uppercase: *uppercase, lowercase: *lowercase, digits: *digits, symbols: *symbols,
+            })?,
+        GenerateRequest::Memorable { words, separator } => gen::generate_memorable(*words, separator)?,
+        GenerateRequest::Pattern { template } => gen::generate_pattern(template)?,
+        GenerateRequest::Pronounceable { length } => gen::generate_pronounceable(*length)?,
+    };
+    Ok(pw)
+}
+
+#[tauri::command]
+pub fn generate_password(request: GenerateRequest) -> Result<Zeroizing<String>, CommandError> {
+    do_generate_password(&request)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,5 +596,25 @@ mod tests {
             before,
             "state.config must not change when the save fails"
         );
+    }
+
+    #[test]
+    fn generate_password_random_returns_requested_length() {
+        let req = GenerateRequest::Random { length: 20, uppercase: true, lowercase: true, digits: true, symbols: false };
+        let pw = do_generate_password(&req).unwrap();
+        assert_eq!(pw.chars().count(), 20);
+    }
+
+    #[test]
+    fn generate_password_memorable_uses_separator() {
+        let req = GenerateRequest::Memorable { words: 3, separator: "-".into() };
+        let pw = do_generate_password(&req).unwrap();
+        assert_eq!(pw.split('-').count(), 3);
+    }
+
+    #[test]
+    fn generate_password_maps_gen_error_to_invalid_input() {
+        let req = GenerateRequest::Random { length: 0, uppercase: true, lowercase: false, digits: false, symbols: false };
+        assert_eq!(do_generate_password(&req).unwrap_err().code(), "invalid_input");
     }
 }

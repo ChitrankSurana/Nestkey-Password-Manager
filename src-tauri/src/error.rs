@@ -60,6 +60,13 @@ impl From<pwmgr_core::vault::VaultError> for CommandError {
     }
 }
 
+impl From<pwmgr_core::generator::GenError> for CommandError {
+    fn from(e: pwmgr_core::generator::GenError) -> Self {
+        // GenError's Display strings are already safe, user-facing validation text - surface directly.
+        invalid_input_error(&e.to_string())
+    }
+}
+
 /// Not backed by an unlocked session - distinct from any pwmgr-core error because pwmgr-core has
 /// no concept of "session"; that state lives entirely in this Tauri layer's AppState.
 pub fn locked_error() -> CommandError {

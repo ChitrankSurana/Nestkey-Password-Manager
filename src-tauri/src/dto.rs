@@ -1,5 +1,5 @@
 use pwmgr_core::vault::{Credential, SearchResult, Site, TrashedCredential};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -127,6 +127,15 @@ impl From<TrashedCredential> for TrashedCredentialDto {
 pub struct ConfigDto {
     pub theme: String,
     pub auto_lock_minutes: u32,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", tag = "method")]
+pub enum GenerateRequest {
+    Random { length: usize, uppercase: bool, lowercase: bool, digits: bool, symbols: bool },
+    Memorable { words: usize, separator: String },
+    Pattern { template: String },
+    Pronounceable { length: usize },
 }
 
 #[cfg(test)]

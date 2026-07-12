@@ -751,7 +751,7 @@ shape from the reuse map. `zeroize`'s `serde` feature is already enabled in
 IPC. The command is **stateless** (no vault/session needed) — it takes no `State`, but keeps the
 `do_*`/wrapper split for testability.
 
-- [ ] **Step 1: Add the input DTO** (`GenerateRequest` — a serde-tagged enum, so one command
+- [x] **Step 1: Add the input DTO** (`GenerateRequest` — a serde-tagged enum, so one command
   dispatches all four methods)
 
 ```rust
@@ -766,7 +766,7 @@ pub enum GenerateRequest {
 }
 ```
 
-- [ ] **Step 2: Map `GenError` → `invalid_input`** (in `error.rs`, mirroring the existing
+- [x] **Step 2: Map `GenError` → `invalid_input`** (in `error.rs`, mirroring the existing
   `From<AuthError>`/`From<VaultError>` impls)
 
 ```rust
@@ -779,7 +779,7 @@ impl From<pwmgr_core::generator::GenError> for CommandError {
 }
 ```
 
-- [ ] **Step 3: Write the failing tests** (in `commands.rs mod tests` — no `State` needed)
+- [x] **Step 3: Write the failing tests** (in `commands.rs mod tests` — no `State` needed)
 
 ```rust
 #[test]
@@ -803,9 +803,9 @@ fn generate_password_maps_gen_error_to_invalid_input() {
 }
 ```
 
-- [ ] **Step 4: Confirm fail.**
+- [x] **Step 4: Confirm fail.**
 
-- [ ] **Step 5: Implement**
+- [x] **Step 5: Implement**
 
 ```rust
 // src-tauri/src/commands.rs  (add `use crate::dto::GenerateRequest; use zeroize::Zeroizing;`)
@@ -829,12 +829,12 @@ pub fn generate_password(request: GenerateRequest) -> Result<Zeroizing<String>, 
 }
 ```
 
-- [ ] **Step 6: Register in `lib.rs`'s `generate_handler!`** — add `commands::generate_password,`.
+- [x] **Step 6: Register in `lib.rs`'s `generate_handler!`** — add `commands::generate_password,`.
 
-- [ ] **Step 7: Confirm pass** — `cargo test -p pwmgr-app generate_password` then
+- [x] **Step 7: Confirm pass** — `cargo test -p pwmgr-app generate_password` then
   `cargo test --workspace`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A
