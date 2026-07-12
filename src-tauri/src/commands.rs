@@ -443,10 +443,33 @@ pub fn do_restore_backup(
         ));
     }
 
-    std::fs::write(&vault_path, &vault_bytes).map_err(|_| crate::error::internal_error())?;
+    // If the vault being restored over is the one currently open in AppState, close it first:
+    // its connection/key belongs to the account's OLD data and is stale the instant we replace
+    // the file underneath it, and on Windows a lingering open handle blocks the rename below.
+    {
+        let mut vault_guard = state.vault.lock().unwrap();
+        if matches!(vault_guard.as_ref(), Some((_, open_path)) if *open_path == vault_path) {
+            *vault_guard = None;
+        }
+    }
+
+    // Write the vault bytes to a temp path and commit the registry row BEFORE renaming into
+    // place, not after: writing the real vault_path first and upserting the registry second would
+    // leave a vault file whose ciphertext doesn't match the registry's salts/verifier (unopenable
+    // for an existing account) if the registry write failed after the vault write already
+    // succeeded. Rename is the last step and is effectively atomic on the same volume, so the
+    // only remaining failure window is far narrower than a plain write-then-upsert ordering.
+    let tmp_path = vault_path.with_extension("vault.tmp");
+    std::fs::write(&tmp_path, &vault_bytes).map_err(|_| crate::error::internal_error())?;
+
     let registry = state.registry.lock().unwrap();
-    pwmgr_core::registry::upsert_user(&registry, &user_record)
-        .map_err(|_| crate::error::internal_error())?;
+    if pwmgr_core::registry::upsert_user(&registry, &user_record).is_err() {
+        let _ = std::fs::remove_file(&tmp_path); // best-effort cleanup, don't mask the real error
+        return Err(crate::error::internal_error());
+    }
+    drop(registry);
+
+    std::fs::rename(&tmp_path, &vault_path).map_err(|_| crate::error::internal_error())?;
     Ok(())
 }
 
@@ -881,14 +904,23 @@ mod tests {
 
     #[test]
     fn restore_backup_onto_an_existing_username_with_confirmation_overwrites() {
+        // This state's vault connection for "alice" is still open (from backup_for's do_register)
+        // when the restore runs - on Windows, renaming a new vault file into place while the old
+        // one is held open by a live handle fails unless that handle is closed first. This test
+        // pins down that the restore closes it rather than relying on write-in-place semantics.
         let (state, paths, dir) = test_state_and_paths();
         let bundle = backup_for(&state, &paths, "alice");
         let bundle_path = dir.path().join("alice.bak");
         std::fs::write(&bundle_path, &bundle).unwrap();
+        assert!(state.vault.lock().unwrap().is_some(), "precondition: vault still open pre-restore");
 
         let result = do_restore_backup(&state, &paths, bundle_path.to_str().unwrap(), true);
 
         assert!(result.is_ok());
+        assert!(
+            state.vault.lock().unwrap().is_none(),
+            "restore must close the stale open connection, not leave it pointing at replaced data"
+        );
     }
 
     #[test]
