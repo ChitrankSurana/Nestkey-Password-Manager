@@ -30,6 +30,8 @@ pub enum GenError {
     NoCharClasses,
     #[error("Pattern must contain at least one token.")]
     EmptyPattern,
+    #[error("Pattern template must be {MAX_LENGTH} characters or fewer.")]
+    TemplateTooLong,
 }
 
 pub struct RandomOptions {
@@ -98,6 +100,9 @@ fn pick(set: &str, rng: &mut impl rand::Rng) -> char {
 }
 
 pub fn generate_pattern(template: &str) -> Result<Zeroizing<String>, GenError> {
+    if template.chars().count() > MAX_LENGTH {
+        return Err(GenError::TemplateTooLong);
+    }
     let mut rng = rand::thread_rng();
     // Pre-sized to the template's char count: each iteration consumes >=1 input char and produces
     // <=1 output char, so this is a safe upper bound - zero reallocations, matching Task 1.5's fix
@@ -240,5 +245,25 @@ mod tests {
     #[test]
     fn pattern_rejects_empty_template() {
         assert!(matches!(generate_pattern(""), Err(GenError::EmptyPattern)));
+    }
+
+    #[test]
+    fn pattern_rejects_template_longer_than_max_length() {
+        let template = "c".repeat(MAX_LENGTH + 1);
+        assert!(matches!(generate_pattern(&template), Err(GenError::TemplateTooLong)));
+    }
+
+    #[test]
+    fn pattern_accepts_template_at_max_length() {
+        let template = "c".repeat(MAX_LENGTH);
+        assert_eq!(generate_pattern(&template).unwrap().chars().count(), MAX_LENGTH);
+    }
+
+    #[test]
+    fn pattern_handles_consecutive_escapes() {
+        // '\\\\' in the Rust source is the two-character template `\\`, which the DSL's escape rule
+        // (`\x` -> literal x) expands to one literal backslash. Two of them back-to-back -> "\\\\".
+        let pw = generate_pattern(r"\\\\").unwrap();
+        assert_eq!(&*pw, r"\\");
     }
 }
