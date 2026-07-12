@@ -1344,7 +1344,7 @@ existing convention: per-field `useState`, the `submitting`/`error` pair, the
 try/catch/`isCommandError`/`finally` submit idiom, `<Tooltip>`-wrapped buttons,
 `disabled={submitting}` + `disabled:opacity-50`.
 
-- [ ] **Step 1: Add generator state and the generate handler**
+- [x] **Step 1: Add generator state and the generate handler**
 
 ```tsx
 type GenMethod = "random" | "memorable" | "pattern" | "pronounceable";
@@ -1371,7 +1371,7 @@ async function handleGenerate() {
 }
 ```
 
-- [ ] **Step 2: Load the configured algorithm; wire both meters**
+- [x] **Step 2: Load the configured algorithm; wire both meters**
 
 On mount, fetch `api.getConfig()` to learn `strengthAlgorithm`. The **simple** meter is derived
 synchronously from `secret` (per keystroke) via `simpleEntropyBits`/`entropyBand`. The **zxcvbn**
@@ -1394,7 +1394,7 @@ const meter = algorithm === "zxcvbn"
   : (() => { const bits = simpleEntropyBits(secret); return { ...entropyBand(bits), bits }; })();
 ```
 
-- [ ] **Step 3: Render the controls, meter bar, Generate + Copy buttons** near the `secret` input.
+- [x] **Step 3: Render the controls, meter bar, Generate + Copy buttons** near the `secret` input.
   Method selector (`<select>`); the method-specific params (length + 4 class checkboxes for random;
   words + separator for memorable; a template text input for pattern with a one-line legend
   `C/c V/v # ? \literal`; length for pronounceable). A strength bar coloured by `meter.score` with
@@ -1427,12 +1427,20 @@ Expected, in the Add/Edit Credential modal:
    between → that value is preserved).
 Close the window when confirmed.
 
-- [ ] **Step 5: Full regression**
+> **Pending human verification.** Not performed by the implementer subagent — no subagent can
+> drive a live Tauri window. `cargo test --workspace` and `npm run build` both pass (Step 5), but
+> this manual UI walkthrough still needs a human to run `npm run tauri dev` and check off the three
+> items above.
+
+- [x] **Step 5: Full regression**
 
 Run: `cargo test --workspace` (Expected: all pass) and `npm run build` (Expected: `tsc` clean, Vite
 build succeeds).
 
-- [ ] **Step 6: Commit**
+> Ran both: `cargo test --workspace` → 76 + 2 tests passed, 0 failed. `npm run build` → `tsc` clean,
+> Vite build succeeded (`dist/assets/index-C5D4ulbx.js`, 217.89 kB).
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
