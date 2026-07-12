@@ -1,4 +1,4 @@
-use crate::config::VALID_AUTO_LOCK_MINUTES;
+use crate::config::{VALID_AUTO_LOCK_MINUTES, VALID_STRENGTH_ALGORITHMS};
 use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, GenerateRequest, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
@@ -256,7 +256,11 @@ pub fn purge_trash(state: State<AppState>) -> Result<usize, CommandError> {
 
 pub fn do_get_config(state: &AppState) -> ConfigDto {
     let config = state.config.lock().unwrap();
-    ConfigDto { theme: config.theme.clone(), auto_lock_minutes: config.auto_lock_minutes }
+    ConfigDto {
+        theme: config.theme.clone(),
+        auto_lock_minutes: config.auto_lock_minutes,
+        strength_algorithm: config.strength_algorithm.clone(),
+    }
 }
 
 pub fn do_update_auto_lock_minutes(
@@ -280,6 +284,22 @@ pub fn do_update_auto_lock_minutes(
     Ok(())
 }
 
+pub fn do_update_strength_algorithm(
+    state: &AppState,
+    paths: &AppPaths,
+    algorithm: &str,
+) -> Result<(), CommandError> {
+    if !VALID_STRENGTH_ALGORITHMS.contains(&algorithm) {
+        return Err(crate::error::invalid_input_error("Unknown strength algorithm."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.strength_algorithm = algorithm.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_config(state: State<AppState>) -> ConfigDto {
     do_get_config(&state)
@@ -292,6 +312,15 @@ pub fn update_auto_lock_minutes(
     minutes: u32,
 ) -> Result<(), CommandError> {
     do_update_auto_lock_minutes(&state, &paths, minutes)
+}
+
+#[tauri::command]
+pub fn update_strength_algorithm(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    algorithm: String,
+) -> Result<(), CommandError> {
+    do_update_strength_algorithm(&state, &paths, &algorithm)
 }
 
 pub fn do_generate_password(req: &GenerateRequest) -> Result<Zeroizing<String>, CommandError> {
@@ -613,6 +642,26 @@ mod tests {
             before,
             "state.config must not change when the save fails"
         );
+    }
+
+    #[test]
+    fn get_config_includes_strength_algorithm() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_get_config(&state).strength_algorithm, "simple");
+    }
+
+    #[test]
+    fn update_strength_algorithm_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_strength_algorithm(&state, &paths, "zxcvbn").unwrap();
+        assert_eq!(do_get_config(&state).strength_algorithm, "zxcvbn");
+        assert_eq!(Config::load(&paths.config_path()).unwrap().strength_algorithm, "zxcvbn");
+    }
+
+    #[test]
+    fn update_strength_algorithm_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        assert_eq!(do_update_strength_algorithm(&state, &paths, "bogus").unwrap_err().code(), "invalid_input");
     }
 
     #[test]

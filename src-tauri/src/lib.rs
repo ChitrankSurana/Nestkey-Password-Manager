@@ -70,6 +70,7 @@ pub fn run() {
             commands::purge_trash,
             commands::get_config,
             commands::update_auto_lock_minutes,
+            commands::update_strength_algorithm,
             commands::generate_password,
             commands::analyze_strength,
         ])

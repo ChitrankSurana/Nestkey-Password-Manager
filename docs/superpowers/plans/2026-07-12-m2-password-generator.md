@@ -1028,7 +1028,7 @@ git commit -m "feat: add validated strength_algorithm field to Config"
 
 **Files:** Modify `src-tauri/src/dto.rs`, `src-tauri/src/commands.rs`, `src-tauri/src/lib.rs`
 
-- [ ] **Step 1: Add the field to `ConfigDto`**
+- [x] **Step 1: Add the field to `ConfigDto`**
 
 ```rust
 // src-tauri/src/dto.rs — ConfigDto
@@ -1039,7 +1039,7 @@ pub struct ConfigDto {
 }
 ```
 
-- [ ] **Step 2: Write the failing tests** (mirror `update_auto_lock_minutes_persists...` and
+- [x] **Step 2: Write the failing tests** (mirror `update_auto_lock_minutes_persists...` and
   `..._rejects_an_out_of_range_value`)
 
 ```rust
@@ -1064,9 +1064,9 @@ fn update_strength_algorithm_rejects_invalid_value() {
 }
 ```
 
-- [ ] **Step 3: Confirm fail.**
+- [x] **Step 3: Confirm fail.**
 
-- [ ] **Step 4: Implement** — update `do_get_config` to include the field, and add the update
+- [x] **Step 4: Implement** — update `do_get_config` to include the field, and add the update
   command following `do_update_auto_lock_minutes`'s **fixed** (post-Task-24.5) mutate-a-clone-then-
   commit shape:
 
@@ -1102,11 +1102,11 @@ pub fn update_strength_algorithm(
 }
 ```
 
-- [ ] **Step 5: Register** `commands::update_strength_algorithm,` in `lib.rs`.
+- [x] **Step 5: Register** `commands::update_strength_algorithm,` in `lib.rs`.
 
-- [ ] **Step 6: Confirm pass** — `cargo test -p pwmgr-app`.
+- [x] **Step 6: Confirm pass** — `cargo test -p pwmgr-app`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A

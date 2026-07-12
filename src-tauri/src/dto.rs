@@ -127,6 +127,7 @@ impl From<TrashedCredential> for TrashedCredentialDto {
 pub struct ConfigDto {
     pub theme: String,
     pub auto_lock_minutes: u32,
+    pub strength_algorithm: String,
 }
 
 // Non-secret score/label output - normal `Debug` derive is fine (unlike CredentialDto above).
