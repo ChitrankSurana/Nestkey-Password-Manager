@@ -446,10 +446,14 @@ pub fn do_restore_backup(
     // If the vault being restored over is the one currently open in AppState, close it first:
     // its connection/key belongs to the account's OLD data and is stale the instant we replace
     // the file underneath it, and on Windows a lingering open handle blocks the rename below.
+    // Locking the session in the same step (matching do_lock's pattern) keeps the app-wide
+    // invariant vault.is_some() <=> session.is_unlocked() intact - clearing the vault alone would
+    // leave unlock_status() reporting "unlocked" while every vault command now returns `locked`.
     {
         let mut vault_guard = state.vault.lock().unwrap();
         if matches!(vault_guard.as_ref(), Some((_, open_path)) if *open_path == vault_path) {
             *vault_guard = None;
+            state.session.lock().unwrap().lock();
         }
     }
 
@@ -920,6 +924,10 @@ mod tests {
         assert!(
             state.vault.lock().unwrap().is_none(),
             "restore must close the stale open connection, not leave it pointing at replaced data"
+        );
+        assert!(
+            state.session.lock().unwrap().is_locked(),
+            "session must be locked in lockstep with the vault, or unlock_status() would lie"
         );
     }
 
