@@ -473,7 +473,10 @@ pub fn do_restore_backup(
     }
     drop(registry);
 
-    std::fs::rename(&tmp_path, &vault_path).map_err(|_| crate::error::internal_error())?;
+    if std::fs::rename(&tmp_path, &vault_path).is_err() {
+        let _ = std::fs::remove_file(&tmp_path); // best-effort cleanup, don't mask the real error
+        return Err(crate::error::internal_error());
+    }
     Ok(())
 }
 
