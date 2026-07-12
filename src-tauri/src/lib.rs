@@ -35,6 +35,7 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(app_state)
         .manage(app_paths)
         .setup(|app| {
@@ -73,6 +74,7 @@ pub fn run() {
             commands::update_strength_algorithm,
             commands::generate_password,
             commands::analyze_strength,
+            commands::copy_to_clipboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

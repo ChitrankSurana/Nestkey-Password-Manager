@@ -1210,20 +1210,20 @@ clears **only if it still equals the value we wrote** — so if the user copied 
 interim, we don't clobber their clipboard. The held copy of the secret is wrapped in
 `Zeroizing<String>` for the task's lifetime, matching the project's zeroization bar.
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 ```toml
 # src-tauri/Cargo.toml, [dependencies]
 tauri-plugin-clipboard-manager = "2"
 ```
 
-- [ ] **Step 2: Register the plugin** in `lib.rs` (before `.invoke_handler`):
+- [x] **Step 2: Register the plugin** in `lib.rs` (before `.invoke_handler`):
 
 ```rust
 .plugin(tauri_plugin_clipboard_manager::init())
 ```
 
-- [ ] **Step 3: Implement the command** (thin wrapper only — the effect is an OS clipboard side
+- [x] **Step 3: Implement the command** (thin wrapper only — the effect is an OS clipboard side
   effect requiring a real `AppHandle`, so it is not unit-testable in the headless harness; this is
   an intentional, justified deviation from the `do_*` split, verified manually in Step 5)
 
@@ -1253,18 +1253,27 @@ pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), Comm
 }
 ```
 
-- [ ] **Step 4: Register** `commands::copy_to_clipboard,` in `lib.rs`. Run
+- [x] **Step 4: Register** `commands::copy_to_clipboard,` in `lib.rs`. Run
   `cargo build -p pwmgr-app` (Expected: compiles). If a runtime permissions error appears when the
   command is exercised in Step 5, add the clipboard-manager permission to
   `src-tauri/capabilities/default.json` (`clipboard-manager:allow-write-text`,
   `:allow-read-text`, `:allow-clear`) and rebuild — direct Rust `ClipboardExt` calls generally don't
   require it, but grant it if the platform demands.
 
+  Done: builds clean (`cargo build -p pwmgr-app`). Added the 3 clipboard-manager permissions to
+  `capabilities/default.json` proactively rather than waiting for a runtime failure — this repo's
+  capabilities file follows an explicit-allowlist pattern (only `core:default` is granted; nothing
+  is added speculatively) and there's no live app available in this environment to discover a
+  runtime permissions error, so the safer call is to grant the permission up front. Cost is one
+  config line; the alternative was leaving a plausible runtime break for whoever hits Step 5.
+
 - [ ] **Step 5: Manual verification** (deferred to Task 12's end-to-end check, where the Copy
   button exists). Note here that copy must place the value on the OS clipboard and it must be
   cleared ~30s later only if unchanged.
 
-- [ ] **Step 6: Commit**
+  **Deferred to Task 12** per this task's own Step 5 wording above — not attempted in Task 10.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A

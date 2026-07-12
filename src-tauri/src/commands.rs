@@ -4,7 +4,9 @@ use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
 use pwmgr_core::session::SystemClock;
+use std::time::Duration;
 use tauri::{Emitter, State};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use zeroize::Zeroizing;
 
 /// Smoke-test command for Slice 0: proves the IPC round trip (state access, Mutex lock, DTO
@@ -357,6 +359,28 @@ pub fn do_analyze_strength(password: &str) -> StrengthDto {
 #[tauri::command]
 pub fn analyze_strength(password: String) -> StrengthDto {
     do_analyze_strength(&password)
+}
+
+const CLIPBOARD_CLEAR_SECS: u64 = 30; // hardcoded constant, NOT a user setting (ponytail)
+
+// Thin wrapper only - not split into a `do_*` + wrapper pair. The effect is an OS clipboard side
+// effect requiring a real `AppHandle`, so it is not unit-testable in the headless harness; this is
+// an intentional, justified deviation, verified manually in Task 12.
+#[tauri::command]
+pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), CommandError> {
+    let secret = Zeroizing::new(text);
+    app.clipboard().write_text((*secret).clone()).map_err(|_| crate::error::internal_error())?;
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(CLIPBOARD_CLEAR_SECS)).await;
+        // check-before-clear: only wipe if the clipboard still holds exactly what we wrote.
+        if let Ok(current) = handle.clipboard().read_text() {
+            if current == *secret {
+                let _ = handle.clipboard().clear();
+            }
+        }
+    });
+    Ok(())
 }
 
 #[cfg(test)]
