@@ -956,7 +956,7 @@ in `Config`, a `ConfigDto` field, a validated update command, and a Settings con
 
 **Files:** Modify `src-tauri/src/config.rs`
 
-- [ ] **Step 1: Write the failing tests** (mirror the existing
+- [x] **Step 1: Write the failing tests** (mirror the existing
   `load_rejects_invalid_auto_lock_minutes...` test)
 
 ```rust
@@ -976,9 +976,9 @@ fn load_rejects_invalid_strength_algorithm_by_falling_back_to_default() {
 }
 ```
 
-- [ ] **Step 2: Confirm fail.**
+- [x] **Step 2: Confirm fail.**
 
-- [ ] **Step 3: Implement** (add the constant, the default fn, the field, extend the sanitize in
+- [x] **Step 3: Implement** (add the constant, the default fn, the field, extend the sanitize in
   `load`)
 
 ```rust
@@ -1012,10 +1012,10 @@ if !VALID_STRENGTH_ALGORITHMS.contains(&parsed.strength_algorithm.as_str()) {
 Ok(parsed)
 ```
 
-- [ ] **Step 4: Confirm pass** — `cargo test -p pwmgr-app config` (existing config tests must
+- [x] **Step 4: Confirm pass** — `cargo test -p pwmgr-app config` (existing config tests must
   still pass).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A

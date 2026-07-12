@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 pub(crate) const VALID_AUTO_LOCK_MINUTES: [u32; 3] = [1, 5, 15];
+pub(crate) const VALID_STRENGTH_ALGORITHMS: [&str; 2] = ["simple", "zxcvbn"];
 
 fn default_theme() -> String {
     "dark".to_string()
@@ -11,17 +12,27 @@ fn default_auto_lock_minutes() -> u32 {
     5
 }
 
+fn default_strength_algorithm() -> String {
+    "simple".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default = "default_theme")]
     pub theme: String,
     #[serde(default = "default_auto_lock_minutes")]
     pub auto_lock_minutes: u32,
+    #[serde(default = "default_strength_algorithm")]
+    pub strength_algorithm: String,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { theme: default_theme(), auto_lock_minutes: default_auto_lock_minutes() }
+        Config {
+            theme: default_theme(),
+            auto_lock_minutes: default_auto_lock_minutes(),
+            strength_algorithm: default_strength_algorithm(),
+        }
     }
 }
 
@@ -43,8 +54,13 @@ impl Config {
                 Config::default()
             }
         };
-        if !VALID_AUTO_LOCK_MINUTES.contains(&parsed.auto_lock_minutes) {
-            return Ok(Config { auto_lock_minutes: default_auto_lock_minutes(), ..parsed });
+        let parsed = if !VALID_AUTO_LOCK_MINUTES.contains(&parsed.auto_lock_minutes) {
+            Config { auto_lock_minutes: default_auto_lock_minutes(), ..parsed }
+        } else {
+            parsed
+        };
+        if !VALID_STRENGTH_ALGORITHMS.contains(&parsed.strength_algorithm.as_str()) {
+            return Ok(Config { strength_algorithm: default_strength_algorithm(), ..parsed });
         }
         Ok(parsed)
     }
@@ -75,7 +91,11 @@ mod tests {
     fn save_then_load_roundtrips() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.json");
-        let config = Config { theme: "dark".to_string(), auto_lock_minutes: 15 };
+        let config = Config {
+            theme: "dark".to_string(),
+            auto_lock_minutes: 15,
+            strength_algorithm: "simple".to_string(),
+        };
 
         config.save(&path).unwrap();
         let loaded = Config::load(&path).unwrap();
@@ -121,5 +141,20 @@ mod tests {
         let config = Config::load(&path).unwrap();
 
         assert_eq!(config, Config::default());
+    }
+
+    #[test]
+    fn load_defaults_strength_algorithm_to_simple() {
+        let dir = tempdir().unwrap();
+        let config = Config::load(&dir.path().join("config.json")).unwrap();
+        assert_eq!(config.strength_algorithm, "simple");
+    }
+
+    #[test]
+    fn load_rejects_invalid_strength_algorithm_by_falling_back_to_default() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"theme":"dark","auto_lock_minutes":5,"strength_algorithm":"bogus"}"#).unwrap();
+        assert_eq!(Config::load(&path).unwrap().strength_algorithm, "simple");
     }
 }
