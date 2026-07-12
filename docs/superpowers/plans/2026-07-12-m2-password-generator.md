@@ -596,6 +596,82 @@ git commit -m "fix(core): bound generate_pattern's template length, matching sib
 
 ---
 
+## Task 2.5: bound `generate_memorable`'s separator length
+
+**Files:** Modify `core/src/generator.rs`
+
+**Why:** the Task 3.5 code-quality review re-scanned the whole module for unbounded inputs after
+fixing `generate_pattern`'s missing template-length bound, and found the same class of gap in the
+one remaining sibling: `generate_memorable(words, separator)` bounds `words` (`MIN_WORDS..=MAX_WORDS`)
+but never bounds `separator`'s length — `picked.join(separator)` will allocate a string as large as
+`separator` is long, times the word count. Not exploitable today (no caller outside `generator.rs`
+exists yet), but Task 5's plan wires `separator: String` straight from the Tauri IPC boundary into
+this function with no length check anywhere in that plan either — once that lands, an oversized
+`separator` from untrusted frontend input becomes a genuine unbounded-allocation DoS, the same shape
+of bug Task 3.5 just closed for templates. A separator is semantically a short joining string (e.g.
+`"-"`, `" "`, `"_"`), not a secret-length quantity like `MAX_LENGTH` — reusing that constant would be
+a wildly loose bound for what a separator should ever need, so this gets its own small constant
+rather than reusing `MAX_LENGTH`.
+
+- [ ] **Step 1: Write the failing tests**
+
+```rust
+// core/src/generator.rs, mod tests
+
+#[test]
+fn memorable_rejects_separator_longer_than_max() {
+    let separator = "-".repeat(MAX_SEPARATOR_LENGTH + 1);
+    assert!(matches!(generate_memorable(4, &separator), Err(GenError::SeparatorTooLong)));
+}
+
+#[test]
+fn memorable_accepts_separator_at_max_length() {
+    let separator = "-".repeat(MAX_SEPARATOR_LENGTH);
+    let pw = generate_memorable(4, &separator).unwrap();
+    assert_eq!(pw.split(separator.as_str()).count(), 4);
+}
+```
+
+- [ ] **Step 2: Run to confirm fail** — `cargo test -p pwmgr-core memorable` → FAIL (no
+  `MAX_SEPARATOR_LENGTH` constant, no `SeparatorTooLong` variant).
+
+- [ ] **Step 3: Add the constant, the error variant, and the check**
+
+```rust
+// core/src/generator.rs — near the other bound constants:
+pub const MAX_SEPARATOR_LENGTH: usize = 8;
+```
+
+```rust
+// core/src/generator.rs — GenError enum, add a 6th variant:
+#[error("Separator must be {MAX_SEPARATOR_LENGTH} characters or fewer.")]
+SeparatorTooLong,
+```
+
+```rust
+// core/src/generator.rs — generate_memorable, add as the first check:
+pub fn generate_memorable(words: usize, separator: &str) -> Result<Zeroizing<String>, GenError> {
+    if !(MIN_WORDS..=MAX_WORDS).contains(&words) {
+        return Err(GenError::InvalidWordCount);
+    }
+    if separator.chars().count() > MAX_SEPARATOR_LENGTH {
+        return Err(GenError::SeparatorTooLong);
+    }
+    // ...unchanged from here...
+```
+
+- [ ] **Step 4: Run to confirm pass** — `cargo test -p pwmgr-core generator` (expect all memorable
+  tests + the 2 new ones pass), then `cargo test --workspace` for a full regression check.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "fix(core): bound generate_memorable's separator length, matching sibling methods"
+```
+
+---
+
 ## Task 4: `pronounceable` method
 
 **Files:** Modify `core/src/generator.rs`
