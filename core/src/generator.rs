@@ -179,4 +179,9 @@ mod tests {
         assert!(matches!(generate_memorable(1, "-"), Err(GenError::InvalidWordCount)));
         assert!(matches!(generate_memorable(99, "-"), Err(GenError::InvalidWordCount)));
     }
+
+    #[test]
+    fn memorable_two_draws_differ() {
+        assert_ne!(*generate_memorable(6, " ").unwrap(), *generate_memorable(6, " ").unwrap());
+    }
 }
