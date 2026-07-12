@@ -122,4 +122,18 @@ mod tests {
 
         assert!(matches!(decode_bundle(cut), Err(BackupError::Truncated)));
     }
+
+    #[test]
+    fn decode_rejects_invalid_utf8_in_the_username_field() {
+        // encode_bundle can't produce this itself (UserRecord.username is always a valid
+        // String), so this hand-builds the byte layout directly - the only way to reach
+        // BackupError::InvalidUsername's defined-but-otherwise-unreachable path.
+        let mut bundle = vec![BUNDLE_VERSION];
+        write_field(&mut bundle, &[0xFF, 0xFE]); // not valid UTF-8
+        for _ in 0..6 {
+            write_field(&mut bundle, b""); // remaining fields never get read - username fails first
+        }
+
+        assert!(matches!(decode_bundle(&bundle), Err(BackupError::InvalidUsername)));
+    }
 }
