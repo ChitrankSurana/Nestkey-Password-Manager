@@ -94,13 +94,14 @@ mod tests {
         let config = Config {
             theme: "dark".to_string(),
             auto_lock_minutes: 15,
-            strength_algorithm: "simple".to_string(),
+            strength_algorithm: "zxcvbn".to_string(),
         };
 
         config.save(&path).unwrap();
         let loaded = Config::load(&path).unwrap();
 
         assert_eq!(loaded.auto_lock_minutes, 15);
+        assert_eq!(loaded.strength_algorithm, "zxcvbn");
     }
 
     #[test]
