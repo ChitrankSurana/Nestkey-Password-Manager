@@ -369,7 +369,7 @@ const CLIPBOARD_CLEAR_SECS: u64 = 30; // hardcoded constant, NOT a user setting 
 #[tauri::command]
 pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), CommandError> {
     let secret = Zeroizing::new(text);
-    app.clipboard().write_text((*secret).clone()).map_err(|_| crate::error::internal_error())?;
+    app.clipboard().write_text(secret.as_str()).map_err(|_| crate::error::internal_error())?;
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(CLIPBOARD_CLEAR_SECS)).await;
