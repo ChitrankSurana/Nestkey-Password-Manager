@@ -256,7 +256,7 @@ of 7 fields framed as `[u32 little-endian length][bytes]`, in this fixed order:
 | `sentinel_nonce` | `UserRecord.sentinel_nonce` |
 | `vault_bytes` | raw bytes of the `.vault` SQLCipher file — already ciphertext, sealed again by nothing |
 
-- [ ] **Step 1: Declare the module**
+- [x] **Step 1: Declare the module**
 
 ```rust
 // core/src/lib.rs
@@ -269,7 +269,7 @@ pub mod generator;
 pub mod backup;
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 ```rust
 // core/src/backup.rs, mod tests
@@ -323,12 +323,12 @@ fn decode_rejects_a_buffer_truncated_mid_field() {
 }
 ```
 
-- [ ] **Step 3: Run to confirm they fail**
+- [x] **Step 3: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-core backup::`
 Expected: FAIL — `cannot find function encode_bundle` (etc.).
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 ```rust
 // core/src/backup.rs
@@ -407,12 +407,12 @@ pub fn decode_bundle(bytes: &[u8]) -> Result<(UserRecord, Vec<u8>), BackupError>
 }
 ```
 
-- [ ] **Step 5: Run to confirm pass**
+- [x] **Step 5: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-core backup::`
 Expected: all 4 pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
