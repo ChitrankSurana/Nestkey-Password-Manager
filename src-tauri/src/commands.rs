@@ -404,10 +404,12 @@ pub fn do_create_backup(state: &AppState, paths: &AppPaths) -> Result<String, Co
     let vault_bytes = std::fs::read(&vault_path).map_err(|_| crate::error::internal_error())?;
     let bundle = pwmgr_core::backup::encode_bundle(&user_record, &vault_bytes);
 
+    // Millisecond (not second) precision: a whole-second timestamp lets two backups created in
+    // quick succession (e.g. a double-clicked button) silently collide and overwrite each other.
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
+        .as_millis();
     let backup_path = paths.backups_dir().join(format!("{}-{}.bak", username, timestamp));
     std::fs::write(&backup_path, &bundle).map_err(|_| crate::error::internal_error())?;
 
