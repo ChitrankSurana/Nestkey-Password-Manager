@@ -158,7 +158,7 @@ username that already has a registry row needs to *replace* that row's salts/ver
 instead of erroring, once the caller has confirmed the overwrite (Task 5) — a distinct operation from
 `create_user`, not a variant of it.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 // core/src/registry.rs, mod tests
@@ -191,12 +191,12 @@ fn upsert_user_replaces_existing_fields_without_erroring() {
 }
 ```
 
-- [ ] **Step 2: Run to confirm they fail**
+- [x] **Step 2: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-core registry::`
 Expected: FAIL — `cannot find function upsert_user`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 // core/src/registry.rs
@@ -223,12 +223,12 @@ pub fn upsert_user(conn: &Connection, rec: &UserRecord) -> Result<(), RegistryEr
 }
 ```
 
-- [ ] **Step 4: Run to confirm pass**
+- [x] **Step 4: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-core registry::`
 Expected: all pass (existing 4 + 2 new).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
