@@ -74,6 +74,25 @@ pub fn generate_random(opts: &RandomOptions) -> Result<Zeroizing<String>, GenErr
 // ponytail: no per-class guarantee; add a post-generation class-presence retry only if a spec
 // later requires it.
 
+static EFF_SHORT: &str = include_str!("wordlists/eff_short.txt");
+
+// Parses the last whitespace-delimited token per line (tolerates the "11213<TAB>word" EFF format
+// or a bare word list). Cheap to rebuild per call (~1296 &str slices from a &'static str); no
+// caching dep needed. // ponytail: rebuild each call, add once_cell only if profiling flags it.
+fn wordlist() -> Vec<&'static str> {
+    EFF_SHORT.lines().filter_map(|l| l.split_whitespace().last()).collect()
+}
+
+pub fn generate_memorable(words: usize, separator: &str) -> Result<Zeroizing<String>, GenError> {
+    if !(MIN_WORDS..=MAX_WORDS).contains(&words) {
+        return Err(GenError::InvalidWordCount);
+    }
+    let list = wordlist();
+    let mut rng = rand::thread_rng();
+    let picked: Vec<&str> = (0..words).map(|_| *list.choose(&mut rng).unwrap()).collect();
+    Ok(Zeroizing::new(picked.join(separator)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +159,24 @@ mod tests {
         let mk = |length| RandomOptions { length, uppercase: true, lowercase: true, digits: true, symbols: true };
         assert!(matches!(generate_random(&mk(MIN_LENGTH - 1)), Err(GenError::InvalidLength)));
         assert!(matches!(generate_random(&mk(MAX_LENGTH + 1)), Err(GenError::InvalidLength)));
+    }
+
+    #[test]
+    fn memorable_produces_requested_word_count() {
+        let pw = generate_memorable(4, "-").unwrap();
+        assert_eq!(pw.split('-').count(), 4);
+    }
+
+    #[test]
+    fn memorable_pulls_only_words_from_the_wordlist() {
+        let words = wordlist(); // test-visible helper
+        let pw = generate_memorable(6, " ").unwrap();
+        assert!(pw.split(' ').all(|w| words.contains(&w)));
+    }
+
+    #[test]
+    fn memorable_rejects_out_of_range_word_count() {
+        assert!(matches!(generate_memorable(1, "-"), Err(GenError::InvalidWordCount)));
+        assert!(matches!(generate_memorable(99, "-"), Err(GenError::InvalidWordCount)));
     }
 }
