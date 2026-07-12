@@ -673,9 +673,11 @@ mod tests {
 
     #[test]
     fn generate_password_memorable_uses_separator() {
-        let req = GenerateRequest::Memorable { words: 3, separator: "-".into() };
+        // "|" not "-": the EFF short wordlist's "yo-yo" entry contains a literal hyphen, which
+        // flakily over-counts a split('-') if that word gets picked (see core generator.rs tests).
+        let req = GenerateRequest::Memorable { words: 3, separator: "|".into() };
         let pw = do_generate_password(&req).unwrap();
-        assert_eq!(pw.split('-').count(), 3);
+        assert_eq!(pw.split('|').count(), 3);
     }
 
     #[test]

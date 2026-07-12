@@ -217,8 +217,11 @@ mod tests {
 
     #[test]
     fn memorable_produces_requested_word_count() {
-        let pw = generate_memorable(4, "-").unwrap();
-        assert_eq!(pw.split('-').count(), 4);
+        // "|" (not "-"): the EFF short wordlist's "yo-yo" entry contains a literal hyphen, so
+        // splitting on "-" flakily over-counts if that word gets picked. "|" can't appear in any
+        // wordlist entry.
+        let pw = generate_memorable(4, "|").unwrap();
+        assert_eq!(pw.split('|').count(), 4);
     }
 
     #[test]
@@ -236,8 +239,9 @@ mod tests {
 
     #[test]
     fn memorable_accepts_min_and_max_word_count() {
-        assert_eq!(generate_memorable(MIN_WORDS, "-").unwrap().split('-').count(), MIN_WORDS);
-        assert_eq!(generate_memorable(MAX_WORDS, "-").unwrap().split('-').count(), MAX_WORDS);
+        // "|" not "-": see memorable_produces_requested_word_count's comment (yo-yo collision).
+        assert_eq!(generate_memorable(MIN_WORDS, "|").unwrap().split('|').count(), MIN_WORDS);
+        assert_eq!(generate_memorable(MAX_WORDS, "|").unwrap().split('|').count(), MAX_WORDS);
     }
 
     #[test]
