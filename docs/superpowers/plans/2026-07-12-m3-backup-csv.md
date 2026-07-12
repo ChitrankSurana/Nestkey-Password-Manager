@@ -102,21 +102,21 @@ The official `tauri-plugin-dialog` is the platform-blessed way to do this — ru
 does **not** use it: per the design, backups always write under the already-existing
 `AppPaths::backups_dir()`, so there is nothing to pick for that half.
 
-- [ ] **Step 1: Add the Rust dependency**
+- [x] **Step 1: Add the Rust dependency**
 
 ```toml
 # src-tauri/Cargo.toml, [dependencies]
 tauri-plugin-dialog = "2"
 ```
 
-- [ ] **Step 2: Register the plugin** in `lib.rs` (alongside the existing
+- [x] **Step 2: Register the plugin** in `lib.rs` (alongside the existing
   `.plugin(tauri_plugin_clipboard_manager::init())`):
 
 ```rust
 .plugin(tauri_plugin_dialog::init())
 ```
 
-- [ ] **Step 3: Grant the capability permissions**
+- [x] **Step 3: Grant the capability permissions**
 
 ```json
 // src-tauri/capabilities/default.json — add to the "permissions" array
@@ -124,13 +124,13 @@ tauri-plugin-dialog = "2"
 "dialog:allow-save"
 ```
 
-- [ ] **Step 4: Add the JS binding**
+- [x] **Step 4: Add the JS binding**
 
 ```powershell
 npm install @tauri-apps/plugin-dialog
 ```
 
-- [ ] **Step 5: Confirm it builds**
+- [x] **Step 5: Confirm it builds**
 
 Run: `cargo build -p pwmgr-app`
 Expected: compiles clean (resolves the new crate).
@@ -139,7 +139,7 @@ Run: `npm run build`
 Expected: `tsc` clean (nothing references the new JS package yet, so no import to check, but the
 install itself must not break the existing build).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A

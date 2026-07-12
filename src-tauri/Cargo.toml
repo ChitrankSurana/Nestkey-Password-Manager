@@ -29,6 +29,7 @@ tokio = { version = "1", features = ["time"] }
 zeroize = { version = "1.7", features = ["serde"] }
 zxcvbn = "3"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2"
 
 [dev-dependencies]
 tempfile = "3.10"
