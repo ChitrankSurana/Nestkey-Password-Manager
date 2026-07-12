@@ -513,6 +513,89 @@ git commit -m "feat(core): add pattern mini-language generation method"
 
 ---
 
+## Task 3.5: bound `generate_pattern`'s template length
+
+**Files:** Modify `core/src/generator.rs`
+
+**Why:** the Task 3 code-quality review found `generate_pattern` is the only generation method in
+this module with no size bound — `generate_random` enforces `MIN_LENGTH..=MAX_LENGTH`,
+`generate_memorable` enforces `MIN_WORDS..=MAX_WORDS`, but `generate_pattern` only rejects an empty
+*output*, never a template that's too long. Since the DSL has no repetition/range tokens, output
+length tracks template length closely (each input char consumes ≥1 char, produces ≤1 output char),
+so an unbounded template produces an unbounded secret with no guardrail anywhere in the stack once
+Task 5 wires this up to the IPC boundary. Fix: cap the template at `MAX_LENGTH` (the same bound
+`generate_random`/`generate_pronounceable` already use for output length) — reusing the existing
+constant keeps every method's maximum secret length consistent, rather than inventing a second,
+possibly-different ceiling.
+
+- [ ] **Step 1: Write the failing tests**
+
+```rust
+// core/src/generator.rs, mod tests
+
+#[test]
+fn pattern_rejects_template_longer_than_max_length() {
+    let template = "c".repeat(MAX_LENGTH + 1);
+    assert!(matches!(generate_pattern(&template), Err(GenError::TemplateTooLong)));
+}
+
+#[test]
+fn pattern_accepts_template_at_max_length() {
+    let template = "c".repeat(MAX_LENGTH);
+    assert_eq!(generate_pattern(&template).unwrap().chars().count(), MAX_LENGTH);
+}
+
+#[test]
+fn pattern_handles_consecutive_escapes() {
+    // '\\\\' in the Rust source is the two-character template `\\`, which the DSL's escape rule
+    // (`\x` -> literal x) expands to one literal backslash. Two of them back-to-back -> "\\\\".
+    let pw = generate_pattern(r"\\\\").unwrap();
+    assert_eq!(&*pw, r"\\");
+}
+```
+
+- [ ] **Step 2: Run to confirm the first two fail** (the third, `pattern_handles_consecutive_escapes`,
+  already passes against Task 3's implementation — it's a regression-guard addition, not a red-bar
+  case; the plan's own Task 3 review already traced this behavior by hand and confirmed it correct,
+  this just pins it down with a real test).
+
+Run: `cargo test -p pwmgr-core pattern`
+Expected: `pattern_rejects_template_longer_than_max_length` and `pattern_accepts_template_at_max_length`
+FAIL (no `GenError::TemplateTooLong` variant yet); `pattern_handles_consecutive_escapes` passes.
+
+- [ ] **Step 3: Add the `TemplateTooLong` variant and the length check**
+
+```rust
+// core/src/generator.rs — GenError enum, add a 5th variant:
+#[error("Pattern template must be {MAX_LENGTH} characters or fewer.")]
+TemplateTooLong,
+```
+
+```rust
+// core/src/generator.rs — generate_pattern, add as the first check (before the pre-sized buffer):
+pub fn generate_pattern(template: &str) -> Result<Zeroizing<String>, GenError> {
+    if template.chars().count() > MAX_LENGTH {
+        return Err(GenError::TemplateTooLong);
+    }
+    let mut rng = rand::thread_rng();
+    let mut out = String::with_capacity(template.chars().count());
+    // ...unchanged from here...
+```
+
+- [ ] **Step 4: Run to confirm pass**
+
+Run: `cargo test -p pwmgr-core generator` (expect all pattern tests + the 3 new ones pass), then
+`cargo test --workspace` for a full regression check.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "fix(core): bound generate_pattern's template length, matching sibling methods"
+```
+
+---
+
 ## Task 4: `pronounceable` method
 
 **Files:** Modify `core/src/generator.rs`
