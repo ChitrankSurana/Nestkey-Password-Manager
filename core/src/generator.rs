@@ -318,4 +318,16 @@ mod tests {
     fn pronounceable_rejects_out_of_range_length() {
         assert!(matches!(generate_pronounceable(2), Err(GenError::InvalidLength)));
     }
+
+    #[test]
+    fn pronounceable_accepts_min_and_max_length() {
+        assert_eq!(generate_pronounceable(MIN_LENGTH).unwrap().chars().count(), MIN_LENGTH);
+        assert_eq!(generate_pronounceable(MAX_LENGTH).unwrap().chars().count(), MAX_LENGTH);
+    }
+
+    #[test]
+    fn pronounceable_rejects_one_past_min_and_max_length() {
+        assert!(matches!(generate_pronounceable(MIN_LENGTH - 1), Err(GenError::InvalidLength)));
+        assert!(matches!(generate_pronounceable(MAX_LENGTH + 1), Err(GenError::InvalidLength)));
+    }
 }
