@@ -11,11 +11,14 @@ self-contained `.bak` bundle, CSV export in 3 modes (encrypted-this-device, encr
 confirmed-plaintext), and CSV import from Chromium, Firefox, or a user-mapped generic CSV, via a
 two-phase preview→commit flow with one-transaction rollback semantics.
 
-**Architecture:** Two new serde-free `pwmgr-core` modules, matching the per-concern file split of
-`crypto`/`vault`/`auth`/`session`/`generator`: `core::backup` (hand-rolled versioned binary bundle
-format — a version byte plus `[u32 length][bytes]`-framed fields, no serde) and `core::portio` (CSV
-row shaping/parsing via the `csv` crate with its default, serde-free feature set, plus the same
-hand-rolled length-prefixed framing for the two encrypted CSV export envelopes). `core::vault` gains
+**Architecture:** Two new `pwmgr-core` modules using no serde *codegen* of their own, matching the
+per-concern file split of `crypto`/`vault`/`auth`/`session`/`generator`: `core::backup` (hand-rolled
+versioned binary bundle format — a version byte plus `[u32 length][bytes]`-framed fields, no serde)
+and `core::portio` (CSV row shaping/parsing via the `csv` crate's `StringRecord`-based API, plus the
+same hand-rolled length-prefixed framing for the two encrypted CSV export envelopes — see Task 7's
+note: `csv` turned out to depend on plain `serde`/`serde_core` unconditionally, not behind an optional
+feature as originally assumed, but nothing in `pwmgr-core` invokes `Serialize`/`Deserialize` itself).
+`core::vault` gains
 one new transactional function, `import_credentials`, for the CSV-import commit phase. No new crypto
 primitive anywhere — backups bundle the vault file's existing SQLCipher ciphertext verbatim, and both
 encrypted CSV modes reuse the existing `crypto::seal`/`crypto::derive_key`. The `src-tauri` app layer
@@ -29,12 +32,15 @@ via `AppPaths::backups_dir()`).
 Rust dependencies (`csv` in `core`, `tauri-plugin-dialog` in the app crate) plus its JS binding
 `@tauri-apps/plugin-dialog` — each justified in-line at the task that introduces it.
 
-**Deliberately NOT in core:** no `serde` anywhere in `pwmgr-core` — `csv` is added with its **default
-features only** (its `serde` convenience feature, which would pull in `serde`, is never enabled; all
-CSV reading/writing here goes through `csv::Writer`/`csv::Reader`'s `StringRecord`-based API, not
-`.serialize()`/`.deserialize()`). Both the backup bundle and the encrypted-CSV envelope use the same
-hand-rolled version-byte + length-prefixed-field framing already established by this plan, not a
-generic serialization format.
+**Deliberately NOT in core:** no serde *codegen* in `pwmgr-core` — all CSV reading/writing here goes
+through `csv::Writer`/`csv::Reader`'s `StringRecord`-based API, never `.serialize()`/`.deserialize()`,
+and no `pwmgr-core` type derives `Serialize`/`Deserialize`. (Task 7 found that `csv`'s dependency on
+`serde`/`serde_core` is actually unconditional — not gated by an optional feature as this plan
+originally assumed — so `serde_core`'s lightweight trait definitions do transitively appear in
+`pwmgr-core`'s dependency tree. No `serde_derive` proc-macro codegen runs anywhere in the workspace
+because of it; the load-bearing invariant was always "no serde derive in our own types," which still
+holds.) Both the backup bundle and the encrypted-CSV envelope use the same hand-rolled version-byte +
+length-prefixed-field framing already established by this plan, not a generic serialization format.
 
 ---
 
@@ -828,9 +834,15 @@ pause and ask the user whether to continue.
 
 **New dependency justification (ponytail ladder):** hand-rolling CSV quoting/escaping (commas,
 quotes, newlines inside a field) correctly is exactly the kind of "looks simple, isn't" text-format
-problem a maintained crate exists for — rung 5. Added with **default features only**: `csv = "1"`
-does **not** pull in `serde` (its `serde` convenience feature, gating `.serialize()`/`.deserialize()`,
-is opt-in and never enabled here), so `pwmgr-core` stays serde-free.
+problem a maintained crate exists for — rung 5. Added with **default features only**: no code here
+calls `.serialize()`/`.deserialize()`, only the plain `StringRecord`-based `Writer`/`Reader` API.
+**Correction found during Task 7:** `csv`'s dependency on `serde`/`serde_core` turned out to be
+unconditional (not gated by an optional feature as assumed above) — confirmed by reading the
+published `Cargo.toml` for both 1.3.0 and 1.4.0, not just `cargo tree`. `serde_core` (the lightweight,
+macro-free trait-only crate; no `serde_derive` proc-macro codegen) does transitively appear in
+`pwmgr-core`'s dependency graph as a result. Nothing in this task's code uses it — accepted as-is
+rather than reworking onto the lower-level `csv-core` crate, since no serde derive/codegen runs
+anywhere and the actual invariant that matters (no serde in `pwmgr-core`'s own types) still holds.
 
 ```toml
 # core/Cargo.toml, [dependencies]
@@ -2163,7 +2175,8 @@ pub fn read_csv_headers(path: String) -> Result<Vec<String>, CommandError> {
 
 Add `csv = "1"` to `src-tauri/Cargo.toml` `[dependencies]` too — the app crate reads the raw header
 row directly here rather than round-tripping through `pwmgr-core` for a one-line parse; this is fine
-since `csv` was already vetted serde-free in Task 7 and the app crate already has `serde` regardless.
+since the app crate already has `serde` regardless, and Task 7 already found `csv` pulls in
+`serde`/`serde_core` unconditionally anyway.
 
 - [ ] **Step 4: Register in `lib.rs`** — add `commands::read_csv_headers,`.
 
@@ -2851,8 +2864,10 @@ content here; it is not a plan-doc task.
 - **Restore is confirm-gated before overwriting an existing username's registry row or vault file** —
   `do_restore_backup` never silently clobbers existing data; `confirm_required` is a distinct error
   code from `invalid_input` so the frontend can branch on it deliberately.
-- **`pwmgr-core` stays serde-free.** The `csv` crate is added with default features only (`csv`'s
-  optional `serde` feature is never enabled); both the backup bundle and the sealed-CSV envelope use
+- **`pwmgr-core` has no serde codegen of its own** (no `#[derive(Serialize/Deserialize)]` anywhere in
+  its own types) — `csv` turned out to bring in `serde_core` unconditionally as a transitive dependency
+  (see Task 7's correction), but that's trait definitions only, no macro codegen. Both the backup
+  bundle and the sealed-CSV envelope use
   the same hand-rolled version-byte + length-prefixed-field framing already established in this
   plan, not a general-purpose serialization format.
 - **`ImportRecordDto` redacts its secret in `Debug`** exactly like `CredentialDto` does, even though
