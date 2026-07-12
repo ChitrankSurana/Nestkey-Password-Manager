@@ -93,6 +93,36 @@ pub fn generate_memorable(words: usize, separator: &str) -> Result<Zeroizing<Str
     Ok(Zeroizing::new(picked.join(separator)))
 }
 
+fn pick(set: &str, rng: &mut impl rand::Rng) -> char {
+    set.chars().collect::<Vec<_>>().choose(rng).copied().unwrap()
+}
+
+pub fn generate_pattern(template: &str) -> Result<Zeroizing<String>, GenError> {
+    let mut rng = rand::thread_rng();
+    // Pre-sized to the template's char count: each iteration consumes >=1 input char and produces
+    // <=1 output char, so this is a safe upper bound - zero reallocations, matching Task 1.5's fix
+    // (an unsized String::new()+push would leave unzeroized plaintext fragments in freed heap
+    // memory on each reallocation).
+    let mut out = String::with_capacity(template.chars().count());
+    let mut chars = template.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => { if let Some(lit) = chars.next() { out.push(lit); } } // escape: next char literal
+            'C' => out.push(pick(CONSONANTS, &mut rng).to_ascii_uppercase()),
+            'c' => out.push(pick(CONSONANTS, &mut rng)),
+            'V' => out.push(pick(VOWELS, &mut rng).to_ascii_uppercase()),
+            'v' => out.push(pick(VOWELS, &mut rng)),
+            '#' => out.push(pick(DIGITS, &mut rng)),
+            '?' => out.push(pick(SYMBOLS, &mut rng)),
+            other => out.push(other),
+        }
+    }
+    if out.is_empty() {
+        return Err(GenError::EmptyPattern);
+    }
+    Ok(Zeroizing::new(out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,5 +213,32 @@ mod tests {
     #[test]
     fn memorable_two_draws_differ() {
         assert_ne!(*generate_memorable(6, " ").unwrap(), *generate_memorable(6, " ").unwrap());
+    }
+
+    #[test]
+    fn pattern_expands_every_token_type() {
+        let pw = generate_pattern("Cv#?").unwrap();
+        let chars: Vec<char> = pw.chars().collect();
+        assert_eq!(chars.len(), 4);
+        assert!(CONSONANTS.to_uppercase().contains(chars[0]));
+        assert!(VOWELS.contains(chars[1]));
+        assert!(chars[2].is_ascii_digit());
+        assert!(SYMBOLS.contains(chars[3]));
+    }
+
+    #[test]
+    fn pattern_passes_literals_and_escapes_through() {
+        // '-' is literal; '\C' is an escaped literal 'C'.
+        let pw = generate_pattern(r"v-\C").unwrap();
+        let chars: Vec<char> = pw.chars().collect();
+        assert_eq!(chars.len(), 3);
+        assert!(VOWELS.contains(chars[0]));
+        assert_eq!(chars[1], '-');
+        assert_eq!(chars[2], 'C');
+    }
+
+    #[test]
+    fn pattern_rejects_empty_template() {
+        assert!(matches!(generate_pattern(""), Err(GenError::EmptyPattern)));
     }
 }
