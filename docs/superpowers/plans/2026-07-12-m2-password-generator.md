@@ -680,7 +680,7 @@ Algorithmic consonant-vowel alternation (fake syllables), no wordlist — distin
 (real words) and `pattern` (user template). Starts with a consonant, alternates to the requested
 length; lowercase output.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 #[test]
@@ -704,9 +704,9 @@ fn pronounceable_rejects_out_of_range_length() {
 }
 ```
 
-- [ ] **Step 2: Confirm fail.**
+- [x] **Step 2: Confirm fail.**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 pub fn generate_pronounceable(length: usize) -> Result<Zeroizing<String>, GenError> {
@@ -723,9 +723,9 @@ pub fn generate_pronounceable(length: usize) -> Result<Zeroizing<String>, GenErr
 }
 ```
 
-- [ ] **Step 4: Confirm pass, then full core regression** — `cargo test -p pwmgr-core` → all pass.
+- [x] **Step 4: Confirm pass, then full core regression** — `cargo test -p pwmgr-core` → all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A

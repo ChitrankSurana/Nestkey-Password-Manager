@@ -134,6 +134,19 @@ pub fn generate_pattern(template: &str) -> Result<Zeroizing<String>, GenError> {
     Ok(Zeroizing::new(out))
 }
 
+pub fn generate_pronounceable(length: usize) -> Result<Zeroizing<String>, GenError> {
+    if !(MIN_LENGTH..=MAX_LENGTH).contains(&length) {
+        return Err(GenError::InvalidLength);
+    }
+    let mut rng = rand::thread_rng();
+    // ASCII-only alphabet => exact capacity, zero reallocation (see Task 1.5).
+    let mut s = String::with_capacity(length);
+    for i in 0..length {
+        s.push(if i % 2 == 0 { pick(CONSONANTS, &mut rng) } else { pick(VOWELS, &mut rng) });
+    }
+    Ok(Zeroizing::new(s))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,5 +297,25 @@ mod tests {
         // (`\x` -> literal x) expands to one literal backslash. Two of them back-to-back -> "\\\\".
         let pw = generate_pattern(r"\\\\").unwrap();
         assert_eq!(&*pw, r"\\");
+    }
+
+    #[test]
+    fn pronounceable_respects_length_and_uses_only_syllable_chars() {
+        let pw = generate_pronounceable(12).unwrap();
+        assert_eq!(pw.chars().count(), 12);
+        assert!(pw.chars().all(|c| CONSONANTS.contains(c) || VOWELS.contains(c)));
+    }
+
+    #[test]
+    fn pronounceable_alternates_consonant_vowel() {
+        let pw = generate_pronounceable(10).unwrap();
+        for (i, c) in pw.chars().enumerate() {
+            if i % 2 == 0 { assert!(CONSONANTS.contains(c)); } else { assert!(VOWELS.contains(c)); }
+        }
+    }
+
+    #[test]
+    fn pronounceable_rejects_out_of_range_length() {
+        assert!(matches!(generate_pronounceable(2), Err(GenError::InvalidLength)));
     }
 }
