@@ -1286,7 +1286,7 @@ git commit -m "feat: add copy_to_clipboard command with backend auto-clear timer
 
 **Files:** Modify `src/lib/api.ts`; create `src/lib/strength.ts`
 
-- [ ] **Step 1: Add API bindings** (`api.ts`)
+- [x] **Step 1: Add API bindings** (`api.ts`)
 
 ```ts
 export type GenerateRequest =
@@ -1303,7 +1303,7 @@ analyzeStrength: (password: string) => invoke<StrengthDto>("analyze_strength", {
 copyToClipboard: (text: string) => invoke<void>("copy_to_clipboard", { text }),
 ```
 
-- [ ] **Step 2: Add the simple estimator** (`src/lib/strength.ts`) — the zero-dependency
+- [x] **Step 2: Add the simple estimator** (`src/lib/strength.ts`) — the zero-dependency
   `length × log2(poolSize)` formula, computed from which character classes actually appear in the
   string:
 
@@ -1326,7 +1326,7 @@ export function entropyBand(bits: number): { score: number; label: string } {
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A

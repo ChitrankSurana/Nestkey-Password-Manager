@@ -49,6 +49,14 @@ export interface ConfigDto {
   strengthAlgorithm: string;
 }
 
+export type GenerateRequest =
+  | { method: "random"; length: number; uppercase: boolean; lowercase: boolean; digits: boolean; symbols: boolean }
+  | { method: "memorable"; words: number; separator: string }
+  | { method: "pattern"; template: string }
+  | { method: "pronounceable"; length: number };
+
+export interface StrengthDto { score: number; guessesLog10: number; label: string; }
+
 export const api = {
   registerUser: (username: string, masterPassword: string) =>
     invoke<AuthSuccess>("register_user", { username, masterPassword }),
@@ -76,4 +84,7 @@ export const api = {
   updateAutoLockMinutes: (minutes: number) => invoke<void>("update_auto_lock_minutes", { minutes }),
   updateStrengthAlgorithm: (algorithm: string) =>
     invoke<void>("update_strength_algorithm", { algorithm }),
+  generatePassword: (request: GenerateRequest) => invoke<string>("generate_password", { request }),
+  analyzeStrength: (password: string) => invoke<StrengthDto>("analyze_strength", { password }),
+  copyToClipboard: (text: string) => invoke<void>("copy_to_clipboard", { text }),
 };
