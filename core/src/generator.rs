@@ -23,9 +23,9 @@ const CONSONANTS: &str = "bcdfghjklmnpqrstvwxyz";
 /// surfaces `e.to_string()` directly as an `invalid_input` message (see error.rs From impl).
 #[derive(Error, Debug, PartialEq)]
 pub enum GenError {
-    #[error("Length must be between 4 and 128.")]
+    #[error("Length must be between {MIN_LENGTH} and {MAX_LENGTH}.")]
     InvalidLength,
-    #[error("Word count must be between 2 and 12.")]
+    #[error("Word count must be between {MIN_WORDS} and {MAX_WORDS}.")]
     InvalidWordCount,
     #[error("Select at least one character type.")]
     NoCharClasses,
@@ -232,6 +232,18 @@ mod tests {
     fn memorable_rejects_out_of_range_word_count() {
         assert!(matches!(generate_memorable(1, "-"), Err(GenError::InvalidWordCount)));
         assert!(matches!(generate_memorable(99, "-"), Err(GenError::InvalidWordCount)));
+    }
+
+    #[test]
+    fn memorable_accepts_min_and_max_word_count() {
+        assert_eq!(generate_memorable(MIN_WORDS, "-").unwrap().split('-').count(), MIN_WORDS);
+        assert_eq!(generate_memorable(MAX_WORDS, "-").unwrap().split('-').count(), MAX_WORDS);
+    }
+
+    #[test]
+    fn memorable_rejects_one_past_min_and_max_word_count() {
+        assert!(matches!(generate_memorable(MIN_WORDS - 1, "-"), Err(GenError::InvalidWordCount)));
+        assert!(matches!(generate_memorable(MAX_WORDS + 1, "-"), Err(GenError::InvalidWordCount)));
     }
 
     #[test]
