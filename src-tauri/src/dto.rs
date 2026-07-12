@@ -171,6 +171,34 @@ mod tests {
     }
 
     #[test]
+    fn generate_request_deserializes_from_the_frontend_s_camelcase_tag_json() {
+        // Guards the Rust-variant-name <-> frontend-literal coupling: serde's `rename_all =
+        // "camelCase"` lowercases these PascalCase variant names for the "method" tag, and the TS
+        // union in src/lib/api.ts hardcodes the lowercase strings independently. Nothing else
+        // catches a drift between the two sides except this round trip through real JSON.
+        let random: GenerateRequest = serde_json::from_str(
+            r#"{"method":"random","length":20,"uppercase":true,"lowercase":true,"digits":true,"symbols":false}"#,
+        ).unwrap();
+        assert_eq!(random, GenerateRequest::Random { length: 20, uppercase: true, lowercase: true, digits: true, symbols: false });
+
+        let memorable: GenerateRequest =
+            serde_json::from_str(r#"{"method":"memorable","words":4,"separator":"-"}"#).unwrap();
+        assert_eq!(memorable, GenerateRequest::Memorable { words: 4, separator: "-".into() });
+
+        let pattern: GenerateRequest =
+            serde_json::from_str(r#"{"method":"pattern","template":"Cvcv-####"}"#).unwrap();
+        assert_eq!(pattern, GenerateRequest::Pattern { template: "Cvcv-####".into() });
+
+        let pronounceable: GenerateRequest =
+            serde_json::from_str(r#"{"method":"pronounceable","length":12}"#).unwrap();
+        assert_eq!(pronounceable, GenerateRequest::Pronounceable { length: 12 });
+
+        // PascalCase tag values (what you'd get without `rename_all` applying to the tag) must NOT
+        // parse - this is the failure mode a Rust-side variant rename could silently reintroduce.
+        assert!(serde_json::from_str::<GenerateRequest>(r#"{"method":"Random","length":20,"uppercase":true,"lowercase":true,"digits":true,"symbols":false}"#).is_err());
+    }
+
+    #[test]
     fn credential_dto_debug_format_redacts_secret() {
         let cred = Credential {
             id: 1,

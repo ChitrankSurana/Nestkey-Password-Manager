@@ -689,6 +689,22 @@ mod tests {
     }
 
     #[test]
+    fn update_strength_algorithm_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).strength_algorithm;
+        let result = do_update_strength_algorithm(&state, &bad_paths, "zxcvbn");
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).strength_algorithm,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
     fn generate_password_random_returns_requested_length() {
         let req = GenerateRequest::Random { length: 20, uppercase: true, lowercase: true, digits: true, symbols: false };
         let pw = do_generate_password(&req).unwrap();
