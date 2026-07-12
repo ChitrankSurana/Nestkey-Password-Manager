@@ -3,9 +3,14 @@ import { api, isCommandError } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 
 const OPTIONS = [1, 5, 15] as const;
+const ALGORITHM_OPTIONS = [
+  { value: "simple", label: "Simple (entropy)" },
+  { value: "zxcvbn", label: "Advanced (zxcvbn)" },
+] as const;
 
 export function Settings({ onBack }: { onBack: () => void }) {
   const [autoLockMinutes, setAutoLockMinutes] = useState<number | null>(null);
+  const [strengthAlgorithm, setStrengthAlgorithm] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const editedRef = useRef(false);
@@ -14,7 +19,10 @@ export function Settings({ onBack }: { onBack: () => void }) {
     api
       .getConfig()
       .then((c) => {
-        if (!editedRef.current) setAutoLockMinutes(c.autoLockMinutes);
+        if (!editedRef.current) {
+          setAutoLockMinutes(c.autoLockMinutes);
+          setStrengthAlgorithm(c.strengthAlgorithm);
+        }
       })
       .catch((err) => {
         setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
@@ -28,6 +36,20 @@ export function Settings({ onBack }: { onBack: () => void }) {
       setError(null);
       await api.updateAutoLockMinutes(minutes);
       setAutoLockMinutes(minutes);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleAlgorithmChange(algorithm: string) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateStrengthAlgorithm(algorithm);
+      setStrengthAlgorithm(algorithm);
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -58,6 +80,24 @@ export function Settings({ onBack }: { onBack: () => void }) {
             {OPTIONS.map((m) => (
               <option key={m} value={m}>
                 {m} minute{m === 1 ? "" : "s"}
+              </option>
+            ))}
+          </select>
+        </Tooltip>
+      </label>
+
+      <label className="block max-w-xs mt-4">
+        <span className="text-sm">Password strength algorithm</span>
+        <Tooltip text="Which algorithm scores password strength" className="w-full">
+          <select
+            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600 disabled:opacity-50"
+            value={strengthAlgorithm ?? ""}
+            onChange={(e) => handleAlgorithmChange(e.target.value)}
+            disabled={submitting}
+          >
+            {ALGORITHM_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
               </option>
             ))}
           </select>

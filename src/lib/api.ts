@@ -46,6 +46,7 @@ export interface TrashedCredentialDto {
 export interface ConfigDto {
   theme: string;
   autoLockMinutes: number;
+  strengthAlgorithm: string;
 }
 
 export const api = {
@@ -73,4 +74,6 @@ export const api = {
   purgeTrash: () => invoke<number>("purge_trash"),
   getConfig: () => invoke<ConfigDto>("get_config"),
   updateAutoLockMinutes: (minutes: number) => invoke<void>("update_auto_lock_minutes", { minutes }),
+  updateStrengthAlgorithm: (algorithm: string) =>
+    invoke<void>("update_strength_algorithm", { algorithm }),
 };

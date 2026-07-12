@@ -1119,7 +1119,7 @@ git commit -m "feat: expose and persist strength_algorithm via config commands"
 
 **Files:** Modify `src/lib/api.ts`, `src/screens/Settings.tsx`
 
-- [ ] **Step 1: Extend the API surface**
+- [x] **Step 1: Extend the API surface**
 
 ```ts
 // src/lib/api.ts — ConfigDto interface: add
@@ -1130,7 +1130,7 @@ updateStrengthAlgorithm: (algorithm: string) =>
   invoke<void>("update_strength_algorithm", { algorithm }),
 ```
 
-- [ ] **Step 2: Add the control to `Settings.tsx`** following the existing
+- [x] **Step 2: Add the control to `Settings.tsx`** following the existing
   `editedRef`/`submitting`/`disabled` idiom. Load both fields under the single `editedRef` guard;
   add a second state + handler.
 
@@ -1160,14 +1160,16 @@ Render a second labelled `<select>` (mirroring the auto-lock select's classes,
 `<Tooltip text="Which algorithm scores password strength" className="w-full">`), options `simple` →
 "Simple (entropy)" and `zxcvbn` → "Advanced (zxcvbn)".
 
-- [ ] **Step 3: Manual verification** (no frontend test harness in this project)
+- [ ] **Step 3: Manual verification** (no frontend test harness in this project) — PENDING HUMAN
+  VERIFICATION (not performed by implementer subagent; driving a live `npm run tauri dev` window
+  is out of scope for automated agents)
 
 Run: `npm run tauri dev`
 Expected: Settings shows the new dropdown; switching it and reopening Settings shows the choice
 persisted; `~/.pwmgr/config.json` contains the new `strength_algorithm` value. Close the window
 when confirmed.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
