@@ -7,6 +7,7 @@ pub const MIN_LENGTH: usize = 4;
 pub const MAX_LENGTH: usize = 128;
 pub const MIN_WORDS: usize = 2;
 pub const MAX_WORDS: usize = 12;
+pub const MAX_SEPARATOR_LENGTH: usize = 8;
 
 const UPPERCASE: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const LOWERCASE: &str = "abcdefghijklmnopqrstuvwxyz";
@@ -32,6 +33,8 @@ pub enum GenError {
     EmptyPattern,
     #[error("Pattern template must be {MAX_LENGTH} characters or fewer.")]
     TemplateTooLong,
+    #[error("Separator must be {MAX_SEPARATOR_LENGTH} characters or fewer.")]
+    SeparatorTooLong,
 }
 
 pub struct RandomOptions {
@@ -88,6 +91,9 @@ fn wordlist() -> Vec<&'static str> {
 pub fn generate_memorable(words: usize, separator: &str) -> Result<Zeroizing<String>, GenError> {
     if !(MIN_WORDS..=MAX_WORDS).contains(&words) {
         return Err(GenError::InvalidWordCount);
+    }
+    if separator.chars().count() > MAX_SEPARATOR_LENGTH {
+        return Err(GenError::SeparatorTooLong);
     }
     let list = wordlist();
     let mut rng = rand::thread_rng();
@@ -218,6 +224,19 @@ mod tests {
     #[test]
     fn memorable_two_draws_differ() {
         assert_ne!(*generate_memorable(6, " ").unwrap(), *generate_memorable(6, " ").unwrap());
+    }
+
+    #[test]
+    fn memorable_rejects_separator_longer_than_max() {
+        let separator = "-".repeat(MAX_SEPARATOR_LENGTH + 1);
+        assert!(matches!(generate_memorable(4, &separator), Err(GenError::SeparatorTooLong)));
+    }
+
+    #[test]
+    fn memorable_accepts_separator_at_max_length() {
+        let separator = "-".repeat(MAX_SEPARATOR_LENGTH);
+        let pw = generate_memorable(4, &separator).unwrap();
+        assert_eq!(pw.split(separator.as_str()).count(), 4);
     }
 
     #[test]
