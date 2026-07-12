@@ -541,7 +541,7 @@ shape of two-step gate the plaintext-CSV-export design uses, but with its own co
 needs to branch on it specifically (show a confirm dialog and retry) rather than just display it as an
 error.
 
-- [ ] **Step 1: Add the error helper**
+- [x] **Step 1: Add the error helper**
 
 ```rust
 // src-tauri/src/error.rs, alongside invalid_input_error/internal_error
@@ -554,7 +554,7 @@ pub fn confirm_required_error(message: &str) -> CommandError {
 }
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 ```rust
 // src-tauri/src/commands.rs, mod tests
@@ -620,12 +620,12 @@ fn restore_backup_rejects_a_file_that_is_not_a_valid_bundle() {
 }
 ```
 
-- [ ] **Step 3: Run to confirm they fail**
+- [x] **Step 3: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-app restore_backup`
 Expected: FAIL — `cannot find function do_restore_backup`.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 ```rust
 // src-tauri/src/commands.rs
@@ -669,13 +669,13 @@ pub fn restore_backup(
 }
 ```
 
-- [ ] **Step 5: Register in `lib.rs`** — add `commands::restore_backup,`.
+- [x] **Step 5: Register in `lib.rs`** — add `commands::restore_backup,`.
 
-- [ ] **Step 6: Run to confirm pass**
+- [x] **Step 6: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-app restore_backup`, then `cargo test --workspace`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A

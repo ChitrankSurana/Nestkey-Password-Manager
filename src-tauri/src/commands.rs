@@ -421,6 +421,45 @@ pub fn create_backup(state: State<AppState>, paths: State<AppPaths>) -> Result<S
     do_create_backup(&state, &paths)
 }
 
+pub fn do_restore_backup(
+    state: &AppState,
+    paths: &AppPaths,
+    backup_file_path: &str,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    let bytes = std::fs::read(backup_file_path)
+        .map_err(|_| crate::error::invalid_input_error("Could not read that backup file."))?;
+    let (user_record, vault_bytes) = pwmgr_core::backup::decode_bundle(&bytes)
+        .map_err(|_| crate::error::invalid_input_error("That file isn't a valid backup."))?;
+
+    let vault_path = paths.vault_path(&user_record.username);
+    let already_exists = vault_path.exists() || {
+        let registry = state.registry.lock().unwrap();
+        pwmgr_core::registry::find_user(&registry, &user_record.username).is_ok()
+    };
+    if already_exists && !confirmed {
+        return Err(crate::error::confirm_required_error(
+            "A vault for that username already exists. Restoring will overwrite it.",
+        ));
+    }
+
+    std::fs::write(&vault_path, &vault_bytes).map_err(|_| crate::error::internal_error())?;
+    let registry = state.registry.lock().unwrap();
+    pwmgr_core::registry::upsert_user(&registry, &user_record)
+        .map_err(|_| crate::error::internal_error())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn restore_backup(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    path: String,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    do_restore_backup(&state, &paths, &path, confirmed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -801,5 +840,65 @@ mod tests {
         let result = do_create_backup(&state, &paths);
 
         assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    fn backup_for(state: &AppState, paths: &AppPaths, username: &str) -> Vec<u8> {
+        do_register(state, paths, username, "correct horse battery staple").unwrap();
+        let path = do_create_backup(state, paths).unwrap();
+        std::fs::read(path).unwrap()
+    }
+
+    #[test]
+    fn restore_backup_onto_a_brand_new_username_needs_no_confirmation() {
+        let (state, paths, dir) = test_state_and_paths();
+        let bundle = backup_for(&state, &paths, "alice");
+        let bundle_path = dir.path().join("alice.bak");
+        std::fs::write(&bundle_path, &bundle).unwrap();
+
+        // Simulate a fresh machine: brand new state/paths, nothing registered yet.
+        let (fresh_state, fresh_paths, _fresh_dir) = test_state_and_paths();
+
+        let result = do_restore_backup(&fresh_state, &fresh_paths, bundle_path.to_str().unwrap(), false);
+
+        assert!(result.is_ok());
+        let registry = fresh_state.registry.lock().unwrap();
+        assert!(pwmgr_core::registry::find_user(&registry, "alice").is_ok());
+        assert!(fresh_paths.vault_path("alice").exists());
+    }
+
+    #[test]
+    fn restore_backup_onto_an_existing_username_without_confirmation_is_rejected() {
+        let (state, paths, dir) = test_state_and_paths();
+        let bundle = backup_for(&state, &paths, "alice");
+        let bundle_path = dir.path().join("alice.bak");
+        std::fs::write(&bundle_path, &bundle).unwrap();
+
+        // "alice" already exists in this same state/paths - restoring onto it needs confirmation.
+        let result = do_restore_backup(&state, &paths, bundle_path.to_str().unwrap(), false);
+
+        assert_eq!(result.unwrap_err().code(), "confirm_required");
+    }
+
+    #[test]
+    fn restore_backup_onto_an_existing_username_with_confirmation_overwrites() {
+        let (state, paths, dir) = test_state_and_paths();
+        let bundle = backup_for(&state, &paths, "alice");
+        let bundle_path = dir.path().join("alice.bak");
+        std::fs::write(&bundle_path, &bundle).unwrap();
+
+        let result = do_restore_backup(&state, &paths, bundle_path.to_str().unwrap(), true);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn restore_backup_rejects_a_file_that_is_not_a_valid_bundle() {
+        let (state, paths, dir) = test_state_and_paths();
+        let junk_path = dir.path().join("junk.bak");
+        std::fs::write(&junk_path, b"not a backup").unwrap();
+
+        let result = do_restore_backup(&state, &paths, junk_path.to_str().unwrap(), false);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
     }
 }

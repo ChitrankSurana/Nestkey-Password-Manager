@@ -83,6 +83,14 @@ pub fn internal_error() -> CommandError {
     CommandError::new("internal_error", "Something went wrong. Please try again.")
 }
 
+/// A destructive action needs explicit user confirmation before proceeding (e.g. restoring a
+/// backup over an existing username). Distinct from `invalid_input_error` so the frontend can
+/// branch on the code specifically - re-asking with `confirmed: true` is the intended remedy,
+/// unlike a genuine invalid_input which re-asking can't fix.
+pub fn confirm_required_error(message: &str) -> CommandError {
+    CommandError::new("confirm_required", message)
+}
+
 impl CommandError {
     // `code`/`message` are deliberately private (see the doc comment on the struct) so no call
     // site can construct a CommandError by hand - but callers outside this module (e.g.

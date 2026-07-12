@@ -77,6 +77,7 @@ pub fn run() {
             commands::analyze_strength,
             commands::copy_to_clipboard,
             commands::create_backup,
+            commands::restore_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
