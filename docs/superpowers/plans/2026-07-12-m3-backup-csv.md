@@ -691,7 +691,7 @@ git commit -m "feat: add restore_backup IPC command with confirm-before-overwrit
 - Create: `src/screens/Backup.tsx`
 - Modify: `src/screens/Vault.tsx` (nav entry, mirroring Trash/Settings)
 
-- [ ] **Step 1: Add API bindings**
+- [x] **Step 1: Add API bindings**
 
 ```ts
 // src/lib/api.ts — in the api object
@@ -700,7 +700,7 @@ restoreBackup: (path: string, confirmed: boolean) =>
   invoke<void>("restore_backup", { path, confirmed }),
 ```
 
-- [ ] **Step 2: Write `Backup.tsx`**, following the existing `submitting`/`error`/`Tooltip` idiom.
+- [x] **Step 2: Write `Backup.tsx`**, following the existing `submitting`/`error`/`Tooltip` idiom.
   Restore uses `@tauri-apps/plugin-dialog`'s `open()` to pick a `.bak` file, then on a
   `confirm_required` error falls back to `window.confirm` (the same escalation Trash's "Empty Trash"
   uses) before retrying with `confirmed: true`:
@@ -783,7 +783,7 @@ export function Backup({ onBack }: { onBack: () => void }) {
 }
 ```
 
-- [ ] **Step 3: Wire it into `Vault.tsx`** — add a `showBackup` boolean state, a conditional render
+- [x] **Step 3: Wire it into `Vault.tsx`** — add a `showBackup` boolean state, a conditional render
   branch matching the `showTrash`/`showSettings` pattern exactly, and a `<Tooltip text="Backup and
   restore your vault">` button labelled "Backup" in the header button row.
 
@@ -795,11 +795,11 @@ path; Restore Backup opens a native file picker, restoring onto a fresh username
 restoring onto the currently logged-in username's own backup prompts a confirm dialog and only
 overwrites after accepting.
 
-- [ ] **Step 5: Full regression**
+- [x] **Step 5: Full regression**
 
 Run: `cargo test --workspace` (expect all pass) and `npm run build` (expect clean).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A

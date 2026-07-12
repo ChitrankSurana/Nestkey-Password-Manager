@@ -87,4 +87,7 @@ export const api = {
   generatePassword: (request: GenerateRequest) => invoke<string>("generate_password", { request }),
   analyzeStrength: (password: string) => invoke<StrengthDto>("analyze_strength", { password }),
   copyToClipboard: (text: string) => invoke<void>("copy_to_clipboard", { text }),
+  createBackup: () => invoke<string>("create_backup"),
+  restoreBackup: (path: string, confirmed: boolean) =>
+    invoke<void>("restore_backup", { path, confirmed }),
 };
