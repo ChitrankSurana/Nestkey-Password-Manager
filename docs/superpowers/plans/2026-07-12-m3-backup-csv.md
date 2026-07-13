@@ -1381,7 +1381,7 @@ git commit -m "feat: add export_csv IPC command with 3 modes and a backend plain
 The typed-confirmation phrase is the frontend half of the plaintext defense-in-depth (the backend's
 `confirmed: bool` check from Task 9 is the half that actually enforces it).
 
-- [ ] **Step 1: Add API bindings**
+- [x] **Step 1: Add API bindings**
 
 ```ts
 // src/lib/api.ts
@@ -1395,7 +1395,7 @@ exportCsv: (path: string, mode: ExportMode, confirmed: boolean) =>
   invoke<void>("export_csv", { path, mode, confirmed }),
 ```
 
-- [ ] **Step 2: Write `CsvExport.tsx`** — a mode selector (radio group), a password + confirm-password
+- [x] **Step 2: Write `CsvExport.tsx`** — a mode selector (radio group), a password + confirm-password
   pair shown only for "With password" (disable the export button until they match and are
   non-empty), and a typed-confirmation text input shown only for "Plaintext" requiring the user to
   type an exact phrase before the button enables:
@@ -1521,7 +1521,7 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
 }
 ```
 
-- [ ] **Step 3: Wire it into `Vault.tsx`** — add `showExport` state + a "Export CSV" nav button,
+- [x] **Step 3: Wire it into `Vault.tsx`** — add `showExport` state + a "Export CSV" nav button,
   matching the `showBackup` pattern from Task 6.
 
 - [ ] **Step 4: Manual verification** — PENDING HUMAN VERIFICATION
@@ -1530,11 +1530,11 @@ Run: `npm run tauri dev`. Confirm: "This device" and "With password" write a fil
 as plaintext in a text editor; "Plaintext" only enables once the exact phrase is typed, and the
 resulting CSV opens correctly in a spreadsheet app with a header row.
 
-- [ ] **Step 5: Full regression**
+- [x] **Step 5: Full regression**
 
 Run: `cargo test --workspace` and `npm run build`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A

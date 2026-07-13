@@ -57,6 +57,11 @@ export type GenerateRequest =
 
 export interface StrengthDto { score: number; guessesLog10: number; label: string; }
 
+export type ExportMode =
+  | { mode: "thisDevice" }
+  | { mode: "withPassword"; password: string }
+  | { mode: "plaintext" };
+
 export const api = {
   registerUser: (username: string, masterPassword: string) =>
     invoke<AuthSuccess>("register_user", { username, masterPassword }),
@@ -90,4 +95,6 @@ export const api = {
   createBackup: () => invoke<string>("create_backup"),
   restoreBackup: (path: string, confirmed: boolean) =>
     invoke<void>("restore_backup", { path, confirmed }),
+  exportCsv: (path: string, mode: ExportMode, confirmed: boolean) =>
+    invoke<void>("export_csv", { path, mode, confirmed }),
 };
