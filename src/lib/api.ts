@@ -62,6 +62,22 @@ export type ExportMode =
   | { mode: "withPassword"; password: string }
   | { mode: "plaintext" };
 
+export type ImportFormat =
+  | { format: "chromium" }
+  | { format: "firefox" }
+  | { format: "generic"; mapping: Record<string, string> };
+
+export interface ImportRecordDto {
+  siteName: string;
+  url: string | null;
+  notes: string | null;
+  username: string | null;
+  secret: string;
+  remarks: string | null;
+}
+
+export interface ImportSummaryDto { imported: number; duplicates: number; }
+
 export const api = {
   registerUser: (username: string, masterPassword: string) =>
     invoke<AuthSuccess>("register_user", { username, masterPassword }),
@@ -97,4 +113,9 @@ export const api = {
     invoke<void>("restore_backup", { path, confirmed }),
   exportCsv: (path: string, mode: ExportMode, confirmed: boolean) =>
     invoke<void>("export_csv", { path, mode, confirmed }),
+  readCsvHeaders: (path: string) => invoke<string[]>("read_csv_headers", { path }),
+  importCsvPreview: (path: string, format: ImportFormat) =>
+    invoke<ImportRecordDto[]>("import_csv_preview", { path, format }),
+  importCsvCommit: (records: ImportRecordDto[]) =>
+    invoke<ImportSummaryDto>("import_csv_commit", { records }),
 };

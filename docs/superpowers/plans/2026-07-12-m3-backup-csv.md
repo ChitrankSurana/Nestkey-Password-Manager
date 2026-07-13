@@ -2560,7 +2560,7 @@ Generic, fetch headers via `read_csv_headers` and render one `<select>` per targ
 row, since the design explicitly allows "possibly-edited records" before commit) → Commit (calls
 `import_csv_commit`) shows the returned counts.
 
-- [ ] **Step 1: Add API bindings**
+- [x] **Step 1: Add API bindings**
 
 ```ts
 // src/lib/api.ts
@@ -2588,7 +2588,7 @@ importCsvCommit: (records: ImportRecordDto[]) =>
   invoke<ImportSummaryDto>("import_csv_commit", { records }),
 ```
 
-- [ ] **Step 2: Write `CsvImport.tsx`**
+- [x] **Step 2: Write `CsvImport.tsx`**
 
 ```tsx
 import { useState } from "react";
@@ -2760,7 +2760,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
 }
 ```
 
-- [ ] **Step 3: Wire it into `Vault.tsx`** — add `showImport` state + an "Import CSV" nav button,
+- [x] **Step 3: Wire it into `Vault.tsx`** — add `showImport` state + an "Import CSV" nav button,
   matching Tasks 6/10's pattern.
 
 - [ ] **Step 4: Manual verification** — PENDING HUMAN VERIFICATION
@@ -2770,11 +2770,11 @@ both preview correctly, or a hand-made generic CSV with custom headers maps and 
 editing a row in the preview table before committing changes what gets inserted; committing shows
 correct imported/duplicate counts; re-importing the same file reports every row as a duplicate.
 
-- [ ] **Step 5: Full regression**
+- [x] **Step 5: Full regression**
 
 Run: `cargo test --workspace` and `npm run build`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
