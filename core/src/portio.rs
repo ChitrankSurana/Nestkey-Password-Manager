@@ -14,7 +14,7 @@ pub enum PortioError {
     UnknownField(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct ImportRecord {
     pub site_name: String,
     pub url: Option<String>,
@@ -22,6 +22,21 @@ pub struct ImportRecord {
     pub username: Option<String>,
     pub secret: String,
     pub remarks: Option<String>,
+}
+
+// Manual Debug impl (not derived) so a stray `{:?}`/`dbg!()` can never print the plaintext secret
+// read from an imported CSV row - same rationale and pattern as vault::Credential.
+impl std::fmt::Debug for ImportRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImportRecord")
+            .field("site_name", &self.site_name)
+            .field("url", &self.url)
+            .field("notes", &self.notes)
+            .field("username", &self.username)
+            .field("secret", &"<redacted>")
+            .field("remarks", &self.remarks)
+            .finish()
+    }
 }
 
 fn non_empty(s: Option<&str>) -> Option<String> {
@@ -191,6 +206,21 @@ pub fn parse_generic_csv(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn import_record_debug_format_redacts_secret() {
+        let record = ImportRecord {
+            site_name: "example.com".to_string(),
+            url: None,
+            notes: None,
+            username: Some("alice".to_string()),
+            secret: "extremely-unique-imported-secret-xyz".to_string(),
+            remarks: None,
+        };
+        let debug_output = format!("{:?}", record);
+        assert!(!debug_output.contains("extremely-unique-imported-secret-xyz"));
+        assert!(debug_output.contains("<redacted>"));
+    }
 
     fn sample_rows() -> Vec<CsvRow> {
         vec![
