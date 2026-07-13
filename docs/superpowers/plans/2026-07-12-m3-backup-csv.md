@@ -2836,11 +2836,11 @@ content here; it is not a plan-doc task.
   modes from Slice 2) — no importer exists for these in M3; only plaintext, Chromium, Firefox, and
   generic-mapped CSV go through `import_csv_preview`/`import_csv_commit`. The sealed-CSV envelope
   (Task 8) deliberately has no decoder for this reason.
-- **A persisted local log of plaintext CSV exports** — `THREAT_MODEL.md`'s stated mitigation for
-  plaintext export says "export path is logged in-app (locally) so the user has a record they did
-  it." This is **not** in the design decisions given for this plan and is **not built here** — flagged
-  as a documentation-vs-scope gap for the user to resolve (either amend `THREAT_MODEL.md` or add this
-  in a follow-up task), not silently decided either way.
+- ~~A persisted local log of plaintext CSV exports~~ — **stale, corrected 2026-07-13**: this bullet
+  originally flagged a doc-vs-scope gap, but Task 9 (Slice 2) did build this exact mitigation —
+  `append_plaintext_export_log` appends a timestamp+path line to `plaintext_export_log.txt` on every
+  successful `Plaintext`-mode export, tested and reviewed. `THREAT_MODEL.md`'s "export path is logged
+  in-app (locally)" mitigation is satisfied; no further action needed.
 - **Automatic/scheduled backups, retention/rotation policy, backup compression, or restoring a bundle
   onto a *different* username than the one embedded in it** — all YAGNI; add only against a concrete
   future request.
