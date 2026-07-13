@@ -320,6 +320,21 @@ mod tests {
     }
 
     #[test]
+    fn import_record_dto_debug_format_redacts_secret() {
+        let dto = ImportRecordDto {
+            site_name: "example.com".to_string(),
+            url: None,
+            notes: None,
+            username: Some("alice".into()),
+            secret: Zeroizing::new("extremely-unique-imported-secret-xyz".to_string()),
+            remarks: None,
+        };
+        let debug_output = format!("{:?}", dto);
+        assert!(!debug_output.contains("extremely-unique-imported-secret-xyz"));
+        assert!(debug_output.contains("<redacted>"));
+    }
+
+    #[test]
     fn credential_dto_secret_is_wrapped_in_zeroizing() {
         let cred = Credential {
             id: 1,
