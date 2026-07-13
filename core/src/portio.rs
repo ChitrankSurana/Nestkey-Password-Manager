@@ -108,6 +108,33 @@ pub fn encode_sealed_csv(salt: Option<&[u8; 16]>, nonce: &[u8; 12], ciphertext: 
     out
 }
 
+const FIREFOX_HEADER: [&str; 9] = [
+    "url", "username", "password", "httpRealm", "formActionOrigin",
+    "guid", "timeCreated", "timeLastUsed", "timePasswordChanged",
+];
+
+pub fn parse_firefox_csv(csv_text: &str) -> Result<Vec<ImportRecord>, PortioError> {
+    let mut reader = csv::Reader::from_reader(csv_text.as_bytes());
+    let headers = reader.headers().map_err(|_| PortioError::Parse)?.clone();
+    if headers.iter().collect::<Vec<_>>() != FIREFOX_HEADER.to_vec() {
+        return Err(PortioError::HeaderMismatch("Firefox"));
+    }
+    let mut out = Vec::new();
+    for result in reader.records() {
+        let record = result.map_err(|_| PortioError::Parse)?;
+        let url = record.get(0).unwrap_or("").to_string();
+        out.push(ImportRecord {
+            site_name: url.clone(),
+            url: non_empty(Some(url.as_str())),
+            notes: None,
+            username: non_empty(record.get(1)),
+            secret: record.get(2).unwrap_or("").to_string(),
+            remarks: None,
+        });
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,5 +242,30 @@ mod tests {
         let records = parse_chromium_csv(csv).unwrap();
 
         assert_eq!(records[0].url, None);
+    }
+
+    const FIREFOX_SAMPLE_HEADER: &str =
+        "url,username,password,httpRealm,formActionOrigin,guid,timeCreated,timeLastUsed,timePasswordChanged";
+
+    #[test]
+    fn parse_firefox_csv_uses_the_url_as_the_site_name() {
+        let csv = format!("{}\nhttps://example.com,alice,s3cret,,,g1,1,2,3\n", FIREFOX_SAMPLE_HEADER);
+
+        let records = parse_firefox_csv(&csv).unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].site_name, "https://example.com");
+        assert_eq!(records[0].url.as_deref(), Some("https://example.com"));
+        assert_eq!(records[0].username.as_deref(), Some("alice"));
+        assert_eq!(records[0].secret, "s3cret");
+    }
+
+    #[test]
+    fn parse_firefox_csv_rejects_an_unexpected_header() {
+        let csv = "url,user,pass\na,b,c\n";
+
+        let result = parse_firefox_csv(csv);
+
+        assert!(matches!(result, Err(PortioError::HeaderMismatch("Firefox"))));
     }
 }

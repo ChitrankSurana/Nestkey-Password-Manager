@@ -1692,7 +1692,7 @@ URL (the user can rename it after import); `httpRealm`/`formActionOrigin`/`guid`
 columns are read (to validate the header shape) but not mapped to any `ImportRecord` field — YAGNI,
 nothing in this milestone's data model uses them.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 // core/src/portio.rs, mod tests
@@ -1723,12 +1723,12 @@ fn parse_firefox_csv_rejects_an_unexpected_header() {
 }
 ```
 
-- [ ] **Step 2: Run to confirm they fail**
+- [x] **Step 2: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-core portio::`
 Expected: FAIL — `cannot find function parse_firefox_csv`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 // core/src/portio.rs
@@ -1760,12 +1760,12 @@ pub fn parse_firefox_csv(csv_text: &str) -> Result<Vec<ImportRecord>, PortioErro
 }
 ```
 
-- [ ] **Step 4: Run to confirm pass**
+- [x] **Step 4: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-core portio::`
 Expected: all pass (8 prior + 2 new).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
