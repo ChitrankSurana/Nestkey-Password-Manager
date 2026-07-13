@@ -78,6 +78,7 @@ pub fn run() {
             commands::copy_to_clipboard,
             commands::create_backup,
             commands::restore_backup,
+            commands::export_csv,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

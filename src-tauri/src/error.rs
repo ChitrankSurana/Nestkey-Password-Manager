@@ -67,6 +67,12 @@ impl From<pwmgr_core::generator::GenError> for CommandError {
     }
 }
 
+impl From<pwmgr_core::portio::PortioError> for CommandError {
+    fn from(_: pwmgr_core::portio::PortioError) -> Self {
+        internal_error()
+    }
+}
+
 /// Not backed by an unlocked session - distinct from any pwmgr-core error because pwmgr-core has
 /// no concept of "session"; that state lives entirely in this Tauri layer's AppState.
 pub fn locked_error() -> CommandError {

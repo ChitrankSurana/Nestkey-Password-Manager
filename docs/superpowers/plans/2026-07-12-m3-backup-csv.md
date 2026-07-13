@@ -1087,7 +1087,7 @@ path) to a local append-only log file. No new dependency: `std::time::SystemTime
 `std::fs::OpenOptions::append` for the write. The encrypted modes don't need this (nothing plaintext
 left the app in those cases).
 
-- [ ] **Step 0: Add the log path helper**
+- [x] **Step 0: Add the log path helper**
 
 ```rust
 // src-tauri/src/paths.rs, in `impl AppPaths`
@@ -1096,7 +1096,7 @@ pub fn plaintext_export_log_path(&self) -> PathBuf {
 }
 ```
 
-- [ ] **Step 1: Add the `ExportMode` DTO**
+- [x] **Step 1: Add the `ExportMode` DTO**
 
 ```rust
 // src-tauri/src/dto.rs
@@ -1109,7 +1109,7 @@ pub enum ExportMode {
 }
 ```
 
-- [ ] **Step 2: Map `PortioError` → `internal_error`** (it's a write-side failure, not a user-input
+- [x] **Step 2: Map `PortioError` → `internal_error`** (it's a write-side failure, not a user-input
   problem, so it collapses generically rather than surfacing raw detail)
 
 ```rust
@@ -1121,7 +1121,7 @@ impl From<pwmgr_core::portio::PortioError> for CommandError {
 }
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 ```rust
 // src-tauri/src/commands.rs, mod tests
@@ -1249,12 +1249,12 @@ fn export_csv_when_locked_returns_locked_error() {
 }
 ```
 
-- [ ] **Step 4: Run to confirm they fail**
+- [x] **Step 4: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-app export_csv`
 Expected: FAIL — `cannot find function do_export_csv`.
 
-- [ ] **Step 5: Implement**
+- [x] **Step 5: Implement**
 
 ```rust
 // src-tauri/src/commands.rs
@@ -1356,13 +1356,13 @@ pub fn export_csv(
 }
 ```
 
-- [ ] **Step 6: Register in `lib.rs`** — add `commands::export_csv,`.
+- [x] **Step 6: Register in `lib.rs`** — add `commands::export_csv,`.
 
-- [ ] **Step 7: Run to confirm pass**
+- [x] **Step 7: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-app export_csv`, then `cargo test --workspace`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A

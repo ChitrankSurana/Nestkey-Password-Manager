@@ -1,5 +1,5 @@
 use crate::config::{VALID_AUTO_LOCK_MINUTES, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, GenerateRequest, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -490,6 +490,101 @@ pub fn restore_backup(
     do_restore_backup(&state, &paths, &path, confirmed)
 }
 
+fn build_csv_rows(
+    conn: &rusqlite::Connection,
+    key: &pwmgr_core::crypto::VaultKey,
+) -> Result<Vec<pwmgr_core::portio::CsvRow>, CommandError> {
+    let sites = pwmgr_core::vault::list_sites(conn)?;
+    let mut rows = Vec::new();
+    for site in sites {
+        let creds = pwmgr_core::vault::list_credentials_for_site(conn, key, site.id)?;
+        for c in creds {
+            rows.push(pwmgr_core::portio::CsvRow {
+                site_name: site.name.clone(),
+                url: site.url.clone(),
+                notes: site.notes.clone(),
+                username: c.username,
+                secret: c.secret,
+                remarks: c.remarks,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+fn append_plaintext_export_log(paths: &AppPaths, path: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(paths.plaintext_export_log_path())?;
+    writeln!(file, "{}\t{}", ts, path)
+}
+
+pub fn do_export_csv(
+    state: &AppState,
+    paths: &AppPaths,
+    path: &str,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    if matches!(mode, ExportMode::Plaintext) && !confirmed {
+        return Err(crate::error::invalid_input_error(
+            "Plaintext export requires explicit confirmation.",
+        ));
+    }
+
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+
+    let rows = build_csv_rows(conn, key)?;
+    let csv_text = pwmgr_core::portio::rows_to_csv(&rows)?;
+
+    let bytes: Vec<u8> = match mode {
+        ExportMode::Plaintext => csv_text.into_bytes(),
+        ExportMode::ThisDevice => {
+            let (ciphertext, nonce) = pwmgr_core::crypto::seal(key, csv_text.as_bytes())
+                .map_err(|_| crate::error::internal_error())?;
+            pwmgr_core::portio::encode_sealed_csv(None, &nonce, &ciphertext)
+        }
+        ExportMode::WithPassword { password } => {
+            let salt = pwmgr_core::crypto::random_salt();
+            let pw_key = pwmgr_core::crypto::derive_key(password, &salt)
+                .map_err(|_| crate::error::internal_error())?;
+            let (ciphertext, nonce) = pwmgr_core::crypto::seal(&pw_key, csv_text.as_bytes())
+                .map_err(|_| crate::error::internal_error())?;
+            pwmgr_core::portio::encode_sealed_csv(Some(&salt), &nonce, &ciphertext)
+        }
+    };
+    std::fs::write(path, &bytes).map_err(|_| crate::error::internal_error())?;
+
+    // THREAT_MODEL: plaintext export path must be logged locally. Best-effort - a log-write
+    // failure must not undo or fail the export the user already confirmed and got.
+    if matches!(mode, ExportMode::Plaintext) {
+        if let Err(e) = append_plaintext_export_log(paths, path) {
+            eprintln!("warning: failed to append plaintext export log entry: {e}");
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn export_csv(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    path: String,
+    mode: ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    do_export_csv(&state, &paths, &path, &mode, confirmed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -943,5 +1038,127 @@ mod tests {
         let result = do_restore_backup(&state, &paths, junk_path.to_str().unwrap(), false);
 
         assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    fn seeded_vault_state() -> (AppState, AppPaths, tempfile::TempDir) {
+        let (state, paths, dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "s3cret!", None).unwrap();
+        (state, paths, dir)
+    }
+
+    #[test]
+    fn export_csv_this_device_mode_produces_a_sealable_file_decryptable_with_the_session_key() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.pwenc");
+
+        do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::ThisDevice, false).unwrap();
+
+        let bytes = std::fs::read(&out_path).unwrap();
+        assert_eq!(bytes[1], 0); // mode byte: this-device
+        // Manually decrypt using the same session key, proving the ciphertext is genuinely sealed
+        // with it (not just opaque bytes) and contains real CSV content once opened.
+        let nonce: [u8; 12] = bytes[2..14].try_into().unwrap();
+        let len = u32::from_le_bytes(bytes[14..18].try_into().unwrap()) as usize;
+        let ciphertext = &bytes[18..18 + len];
+        let session = state.session.lock().unwrap();
+        let key = session.key().unwrap();
+        let plaintext = pwmgr_core::crypto::open(key, ciphertext, &nonce).unwrap();
+        assert!(String::from_utf8(plaintext).unwrap().contains("example.com"));
+    }
+
+    #[test]
+    fn export_csv_with_password_mode_embeds_a_salt_and_is_decryptable_with_that_password() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.pwenc");
+
+        do_export_csv(
+            &state,
+            &paths,
+            out_path.to_str().unwrap(),
+            &ExportMode::WithPassword { password: "export password".to_string() },
+            false,
+        )
+        .unwrap();
+
+        let bytes = std::fs::read(&out_path).unwrap();
+        assert_eq!(bytes[1], 1); // mode byte: with-password
+        let salt: [u8; 16] = bytes[2..18].try_into().unwrap();
+        let nonce: [u8; 12] = bytes[18..30].try_into().unwrap();
+        let len = u32::from_le_bytes(bytes[30..34].try_into().unwrap()) as usize;
+        let ciphertext = &bytes[34..34 + len];
+        let key = pwmgr_core::crypto::derive_key("export password", &salt).unwrap();
+        let plaintext = pwmgr_core::crypto::open(&key, ciphertext, &nonce).unwrap();
+        assert!(String::from_utf8(plaintext).unwrap().contains("example.com"));
+    }
+
+    #[test]
+    fn export_csv_plaintext_mode_without_confirmation_is_rejected() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.csv");
+
+        let result = do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, false);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+        assert!(!out_path.exists());
+        assert!(!paths.plaintext_export_log_path().exists(), "no log entry for a rejected export");
+    }
+
+    #[test]
+    fn export_csv_plaintext_mode_with_confirmation_writes_readable_csv() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.csv");
+
+        do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+
+        let text = std::fs::read_to_string(&out_path).unwrap();
+        assert!(text.contains("example.com"));
+        assert!(text.contains("s3cret!"));
+    }
+
+    #[test]
+    fn export_csv_plaintext_mode_appends_an_entry_to_the_local_export_log() {
+        // THREAT_MODEL's "export path is logged in-app (locally)" mitigation for plaintext CSV export.
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.csv");
+
+        do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+        // A second export appends rather than overwrites - the log is a history, not a single slot.
+        let out_path_2 = dir.path().join("export2.csv");
+        do_export_csv(&state, &paths, out_path_2.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+
+        let log = std::fs::read_to_string(paths.plaintext_export_log_path()).unwrap();
+        let lines: Vec<&str> = log.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains(out_path.to_str().unwrap()));
+        assert!(lines[1].contains(out_path_2.to_str().unwrap()));
+        // Each line's first tab-separated field is a unix timestamp (seconds), not zero/garbage.
+        let ts: u64 = lines[0].split('\t').next().unwrap().parse().unwrap();
+        assert!(ts > 1_700_000_000); // sane lower bound, well before this project existed
+    }
+
+    #[test]
+    fn export_csv_this_device_and_with_password_modes_do_not_touch_the_export_log() {
+        // Only the plaintext path is a real exposure worth logging - encrypted exports don't leak
+        // anything a log entry would need to warn the user about.
+        let (state, paths, dir) = seeded_vault_state();
+        do_export_csv(&state, &paths, dir.path().join("a.pwenc").to_str().unwrap(), &ExportMode::ThisDevice, false).unwrap();
+        do_export_csv(
+            &state, &paths, dir.path().join("b.pwenc").to_str().unwrap(),
+            &ExportMode::WithPassword { password: "x".to_string() }, false,
+        ).unwrap();
+
+        assert!(!paths.plaintext_export_log_path().exists());
+    }
+
+    #[test]
+    fn export_csv_when_locked_returns_locked_error() {
+        let (state, paths, dir) = test_state_and_paths();
+        let out_path = dir.path().join("export.csv");
+
+        let result = do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true);
+
+        assert_eq!(result.unwrap_err().code(), "locked");
     }
 }

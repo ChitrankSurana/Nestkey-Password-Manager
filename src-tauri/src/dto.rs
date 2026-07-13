@@ -148,6 +148,14 @@ pub enum GenerateRequest {
     Pronounceable { length: usize },
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", tag = "mode")]
+pub enum ExportMode {
+    ThisDevice,
+    WithPassword { password: String },
+    Plaintext,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
