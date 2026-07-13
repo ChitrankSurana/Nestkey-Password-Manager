@@ -148,12 +148,27 @@ pub enum GenerateRequest {
     Pronounceable { length: usize },
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+// No #[derive(Debug)] here on purpose - `WithPassword` carries a plaintext export password,
+// same rationale as CredentialDto above. Manual impl redacts it.
+#[derive(Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", tag = "mode")]
 pub enum ExportMode {
     ThisDevice,
     WithPassword { password: String },
     Plaintext,
+}
+
+impl std::fmt::Debug for ExportMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExportMode::ThisDevice => f.write_str("ThisDevice"),
+            ExportMode::WithPassword { .. } => f
+                .debug_struct("WithPassword")
+                .field("password", &"<redacted>")
+                .finish(),
+            ExportMode::Plaintext => f.write_str("Plaintext"),
+        }
+    }
 }
 
 #[cfg(test)]
