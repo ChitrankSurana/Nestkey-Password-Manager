@@ -135,6 +135,59 @@ pub fn parse_firefox_csv(csv_text: &str) -> Result<Vec<ImportRecord>, PortioErro
     Ok(out)
 }
 
+use std::collections::HashMap;
+
+const IMPORT_FIELDS: [&str; 6] = ["site_name", "url", "notes", "username", "secret", "remarks"];
+
+pub fn parse_generic_csv(
+    csv_text: &str,
+    mapping: &HashMap<String, String>,
+) -> Result<Vec<ImportRecord>, PortioError> {
+    let mut reader = csv::Reader::from_reader(csv_text.as_bytes());
+    let headers = reader.headers().map_err(|_| PortioError::Parse)?.clone();
+
+    // Resolve each mapped CSV column to its index once, up front - fails fast on a bad mapping
+    // before touching a single data row.
+    let mut resolved: Vec<(usize, String)> = Vec::new();
+    for (csv_col, field) in mapping {
+        if !IMPORT_FIELDS.contains(&field.as_str()) {
+            return Err(PortioError::UnknownField(field.clone()));
+        }
+        let idx = headers
+            .iter()
+            .position(|h| h == csv_col)
+            .ok_or_else(|| PortioError::MissingColumn(csv_col.clone()))?;
+        resolved.push((idx, field.clone()));
+    }
+
+    let mut out = Vec::new();
+    for result in reader.records() {
+        let record = result.map_err(|_| PortioError::Parse)?;
+        let mut rec = ImportRecord {
+            site_name: String::new(),
+            url: None,
+            notes: None,
+            username: None,
+            secret: String::new(),
+            remarks: None,
+        };
+        for (idx, field) in &resolved {
+            let value = record.get(*idx).unwrap_or("").to_string();
+            match field.as_str() {
+                "site_name" => rec.site_name = value,
+                "url" => rec.url = non_empty(Some(value.as_str())),
+                "notes" => rec.notes = non_empty(Some(value.as_str())),
+                "username" => rec.username = non_empty(Some(value.as_str())),
+                "secret" => rec.secret = value,
+                "remarks" => rec.remarks = non_empty(Some(value.as_str())),
+                _ => unreachable!("validated against IMPORT_FIELDS above"),
+            }
+        }
+        out.push(rec);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,5 +320,48 @@ mod tests {
         let result = parse_firefox_csv(csv);
 
         assert!(matches!(result, Err(PortioError::HeaderMismatch("Firefox"))));
+    }
+
+    use std::collections::HashMap;
+
+    #[test]
+    fn parse_generic_csv_applies_the_column_mapping() {
+        let csv = "Site,Login,Pwd,Comment\nexample.com,alice,s3cret,work login\n";
+        let mut mapping = HashMap::new();
+        mapping.insert("Site".to_string(), "site_name".to_string());
+        mapping.insert("Login".to_string(), "username".to_string());
+        mapping.insert("Pwd".to_string(), "secret".to_string());
+        mapping.insert("Comment".to_string(), "remarks".to_string());
+
+        let records = parse_generic_csv(csv, &mapping).unwrap();
+
+        assert_eq!(records[0].site_name, "example.com");
+        assert_eq!(records[0].username.as_deref(), Some("alice"));
+        assert_eq!(records[0].secret, "s3cret");
+        assert_eq!(records[0].remarks.as_deref(), Some("work login"));
+        assert_eq!(records[0].url, None); // not in the mapping - left at default
+    }
+
+    #[test]
+    fn parse_generic_csv_rejects_a_mapped_column_that_does_not_exist_in_the_header() {
+        let csv = "Site,Pwd\nexample.com,s3cret\n";
+        let mut mapping = HashMap::new();
+        mapping.insert("Site".to_string(), "site_name".to_string());
+        mapping.insert("NoSuchColumn".to_string(), "secret".to_string());
+
+        let result = parse_generic_csv(csv, &mapping);
+
+        assert!(matches!(result, Err(PortioError::MissingColumn(_))));
+    }
+
+    #[test]
+    fn parse_generic_csv_rejects_an_unrecognized_target_field_name() {
+        let csv = "Site\nexample.com\n";
+        let mut mapping = HashMap::new();
+        mapping.insert("Site".to_string(), "not_a_real_field".to_string());
+
+        let result = parse_generic_csv(csv, &mapping);
+
+        assert!(matches!(result, Err(PortioError::UnknownField(_))));
     }
 }

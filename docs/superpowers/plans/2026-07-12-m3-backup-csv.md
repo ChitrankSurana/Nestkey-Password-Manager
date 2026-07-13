@@ -1784,7 +1784,7 @@ names. No auto-detection or fuzzy matching — the user maps every column they c
 empty default here; Task 14's transactional commit is where a missing `site_name` becomes a hard
 failure (this parser's job is shaping, not validating business rules).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 // core/src/portio.rs, mod tests
@@ -1832,12 +1832,12 @@ fn parse_generic_csv_rejects_an_unrecognized_target_field_name() {
 }
 ```
 
-- [ ] **Step 2: Run to confirm they fail**
+- [x] **Step 2: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-core portio::`
 Expected: FAIL — `cannot find function parse_generic_csv`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 // core/src/portio.rs
@@ -1895,12 +1895,12 @@ pub fn parse_generic_csv(
 }
 ```
 
-- [ ] **Step 4: Run to confirm pass**
+- [x] **Step 4: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-core portio::`
 Expected: all pass (10 prior + 3 new).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
