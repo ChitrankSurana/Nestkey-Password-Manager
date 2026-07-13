@@ -1565,7 +1565,7 @@ format. This is not independently re-verified against a live Chrome install in t
 if a real export's header differs, `parse_chromium_csv`'s `HeaderMismatch` error will surface it
 immediately (loudly, not silently misparsing), and the constant below is the single place to fix.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 // core/src/portio.rs, mod tests
@@ -1602,12 +1602,12 @@ fn parse_chromium_csv_treats_an_empty_url_as_none() {
 }
 ```
 
-- [ ] **Step 2: Run to confirm they fail**
+- [x] **Step 2: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-core portio::`
 Expected: FAIL — `cannot find function parse_chromium_csv`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 // core/src/portio.rs — extend PortioError first
@@ -1666,12 +1666,12 @@ pub fn parse_chromium_csv(csv_text: &str) -> Result<Vec<ImportRecord>, PortioErr
 }
 ```
 
-- [ ] **Step 4: Run to confirm pass**
+- [x] **Step 4: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-core portio::`
 Expected: all pass (5 from Tasks 7-8 + 3 new).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A

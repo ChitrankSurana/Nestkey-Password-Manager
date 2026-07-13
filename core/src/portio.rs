@@ -4,6 +4,54 @@ use thiserror::Error;
 pub enum PortioError {
     #[error("could not write CSV data")]
     Write,
+    #[error("could not parse CSV data")]
+    Parse,
+    #[error("CSV header does not match the expected {0} format")]
+    HeaderMismatch(&'static str),
+    #[error("column '{0}' was not found in the CSV header")]
+    MissingColumn(String),
+    #[error("'{0}' is not a recognized import field")]
+    UnknownField(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportRecord {
+    pub site_name: String,
+    pub url: Option<String>,
+    pub notes: Option<String>,
+    pub username: Option<String>,
+    pub secret: String,
+    pub remarks: Option<String>,
+}
+
+fn non_empty(s: Option<&str>) -> Option<String> {
+    match s {
+        Some(v) if !v.is_empty() => Some(v.to_string()),
+        _ => None,
+    }
+}
+
+const CHROMIUM_HEADER: [&str; 4] = ["name", "url", "username", "password"];
+
+pub fn parse_chromium_csv(csv_text: &str) -> Result<Vec<ImportRecord>, PortioError> {
+    let mut reader = csv::Reader::from_reader(csv_text.as_bytes());
+    let headers = reader.headers().map_err(|_| PortioError::Parse)?.clone();
+    if headers.iter().collect::<Vec<_>>() != CHROMIUM_HEADER.to_vec() {
+        return Err(PortioError::HeaderMismatch("Chromium"));
+    }
+    let mut out = Vec::new();
+    for result in reader.records() {
+        let record = result.map_err(|_| PortioError::Parse)?;
+        out.push(ImportRecord {
+            site_name: record.get(0).unwrap_or("").to_string(),
+            url: non_empty(record.get(1)),
+            notes: None,
+            username: non_empty(record.get(2)),
+            secret: record.get(3).unwrap_or("").to_string(),
+            remarks: None,
+        });
+    }
+    Ok(out)
 }
 
 pub struct CsvRow {
@@ -136,5 +184,36 @@ mod tests {
         assert_eq!(out[1], 1); // mode: with-password
         assert_eq!(&out[2..18], &salt);
         assert_eq!(&out[18..30], &nonce);
+    }
+
+    #[test]
+    fn parse_chromium_csv_maps_the_four_fixed_columns() {
+        let csv = "name,url,username,password\nexample.com,https://example.com,alice,s3cret\n";
+
+        let records = parse_chromium_csv(csv).unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].site_name, "example.com");
+        assert_eq!(records[0].url.as_deref(), Some("https://example.com"));
+        assert_eq!(records[0].username.as_deref(), Some("alice"));
+        assert_eq!(records[0].secret, "s3cret");
+    }
+
+    #[test]
+    fn parse_chromium_csv_rejects_an_unexpected_header() {
+        let csv = "site,link,user,pass\na,b,c,d\n";
+
+        let result = parse_chromium_csv(csv);
+
+        assert!(matches!(result, Err(PortioError::HeaderMismatch("Chromium"))));
+    }
+
+    #[test]
+    fn parse_chromium_csv_treats_an_empty_url_as_none() {
+        let csv = "name,url,username,password\nexample.com,,alice,s3cret\n";
+
+        let records = parse_chromium_csv(csv).unwrap();
+
+        assert_eq!(records[0].url, None);
     }
 }
