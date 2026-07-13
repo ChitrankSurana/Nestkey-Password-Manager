@@ -15,6 +15,19 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  async function loadHeaders(filePath: string) {
+    setBusy(true);
+    try {
+      setError(null);
+      setHeaders(await api.readCsvHeaders(filePath));
+    } catch (err) {
+      setHeaders([]);
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handlePickFile() {
     const picked = await open({ multiple: false, filters: [{ name: "CSV", extensions: ["csv"] }] });
     if (typeof picked !== "string") return;
@@ -22,12 +35,22 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
     setRecords(null);
     setSummary(null);
     setError(null);
+    setHeaders([]);
+    setMapping({});
     if (source === "generic") {
-      try {
-        setHeaders(await api.readCsvHeaders(picked));
-      } catch (err) {
-        setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
-      }
+      await loadHeaders(picked);
+    }
+  }
+
+  async function handleSourceChange(next: "chromium" | "firefox" | "generic") {
+    setSource(next);
+    setRecords(null);
+    setSummary(null);
+    setError(null);
+    setHeaders([]);
+    setMapping({});
+    if (next === "generic" && path) {
+      await loadHeaders(path);
     }
   }
 
@@ -87,17 +110,15 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
         <select
           className="rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
           value={source}
-          onChange={(e) => {
-            setSource(e.target.value as typeof source);
-            setRecords(null);
-          }}
+          disabled={busy}
+          onChange={(e) => handleSourceChange(e.target.value as typeof source)}
         >
           <option value="chromium">Chrome / Chromium export</option>
           <option value="firefox">Firefox export</option>
           <option value="generic">Other (map columns myself)</option>
         </select>
         <Tooltip text="Choose the CSV file to import">
-          <button onClick={handlePickFile} className="rounded bg-slate-700 px-3 py-1">
+          <button onClick={handlePickFile} disabled={busy} className="rounded bg-slate-700 px-3 py-1 disabled:opacity-50">
             Choose File…
           </button>
         </Tooltip>
