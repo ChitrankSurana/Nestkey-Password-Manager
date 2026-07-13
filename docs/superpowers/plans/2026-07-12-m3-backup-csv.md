@@ -1920,7 +1920,7 @@ Reuses the existing `add_site`/`add_credential` functions unchanged inside the t
 on `rusqlite::Transaction`'s `Deref<Target = Connection>` (already used implicitly by every other
 `&Connection`-taking function in this file).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 // core/src/vault.rs, mod tests
@@ -1997,12 +1997,12 @@ fn import_credentials_rolls_back_the_whole_batch_when_any_row_is_missing_a_requi
 }
 ```
 
-- [ ] **Step 2: Run to confirm they fail**
+- [x] **Step 2: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-core vault::`
 Expected: FAIL — `cannot find function import_credentials`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 // core/src/vault.rs — extend VaultError first
@@ -2097,14 +2097,14 @@ pub fn import_credentials(
 Add `pub mod portio;` is already declared in `core/src/lib.rs` (Task 7) — this file just adds
 `use crate::portio::ImportRecord;`.
 
-- [ ] **Step 4: Run to confirm pass**
+- [x] **Step 4: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-core vault::`
 Expected: all pass (existing vault tests + 3 new).
 
 Run: `cargo test --workspace` — full regression, no cross-module breakage.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
