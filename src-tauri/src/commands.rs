@@ -484,10 +484,21 @@ pub fn do_restore_backup(
 pub fn restore_backup(
     state: State<AppState>,
     paths: State<AppPaths>,
+    app: tauri::AppHandle,
     path: String,
     confirmed: bool,
 ) -> Result<(), CommandError> {
-    do_restore_backup(&state, &paths, &path, confirmed)
+    do_restore_backup(&state, &paths, &path, confirmed)?;
+    // do_restore_backup locks the session when the restored backup overwrites the vault
+    // currently open in AppState (see its own comment). The frontend's only route back to the
+    // login screen is the "vault-locked" event (App.tsx), so without this the user is left
+    // stranded on a screen that thinks it's still logged in - same pattern as the `lock` command.
+    if state.session.lock().unwrap().is_locked() {
+        if let Err(e) = app.emit("vault-locked", ()) {
+            eprintln!("warning: failed to emit vault-locked event ({e})");
+        }
+    }
+    Ok(())
 }
 
 fn build_csv_rows(
