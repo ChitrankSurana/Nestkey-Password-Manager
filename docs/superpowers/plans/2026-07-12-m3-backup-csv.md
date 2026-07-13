@@ -1,4 +1,4 @@
-# M3 — Encrypted Backup/Restore + CSV Export/Import Implementation Plan
+﻿# M3 — Encrypted Backup/Restore + CSV Export/Import Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
@@ -2124,7 +2124,7 @@ check: does this need to exist? Yes — the generic-mapping screen is otherwise 
 already covered by something? No. Kept to the smallest possible shape: reads the file, returns just
 the header strings, no other state.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 // src-tauri/src/commands.rs, mod tests
@@ -2148,12 +2148,12 @@ fn read_csv_headers_on_a_missing_file_returns_invalid_input() {
 }
 ```
 
-- [ ] **Step 2: Run to confirm they fail**
+- [x] **Step 2: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-app read_csv_headers`
 Expected: FAIL — `cannot find function do_read_csv_headers`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 // src-tauri/src/commands.rs
@@ -2178,13 +2178,13 @@ row directly here rather than round-tripping through `pwmgr-core` for a one-line
 since the app crate already has `serde` regardless, and Task 7 already found `csv` pulls in
 `serde`/`serde_core` unconditionally anyway.
 
-- [ ] **Step 4: Register in `lib.rs`** — add `commands::read_csv_headers,`.
+- [x] **Step 4: Register in `lib.rs`** — add `commands::read_csv_headers,`.
 
-- [ ] **Step 5: Run to confirm pass**
+- [x] **Step 5: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-app read_csv_headers`, then `cargo test --workspace`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A

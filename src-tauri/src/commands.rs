@@ -585,6 +585,21 @@ pub fn export_csv(
     do_export_csv(&state, &paths, &path, &mode, confirmed)
 }
 
+pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+    let mut reader = csv::Reader::from_reader(text.as_bytes());
+    let headers = reader
+        .headers()
+        .map_err(|_| crate::error::invalid_input_error("That file doesn't look like a CSV."))?;
+    Ok(headers.iter().map(|h| h.to_string()).collect())
+}
+
+#[tauri::command]
+pub fn read_csv_headers(path: String) -> Result<Vec<String>, CommandError> {
+    do_read_csv_headers(&path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1160,5 +1175,23 @@ mod tests {
         let result = do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true);
 
         assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn read_csv_headers_returns_the_header_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.csv");
+        std::fs::write(&path, "Site,Login,Pwd\nexample.com,alice,secret\n").unwrap();
+
+        let headers = do_read_csv_headers(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(headers, vec!["Site".to_string(), "Login".to_string(), "Pwd".to_string()]);
+    }
+
+    #[test]
+    fn read_csv_headers_on_a_missing_file_returns_invalid_input() {
+        let result = do_read_csv_headers("this-file-does-not-exist.csv");
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
     }
 }

@@ -3084,6 +3084,7 @@ dependencies = [
 name = "pwmgr-app"
 version = "0.1.0"
 dependencies = [
+ "csv",
  "dirs 5.0.1",
  "pwmgr-core",
  "rusqlite",
