@@ -237,6 +237,14 @@ mod tests {
     }
 
     #[test]
+    fn export_mode_debug_format_redacts_password() {
+        let mode = ExportMode::WithPassword { password: "extremely-unique-export-pw-xyz".into() };
+        let debug_output = format!("{:?}", mode);
+        assert!(!debug_output.contains("extremely-unique-export-pw-xyz"));
+        assert!(debug_output.contains("<redacted>"));
+    }
+
+    #[test]
     fn credential_dto_secret_is_wrapped_in_zeroizing() {
         let cred = Credential {
             id: 1,
