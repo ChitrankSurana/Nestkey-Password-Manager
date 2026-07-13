@@ -983,7 +983,7 @@ don't need their own length prefix). **No decoder is written** — nothing in th
 our own encrypted CSV export (see "Out of scope"), so a symmetrical decode function would be dead
 code. `// ponytail:` no decoder; add one only if a future milestone needs to re-import this format.
 
-- [ ] **Step 1: Write the failing tests** (byte-layout assertions, since there's no decoder to
+- [x] **Step 1: Write the failing tests** (byte-layout assertions, since there's no decoder to
   round-trip through)
 
 ```rust
@@ -1018,12 +1018,12 @@ fn encode_sealed_csv_with_password_mode_includes_the_salt() {
 }
 ```
 
-- [ ] **Step 2: Run to confirm they fail**
+- [x] **Step 2: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-core portio::`
 Expected: FAIL — `cannot find function encode_sealed_csv`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 // core/src/portio.rs
@@ -1051,12 +1051,12 @@ pub fn encode_sealed_csv(salt: Option<&[u8; 16]>, nonce: &[u8; 12], ciphertext: 
 }
 ```
 
-- [ ] **Step 4: Run to confirm pass**
+- [x] **Step 4: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-core portio::`
 Expected: all 5 pass (3 from Task 7 + 2 new).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
