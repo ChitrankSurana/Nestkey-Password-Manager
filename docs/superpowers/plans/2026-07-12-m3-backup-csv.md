@@ -2207,7 +2207,7 @@ matching the `generate_password` precedent for commands that don't need session 
 existing `secret` param), so it gets the same `Zeroizing` wrap + manual redacting `Debug` impl as
 `CredentialDto`.
 
-- [ ] **Step 1: Add the DTOs**
+- [x] **Step 1: Add the DTOs**
 
 ```rust
 // src-tauri/src/dto.rs
@@ -2275,7 +2275,7 @@ impl From<ImportRecordDto> for pwmgr_core::portio::ImportRecord {
 }
 ```
 
-- [ ] **Step 2: Map `PortioError`'s parse-side variants to `invalid_input`** — replace Task 9's blanket
+- [x] **Step 2: Map `PortioError`'s parse-side variants to `invalid_input`** — replace Task 9's blanket
   `From<PortioError>` (which mapped everything to `internal_error`, correct for the *write*-side
   `Write` variant but wrong for these *parse*-side ones, which are genuinely bad user input) with a
   full match:
@@ -2296,7 +2296,7 @@ impl From<pwmgr_core::portio::PortioError> for CommandError {
 }
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 ```rust
 // src-tauri/src/commands.rs, mod tests
@@ -2345,12 +2345,12 @@ fn import_csv_preview_parses_generic_with_a_mapping() {
 }
 ```
 
-- [ ] **Step 4: Run to confirm they fail**
+- [x] **Step 4: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-app import_csv_preview`
 Expected: FAIL — `cannot find function do_import_csv_preview`.
 
-- [ ] **Step 5: Implement**
+- [x] **Step 5: Implement**
 
 ```rust
 // src-tauri/src/commands.rs
@@ -2379,13 +2379,13 @@ pub fn import_csv_preview(
 }
 ```
 
-- [ ] **Step 6: Register in `lib.rs`** — add `commands::import_csv_preview,`.
+- [x] **Step 6: Register in `lib.rs`** — add `commands::import_csv_preview,`.
 
-- [ ] **Step 7: Run to confirm pass**
+- [x] **Step 7: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-app import_csv_preview`, then `cargo test --workspace`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A

@@ -80,6 +80,7 @@ pub fn run() {
             commands::restore_backup,
             commands::export_csv,
             commands::read_csv_headers,
+            commands::import_csv_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

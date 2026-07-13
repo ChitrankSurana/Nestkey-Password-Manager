@@ -1,5 +1,6 @@
 use pwmgr_core::vault::{Credential, SearchResult, Site, TrashedCredential};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use zeroize::Zeroizing;
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -167,6 +168,67 @@ impl std::fmt::Debug for ExportMode {
                 .field("password", &"<redacted>")
                 .finish(),
             ExportMode::Plaintext => f.write_str("Plaintext"),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", tag = "format")]
+pub enum ImportFormat {
+    Chromium,
+    Firefox,
+    Generic { mapping: HashMap<String, String> },
+}
+
+// Manual Debug impl for the same reason as CredentialDto (dto.rs above): `secret` is plaintext
+// crossing IPC, and this DTO is serialized/deserialized in bulk (a whole import batch), so a
+// stray `{:?}`/`dbg!()` on a `Vec<ImportRecordDto>` must never print N secrets at once.
+#[derive(Serialize, Deserialize, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportRecordDto {
+    pub site_name: String,
+    pub url: Option<String>,
+    pub notes: Option<String>,
+    pub username: Option<String>,
+    pub secret: Zeroizing<String>,
+    pub remarks: Option<String>,
+}
+
+impl std::fmt::Debug for ImportRecordDto {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImportRecordDto")
+            .field("site_name", &self.site_name)
+            .field("url", &self.url)
+            .field("notes", &self.notes)
+            .field("username", &self.username)
+            .field("secret", &"<redacted>")
+            .field("remarks", &self.remarks)
+            .finish()
+    }
+}
+
+impl From<pwmgr_core::portio::ImportRecord> for ImportRecordDto {
+    fn from(r: pwmgr_core::portio::ImportRecord) -> Self {
+        ImportRecordDto {
+            site_name: r.site_name,
+            url: r.url,
+            notes: r.notes,
+            username: r.username,
+            secret: Zeroizing::new(r.secret),
+            remarks: r.remarks,
+        }
+    }
+}
+
+impl From<ImportRecordDto> for pwmgr_core::portio::ImportRecord {
+    fn from(d: ImportRecordDto) -> Self {
+        pwmgr_core::portio::ImportRecord {
+            site_name: d.site_name,
+            url: d.url,
+            notes: d.notes,
+            username: d.username,
+            secret: (*d.secret).clone(),
+            remarks: d.remarks,
         }
     }
 }

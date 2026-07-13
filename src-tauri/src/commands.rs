@@ -1,5 +1,5 @@
 use crate::config::{VALID_AUTO_LOCK_MINUTES, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, ImportFormat, ImportRecordDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -600,6 +600,28 @@ pub fn read_csv_headers(path: String) -> Result<Vec<String>, CommandError> {
     do_read_csv_headers(&path)
 }
 
+pub fn do_import_csv_preview(
+    path: &str,
+    format: &ImportFormat,
+) -> Result<Vec<ImportRecordDto>, CommandError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+    let records = match format {
+        ImportFormat::Chromium => pwmgr_core::portio::parse_chromium_csv(&text)?,
+        ImportFormat::Firefox => pwmgr_core::portio::parse_firefox_csv(&text)?,
+        ImportFormat::Generic { mapping } => pwmgr_core::portio::parse_generic_csv(&text, mapping)?,
+    };
+    Ok(records.into_iter().map(ImportRecordDto::from).collect())
+}
+
+#[tauri::command]
+pub fn import_csv_preview(
+    path: String,
+    format: ImportFormat,
+) -> Result<Vec<ImportRecordDto>, CommandError> {
+    do_import_csv_preview(&path, &format)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1193,5 +1215,49 @@ mod tests {
         let result = do_read_csv_headers("this-file-does-not-exist.csv");
 
         assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    use crate::dto::ImportFormat;
+
+    #[test]
+    fn import_csv_preview_parses_a_chromium_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("chrome.csv");
+        std::fs::write(&path, "name,url,username,password\nexample.com,https://example.com,alice,s3cret\n").unwrap();
+
+        let records = do_import_csv_preview(path.to_str().unwrap(), &ImportFormat::Chromium).unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].site_name, "example.com");
+        assert_eq!(&*records[0].secret, "s3cret");
+    }
+
+    #[test]
+    fn import_csv_preview_surfaces_a_header_mismatch_as_invalid_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.csv");
+        std::fs::write(&path, "a,b,c\n1,2,3\n").unwrap();
+
+        let result = do_import_csv_preview(path.to_str().unwrap(), &ImportFormat::Chromium);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn import_csv_preview_parses_generic_with_a_mapping() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("generic.csv");
+        std::fs::write(&path, "Site,Pwd\nexample.com,s3cret\n").unwrap();
+        let mut mapping = std::collections::HashMap::new();
+        mapping.insert("Site".to_string(), "site_name".to_string());
+        mapping.insert("Pwd".to_string(), "secret".to_string());
+
+        let records = do_import_csv_preview(
+            path.to_str().unwrap(),
+            &ImportFormat::Generic { mapping },
+        )
+        .unwrap();
+
+        assert_eq!(records[0].site_name, "example.com");
     }
 }

@@ -68,8 +68,15 @@ impl From<pwmgr_core::generator::GenError> for CommandError {
 }
 
 impl From<pwmgr_core::portio::PortioError> for CommandError {
-    fn from(_: pwmgr_core::portio::PortioError) -> Self {
-        internal_error()
+    fn from(e: pwmgr_core::portio::PortioError) -> Self {
+        use pwmgr_core::portio::PortioError;
+        match e {
+            PortioError::Write => internal_error(),
+            PortioError::Parse
+            | PortioError::HeaderMismatch(_)
+            | PortioError::MissingColumn(_)
+            | PortioError::UnknownField(_) => invalid_input_error(&e.to_string()),
+        }
     }
 }
 
