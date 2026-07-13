@@ -2406,7 +2406,7 @@ Locking: vault outer (needs `&mut` this time, for `Connection::transaction()`) t
 same nesting order as every other vault+session command, just with a mutable vault borrow instead of
 shared.
 
-- [ ] **Step 1: Add `ImportSummaryDto`**
+- [x] **Step 1: Add `ImportSummaryDto`**
 
 ```rust
 // src-tauri/src/dto.rs
@@ -2424,7 +2424,7 @@ impl From<pwmgr_core::vault::ImportSummary> for ImportSummaryDto {
 }
 ```
 
-- [ ] **Step 2: Extend `From<VaultError>` to handle the new variant**
+- [x] **Step 2: Extend `From<VaultError>` to handle the new variant**
 
 ```rust
 // src-tauri/src/error.rs
@@ -2442,7 +2442,7 @@ impl From<pwmgr_core::vault::VaultError> for CommandError {
 }
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 ```rust
 // src-tauri/src/commands.rs, mod tests
@@ -2496,12 +2496,12 @@ fn import_csv_commit_surfaces_a_missing_site_name_as_invalid_input() {
 }
 ```
 
-- [ ] **Step 4: Run to confirm they fail**
+- [x] **Step 4: Run to confirm they fail**
 
 Run: `cargo test -p pwmgr-app import_csv_commit`
 Expected: FAIL — `cannot find function do_import_csv_commit`.
 
-- [ ] **Step 5: Implement**
+- [x] **Step 5: Implement**
 
 ```rust
 // src-tauri/src/commands.rs
@@ -2532,13 +2532,13 @@ pub fn import_csv_commit(
 }
 ```
 
-- [ ] **Step 6: Register in `lib.rs`** — add `commands::import_csv_commit,`.
+- [x] **Step 6: Register in `lib.rs`** — add `commands::import_csv_commit,`.
 
-- [ ] **Step 7: Run to confirm pass**
+- [x] **Step 7: Run to confirm pass**
 
 Run: `cargo test -p pwmgr-app import_csv_commit`, then `cargo test --workspace`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A

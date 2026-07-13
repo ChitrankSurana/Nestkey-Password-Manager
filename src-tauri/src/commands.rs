@@ -1,5 +1,5 @@
 use crate::config::{VALID_AUTO_LOCK_MINUTES, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, ImportFormat, ImportRecordDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -620,6 +620,30 @@ pub fn import_csv_preview(
     format: ImportFormat,
 ) -> Result<Vec<ImportRecordDto>, CommandError> {
     do_import_csv_preview(&path, &format)
+}
+
+pub fn do_import_csv_commit(
+    state: &AppState,
+    records: Vec<ImportRecordDto>,
+) -> Result<ImportSummaryDto, CommandError> {
+    let core_records: Vec<pwmgr_core::portio::ImportRecord> =
+        records.into_iter().map(Into::into).collect();
+
+    let mut vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_mut().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+
+    let summary = pwmgr_core::vault::import_credentials(conn, key, &core_records)?;
+    Ok(ImportSummaryDto::from(summary))
+}
+
+#[tauri::command]
+pub fn import_csv_commit(
+    state: State<AppState>,
+    records: Vec<ImportRecordDto>,
+) -> Result<ImportSummaryDto, CommandError> {
+    do_import_csv_commit(&state, records)
 }
 
 #[cfg(test)]
@@ -1259,5 +1283,54 @@ mod tests {
         .unwrap();
 
         assert_eq!(records[0].site_name, "example.com");
+    }
+
+    use crate::dto::ImportRecordDto;
+    use zeroize::Zeroizing;
+
+    fn import_record_dto(site: &str, username: &str, secret: &str) -> ImportRecordDto {
+        ImportRecordDto {
+            site_name: site.to_string(),
+            url: None,
+            notes: None,
+            username: Some(username.to_string()),
+            secret: Zeroizing::new(secret.to_string()),
+            remarks: None,
+        }
+    }
+
+    #[test]
+    fn import_csv_commit_inserts_records_and_returns_counts() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let summary = do_import_csv_commit(
+            &state,
+            vec![import_record_dto("example.com", "bob", "s3cret")],
+        )
+        .unwrap();
+
+        assert_eq!(summary.imported, 1);
+        assert_eq!(summary.duplicates, 0);
+        assert_eq!(do_list_sites(&state).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn import_csv_commit_when_locked_returns_locked_error() {
+        let (state, _paths, _dir) = test_state_and_paths();
+
+        let result = do_import_csv_commit(&state, vec![import_record_dto("example.com", "bob", "s3cret")]);
+
+        assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn import_csv_commit_surfaces_a_missing_site_name_as_invalid_input() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let result = do_import_csv_commit(&state, vec![import_record_dto("", "bob", "s3cret")]);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
     }
 }

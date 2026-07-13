@@ -53,6 +53,7 @@ impl From<pwmgr_core::vault::VaultError> for CommandError {
             VaultError::NotFound => {
                 CommandError::new("not_found", "That item no longer exists.")
             }
+            VaultError::InvalidImportRecord(msg) => invalid_input_error(&msg),
             VaultError::UnlockFailed | VaultError::Db(_) | VaultError::Crypto(_) => {
                 CommandError::new("internal_error", "Something went wrong. Please try again.")
             }

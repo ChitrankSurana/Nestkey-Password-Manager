@@ -233,6 +233,19 @@ impl From<ImportRecordDto> for pwmgr_core::portio::ImportRecord {
     }
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSummaryDto {
+    pub imported: usize,
+    pub duplicates: usize,
+}
+
+impl From<pwmgr_core::vault::ImportSummary> for ImportSummaryDto {
+    fn from(s: pwmgr_core::vault::ImportSummary) -> Self {
+        ImportSummaryDto { imported: s.imported, duplicates: s.duplicates }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
