@@ -25,6 +25,17 @@ pub fn classify_reused(inputs: &[ReuseInput]) -> Vec<ReusedGroup> {
         .collect()
 }
 
+/// Given a full SHA-1 hex digest and the (suffix, count) entries HIBP's range API returned for
+/// that digest's first-5-char prefix, finds whether the digest's own suffix (chars 5..) is among
+/// them. Case-insensitive since HIBP's casing isn't a contract this function should depend on.
+pub fn hibp_match(full_hash_hex: &str, entries: &[(String, u32)]) -> Option<u32> {
+    let suffix = full_hash_hex.get(5..)?.to_ascii_uppercase();
+    entries
+        .iter()
+        .find(|(s, _)| s.to_ascii_uppercase() == suffix)
+        .map(|(_, count)| *count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,5 +78,32 @@ mod tests {
 
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].credential_ids.len(), 3);
+    }
+
+    #[test]
+    fn hibp_match_finds_a_matching_suffix() {
+        let full_hash = "AAAAA1234567890ABCDEF1234567890ABCDEF12"; // 40 hex chars, fabricated for the test
+        let suffix = &full_hash[5..];
+        let entries = vec![(suffix.to_string(), 42u32), ("FFFF...".to_string(), 1)];
+
+        assert_eq!(hibp_match(full_hash, &entries), Some(42));
+    }
+
+    #[test]
+    fn hibp_match_returns_none_when_no_suffix_matches() {
+        let full_hash = "AAAAA1234567890ABCDEF1234567890ABCDEF12";
+        let entries = vec![("DEADBEEF00000000000000000000000000".to_string(), 5)];
+
+        assert_eq!(hibp_match(full_hash, &entries), None);
+    }
+
+    #[test]
+    fn hibp_match_is_case_insensitive() {
+        // HIBP's own responses are uppercase, but don't assume every caller normalizes first.
+        let full_hash = "AAAAA1234567890abcdef1234567890abcdef12";
+        let suffix_upper = "1234567890ABCDEF1234567890ABCDEF12";
+        let entries = vec![(suffix_upper.to_string(), 7u32)];
+
+        assert_eq!(hibp_match(full_hash, &entries), Some(7));
     }
 }
