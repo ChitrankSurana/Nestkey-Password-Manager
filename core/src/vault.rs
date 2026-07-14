@@ -316,6 +316,42 @@ pub fn purge_trash(conn: &Connection) -> Result<usize, VaultError> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct OldCredential {
+    pub credential_id: i64,
+    pub site_id: i64,
+    pub site_name: String,
+    pub username: Option<String>,
+    pub password_updated_at: String,
+}
+
+/// Credentials whose password hasn't changed in more than `threshold_days`. Uses SQLite's own
+/// date arithmetic (no Rust-side date parsing, no new dependency) - `password_updated_at` is a
+/// plaintext column, so this needs no decryption either.
+pub fn list_old_credentials(conn: &Connection, threshold_days: u32) -> Result<Vec<OldCredential>, VaultError> {
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.site_id, s.name, c.username, c.password_updated_at
+         FROM credentials c JOIN sites s ON s.id = c.site_id
+         WHERE c.deleted_at IS NULL AND s.deleted_at IS NULL
+           AND c.password_updated_at < datetime('now', '-' || ?1 || ' days')
+         ORDER BY c.password_updated_at ASC",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![threshold_days], |row| {
+        Ok(OldCredential {
+            credential_id: row.get(0)?,
+            site_id: row.get(1)?,
+            site_name: row.get(2)?,
+            username: row.get(3)?,
+            password_updated_at: row.get(4)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct SearchResult {
     pub site_id: i64,
     pub site_name: String,
@@ -861,5 +897,46 @@ mod tests {
         assert!(matches!(result, Err(VaultError::InvalidImportRecord(_))));
         // Nothing from the batch was persisted, including the row BEFORE the failing one.
         assert!(list_sites(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_old_credentials_returns_only_credentials_older_than_the_threshold() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[42u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let old_id = add_credential(&conn, &key, site_id, Some("alice"), "secret-a", None).unwrap();
+        let fresh_id = add_credential(&conn, &key, site_id, Some("bob"), "secret-b", None).unwrap();
+        conn.execute(
+            "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
+            rusqlite::params![old_id],
+        )
+        .unwrap();
+        // fresh_id keeps its just-created (now) password_updated_at.
+
+        let old = list_old_credentials(&conn, 365).unwrap();
+
+        assert_eq!(old.len(), 1);
+        assert_eq!(old[0].credential_id, old_id);
+        assert_eq!(old[0].site_name, "example.com");
+        assert_eq!(old[0].username.as_deref(), Some("alice"));
+        let _ = fresh_id; // not returned - kept only to make the "one is old, one isn't" setup explicit
+    }
+
+    #[test]
+    fn list_old_credentials_excludes_soft_deleted_rows() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[43u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None).unwrap();
+        conn.execute(
+            "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
+            rusqlite::params![cred_id],
+        )
+        .unwrap();
+        soft_delete_credential(&conn, cred_id).unwrap();
+
+        assert!(list_old_credentials(&conn, 365).unwrap().is_empty());
     }
 }
