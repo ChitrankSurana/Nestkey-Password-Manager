@@ -939,4 +939,24 @@ mod tests {
 
         assert!(list_old_credentials(&conn, 365).unwrap().is_empty());
     }
+
+    #[test]
+    fn list_old_credentials_excludes_credentials_on_a_soft_deleted_site() {
+        // The join's other half - s.deleted_at IS NULL - has no coverage without this: a
+        // credential can be individually untouched but its site soft-deleted (e.g. via Trash),
+        // and it must still be excluded from the "old" report.
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[44u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None).unwrap();
+        conn.execute(
+            "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
+            rusqlite::params![cred_id],
+        )
+        .unwrap();
+        soft_delete_site(&conn, site_id).unwrap();
+
+        assert!(list_old_credentials(&conn, 365).unwrap().is_empty());
+    }
 }
