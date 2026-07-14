@@ -1,7 +1,10 @@
-# Resume Notes — Password Manager — M1-M3 done and merged, M4 not started
+# Resume Notes — Password Manager — M1-M3 done and merged, M4 in progress (Slice 1/6 done)
 
 **Written:** 2026-07-14, immediately after merging M3 to `main` and pushing everything to GitHub.
-**Read this first in a new session before doing anything else.**
+**Updated:** 2026-07-15 — M4 is now underway; **this file describes `main`'s state only** (M1-M3).
+**For M4's actual progress, read `.worktrees/m4-health-nav-theming/RESUME_HERE.md` instead** — that
+worktree/branch has its own detailed resume notes and is the active work, not this file.
+**Read this first in a new session before doing anything else**, then jump to the worktree's own file.
 
 > **M1, M2, and M3 are all done and merged to `main`.** 173/173 tests passing, `cargo build`/
 > `npm run build` clean. **This repo now has a GitHub remote** (added this session, see below) — two
@@ -38,11 +41,13 @@
 
 ## What to do next
 
-1. **Start M4** — per `docs/PRD.md`: health dashboard (weak/reused/old passwords + opt-in HIBP breach
-   check), navigation rail, full theming (light/dark × 5 accents). Use the same workflow as M1-M3
-   (`superpowers:subagent-driven-development` or `superpowers:executing-plans`, fresh implementer per
-   task → fresh spec-compliance reviewer → fresh code-quality reviewer → slice cross-review → full-
-   milestone cross-review) — this has worked cleanly for 3 milestones straight, no reason to change it.
+1. **M4 is in progress — go to `.worktrees/m4-health-nav-theming/RESUME_HERE.md`.** Slice 1 of 6
+   (health classification logic) is done, individually reviewed, and cross-reviewed clean as of
+   commit `823e611` on branch `m4-health-nav-theming`. Slices 2-6 remain. Don't restart planning or
+   re-brainstorm — the design spec (`docs/superpowers/specs/2026-07-14-m4-health-nav-theming-design.md`)
+   and plan (`docs/superpowers/plans/2026-07-14-m4-health-nav-theming.md`) are both already approved
+   and committed; just continue executing the plan from Slice 2 using
+   `superpowers:subagent-driven-development`.
 2. **When M4 is done: push and open a GitHub PR instead of merging locally** — this is the new habit,
    don't fall back to the old fast-forward-merge pattern out of habit.
 3. **Still deferred to after M6:** the manual UI walkthrough covering M1 through M6 in one pass.
