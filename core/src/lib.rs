@@ -4,3 +4,5 @@ pub mod vault;
 pub mod auth;
 pub mod session;
 pub mod generator;
+pub mod backup;
+pub mod portio;

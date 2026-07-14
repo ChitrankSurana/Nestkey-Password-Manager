@@ -1,5 +1,6 @@
 use crate::crypto::VaultKey;
-use rusqlite::Connection;
+use crate::portio::ImportRecord;
+use rusqlite::{Connection, OptionalExtension};
 use std::path::Path;
 use thiserror::Error;
 use zeroize::Zeroizing;
@@ -14,6 +15,8 @@ pub enum VaultError {
     NotFound,
     #[error("crypto error: {0}")]
     Crypto(#[from] crate::crypto::CryptoError),
+    #[error("import record is missing a required field: {0}")]
+    InvalidImportRecord(String),
 }
 
 pub fn open_vault(path: &Path, key: &VaultKey) -> Result<Connection, VaultError> {
@@ -333,11 +336,89 @@ pub fn search(conn: &Connection, query: &str) -> Result<Vec<SearchResult>, Vault
     Ok(out)
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportSummary {
+    pub imported: usize,
+    pub duplicates: usize,
+}
+
+fn find_or_create_site(
+    conn: &Connection,
+    name: &str,
+    url: Option<&str>,
+    notes: Option<&str>,
+) -> Result<i64, VaultError> {
+    let existing: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM sites WHERE name = ?1 AND deleted_at IS NULL",
+            rusqlite::params![name],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match existing {
+        Some(id) => Ok(id),
+        None => add_site(conn, name, url, notes),
+    }
+}
+
+fn credential_exists(conn: &Connection, site_id: i64, username: Option<&str>) -> Result<bool, VaultError> {
+    // `username IS ?2` (not `=`) so a NULL username compares NULL-safely, matching search()'s
+    // established care around SQL NULL semantics elsewhere in this file.
+    let count: i64 = conn.query_row(
+        "SELECT count(*) FROM credentials WHERE site_id = ?1 AND username IS ?2 AND deleted_at IS NULL",
+        rusqlite::params![site_id, username],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+/// Inserts an entire CSV import batch in one transaction. Any row missing a required field
+/// (`site_name`) fails the whole batch - the `Transaction` rolls back on `Drop` since `?`'s early
+/// return means `commit()` is never reached, needing no explicit rollback call. A row whose
+/// site name + username already exists is skipped (counted, not an error) - this is the only
+/// documented "duplicate" definition per the design; it does not fail the batch.
+pub fn import_credentials(
+    conn: &mut Connection,
+    key: &VaultKey,
+    records: &[ImportRecord],
+) -> Result<ImportSummary, VaultError> {
+    let tx = conn.transaction()?;
+    let mut imported = 0usize;
+    let mut duplicates = 0usize;
+
+    for rec in records {
+        if rec.site_name.trim().is_empty() {
+            return Err(VaultError::InvalidImportRecord("site name is required".to_string()));
+        }
+        let site_id = find_or_create_site(&tx, &rec.site_name, rec.url.as_deref(), rec.notes.as_deref())?;
+        if credential_exists(&tx, site_id, rec.username.as_deref())? {
+            duplicates += 1;
+            continue;
+        }
+        add_credential(&tx, key, site_id, rec.username.as_deref(), &rec.secret, rec.remarks.as_deref())?;
+        imported += 1;
+    }
+
+    tx.commit()?;
+    Ok(ImportSummary { imported, duplicates })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::crypto::derive_key;
     use tempfile::tempdir;
+
+    fn sample_import_record(site: &str, username: &str, secret: &str) -> ImportRecord {
+        ImportRecord {
+            site_name: site.to_string(),
+            url: None,
+            notes: None,
+            username: Some(username.to_string()),
+            secret: secret.to_string(),
+            remarks: None,
+        }
+    }
 
     #[test]
     fn open_vault_with_correct_key_succeeds_and_creates_schema() {
@@ -648,5 +729,64 @@ mod tests {
 
         soft_delete_site(&conn, site_id).unwrap();
         assert!(search(&conn, "deleteme").unwrap().is_empty());
+    }
+
+    #[test]
+    fn import_credentials_inserts_every_valid_row_and_reuses_a_shared_site() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[30u8; 16]).unwrap();
+        let mut conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let records = vec![
+            sample_import_record("example.com", "alice", "secret-a"),
+            sample_import_record("example.com", "bob", "secret-b"), // same site, different user
+        ];
+
+        let summary = import_credentials(&mut conn, &key, &records).unwrap();
+
+        assert_eq!(summary.imported, 2);
+        assert_eq!(summary.duplicates, 0);
+        let sites = list_sites(&conn).unwrap();
+        assert_eq!(sites.len(), 1, "both rows should share one site, not create two");
+        assert_eq!(list_credentials_for_site(&conn, &key, sites[0].id).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn import_credentials_skips_a_duplicate_site_and_username_without_failing_the_batch() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[31u8; 16]).unwrap();
+        let mut conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let records = vec![
+            sample_import_record("example.com", "alice", "secret-a"),
+            sample_import_record("example.com", "alice", "secret-a-again"), // exact duplicate
+        ];
+
+        let summary = import_credentials(&mut conn, &key, &records).unwrap();
+
+        assert_eq!(summary.imported, 1);
+        assert_eq!(summary.duplicates, 1);
+    }
+
+    #[test]
+    fn import_credentials_rolls_back_the_whole_batch_when_any_row_is_missing_a_required_field() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[32u8; 16]).unwrap();
+        let mut conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let records = vec![
+            sample_import_record("valid.com", "alice", "secret-a"),
+            ImportRecord {
+                site_name: String::new(), // missing required field
+                url: None,
+                notes: None,
+                username: Some("bob".to_string()),
+                secret: "secret-b".to_string(),
+                remarks: None,
+            },
+        ];
+
+        let result = import_credentials(&mut conn, &key, &records);
+
+        assert!(matches!(result, Err(VaultError::InvalidImportRecord(_))));
+        // Nothing from the batch was persisted, including the row BEFORE the failing one.
+        assert!(list_sites(&conn).unwrap().is_empty());
     }
 }

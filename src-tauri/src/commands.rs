@@ -1,5 +1,5 @@
 use crate::config::{VALID_AUTO_LOCK_MINUTES, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, GenerateRequest, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -383,6 +383,280 @@ pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), Comm
     Ok(())
 }
 
+pub fn do_create_backup(state: &AppState, paths: &AppPaths) -> Result<String, CommandError> {
+    let vault_path = {
+        let vault_guard = state.vault.lock().unwrap();
+        let (_, path) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+        path.clone()
+    };
+    let username = vault_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(crate::error::internal_error)?
+        .to_string();
+
+    let user_record = {
+        let registry = state.registry.lock().unwrap();
+        pwmgr_core::registry::find_user(&registry, &username)
+            .map_err(|_| crate::error::internal_error())?
+    };
+
+    let vault_bytes = std::fs::read(&vault_path).map_err(|_| crate::error::internal_error())?;
+    let bundle = pwmgr_core::backup::encode_bundle(&user_record, &vault_bytes);
+
+    // Millisecond (not second) precision: a whole-second timestamp lets two backups created in
+    // quick succession (e.g. a double-clicked button) silently collide and overwrite each other.
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let backup_path = paths.backups_dir().join(format!("{}-{}.bak", username, timestamp));
+    std::fs::write(&backup_path, &bundle).map_err(|_| crate::error::internal_error())?;
+
+    Ok(backup_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn create_backup(state: State<AppState>, paths: State<AppPaths>) -> Result<String, CommandError> {
+    do_create_backup(&state, &paths)
+}
+
+pub fn do_restore_backup(
+    state: &AppState,
+    paths: &AppPaths,
+    backup_file_path: &str,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    let bytes = std::fs::read(backup_file_path)
+        .map_err(|_| crate::error::invalid_input_error("Could not read that backup file."))?;
+    let (user_record, vault_bytes) = pwmgr_core::backup::decode_bundle(&bytes)
+        .map_err(|_| crate::error::invalid_input_error("That file isn't a valid backup."))?;
+
+    let vault_path = paths.vault_path(&user_record.username);
+    let already_exists = vault_path.exists() || {
+        let registry = state.registry.lock().unwrap();
+        pwmgr_core::registry::find_user(&registry, &user_record.username).is_ok()
+    };
+    if already_exists && !confirmed {
+        return Err(crate::error::confirm_required_error(
+            "A vault for that username already exists. Restoring will overwrite it.",
+        ));
+    }
+
+    // If the vault being restored over is the one currently open in AppState, close it first:
+    // its connection/key belongs to the account's OLD data and is stale the instant we replace
+    // the file underneath it, and on Windows a lingering open handle blocks the rename below.
+    // Locking the session in the same step (matching do_lock's pattern) keeps the app-wide
+    // invariant vault.is_some() <=> session.is_unlocked() intact - clearing the vault alone would
+    // leave unlock_status() reporting "unlocked" while every vault command now returns `locked`.
+    {
+        let mut vault_guard = state.vault.lock().unwrap();
+        if matches!(vault_guard.as_ref(), Some((_, open_path)) if *open_path == vault_path) {
+            *vault_guard = None;
+            state.session.lock().unwrap().lock();
+        }
+    }
+
+    // Write the vault bytes to a temp path and commit the registry row BEFORE renaming into
+    // place, not after: writing the real vault_path first and upserting the registry second would
+    // leave a vault file whose ciphertext doesn't match the registry's salts/verifier (unopenable
+    // for an existing account) if the registry write failed after the vault write already
+    // succeeded. Rename is the last step and is effectively atomic on the same volume, so the
+    // only remaining failure window is far narrower than a plain write-then-upsert ordering.
+    let tmp_path = vault_path.with_extension("vault.tmp");
+    std::fs::write(&tmp_path, &vault_bytes).map_err(|_| crate::error::internal_error())?;
+
+    let registry = state.registry.lock().unwrap();
+    if pwmgr_core::registry::upsert_user(&registry, &user_record).is_err() {
+        let _ = std::fs::remove_file(&tmp_path); // best-effort cleanup, don't mask the real error
+        return Err(crate::error::internal_error());
+    }
+    drop(registry);
+
+    if std::fs::rename(&tmp_path, &vault_path).is_err() {
+        let _ = std::fs::remove_file(&tmp_path); // best-effort cleanup, don't mask the real error
+        return Err(crate::error::internal_error());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn restore_backup(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    app: tauri::AppHandle,
+    path: String,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    do_restore_backup(&state, &paths, &path, confirmed)?;
+    // do_restore_backup locks the session when the restored backup overwrites the vault
+    // currently open in AppState (see its own comment). The frontend's only route back to the
+    // login screen is the "vault-locked" event (App.tsx), so without this the user is left
+    // stranded on a screen that thinks it's still logged in - same pattern as the `lock` command.
+    if state.session.lock().unwrap().is_locked() {
+        if let Err(e) = app.emit("vault-locked", ()) {
+            eprintln!("warning: failed to emit vault-locked event ({e})");
+        }
+    }
+    Ok(())
+}
+
+fn build_csv_rows(
+    conn: &rusqlite::Connection,
+    key: &pwmgr_core::crypto::VaultKey,
+) -> Result<Vec<pwmgr_core::portio::CsvRow>, CommandError> {
+    let sites = pwmgr_core::vault::list_sites(conn)?;
+    let mut rows = Vec::new();
+    for site in sites {
+        let creds = pwmgr_core::vault::list_credentials_for_site(conn, key, site.id)?;
+        for c in creds {
+            rows.push(pwmgr_core::portio::CsvRow {
+                site_name: site.name.clone(),
+                url: site.url.clone(),
+                notes: site.notes.clone(),
+                username: c.username,
+                secret: c.secret,
+                remarks: c.remarks,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+fn append_plaintext_export_log(paths: &AppPaths, path: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(paths.plaintext_export_log_path())?;
+    writeln!(file, "{}\t{}", ts, path)
+}
+
+pub fn do_export_csv(
+    state: &AppState,
+    paths: &AppPaths,
+    path: &str,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    if matches!(mode, ExportMode::Plaintext) && !confirmed {
+        return Err(crate::error::invalid_input_error(
+            "Plaintext export requires explicit confirmation.",
+        ));
+    }
+
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+
+    let rows = build_csv_rows(conn, key)?;
+    let csv_text = pwmgr_core::portio::rows_to_csv(&rows)?;
+
+    let bytes: Vec<u8> = match mode {
+        ExportMode::Plaintext => csv_text.into_bytes(),
+        ExportMode::ThisDevice => {
+            let (ciphertext, nonce) = pwmgr_core::crypto::seal(key, csv_text.as_bytes())
+                .map_err(|_| crate::error::internal_error())?;
+            pwmgr_core::portio::encode_sealed_csv(None, &nonce, &ciphertext)
+        }
+        ExportMode::WithPassword { password } => {
+            let salt = pwmgr_core::crypto::random_salt();
+            let pw_key = pwmgr_core::crypto::derive_key(password, &salt)
+                .map_err(|_| crate::error::internal_error())?;
+            let (ciphertext, nonce) = pwmgr_core::crypto::seal(&pw_key, csv_text.as_bytes())
+                .map_err(|_| crate::error::internal_error())?;
+            pwmgr_core::portio::encode_sealed_csv(Some(&salt), &nonce, &ciphertext)
+        }
+    };
+    std::fs::write(path, &bytes).map_err(|_| crate::error::internal_error())?;
+
+    // THREAT_MODEL: plaintext export path must be logged locally. Best-effort - a log-write
+    // failure must not undo or fail the export the user already confirmed and got.
+    if matches!(mode, ExportMode::Plaintext) {
+        if let Err(e) = append_plaintext_export_log(paths, path) {
+            eprintln!("warning: failed to append plaintext export log entry: {e}");
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn export_csv(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    path: String,
+    mode: ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    do_export_csv(&state, &paths, &path, &mode, confirmed)
+}
+
+pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+    let mut reader = csv::Reader::from_reader(text.as_bytes());
+    let headers = reader
+        .headers()
+        .map_err(|_| crate::error::invalid_input_error("That file doesn't look like a CSV."))?;
+    Ok(headers.iter().map(|h| h.to_string()).collect())
+}
+
+#[tauri::command]
+pub fn read_csv_headers(path: String) -> Result<Vec<String>, CommandError> {
+    do_read_csv_headers(&path)
+}
+
+pub fn do_import_csv_preview(
+    path: &str,
+    format: &ImportFormat,
+) -> Result<Vec<ImportRecordDto>, CommandError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+    let records = match format {
+        ImportFormat::Chromium => pwmgr_core::portio::parse_chromium_csv(&text)?,
+        ImportFormat::Firefox => pwmgr_core::portio::parse_firefox_csv(&text)?,
+        ImportFormat::Generic { mapping } => pwmgr_core::portio::parse_generic_csv(&text, mapping)?,
+    };
+    Ok(records.into_iter().map(ImportRecordDto::from).collect())
+}
+
+#[tauri::command]
+pub fn import_csv_preview(
+    path: String,
+    format: ImportFormat,
+) -> Result<Vec<ImportRecordDto>, CommandError> {
+    do_import_csv_preview(&path, &format)
+}
+
+pub fn do_import_csv_commit(
+    state: &AppState,
+    records: Vec<ImportRecordDto>,
+) -> Result<ImportSummaryDto, CommandError> {
+    let core_records: Vec<pwmgr_core::portio::ImportRecord> =
+        records.into_iter().map(Into::into).collect();
+
+    let mut vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_mut().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+
+    let summary = pwmgr_core::vault::import_credentials(conn, key, &core_records)?;
+    Ok(ImportSummaryDto::from(summary))
+}
+
+#[tauri::command]
+pub fn import_csv_commit(
+    state: State<AppState>,
+    records: Vec<ImportRecordDto>,
+) -> Result<ImportSummaryDto, CommandError> {
+    do_import_csv_commit(&state, records)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -740,5 +1014,334 @@ mod tests {
     fn analyze_strength_handles_empty_without_panicking() {
         let s = do_analyze_strength("");
         assert_eq!(s.score, 0);
+    }
+
+    #[test]
+    fn create_backup_writes_a_decodable_bundle_under_backups_dir() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let path = do_create_backup(&state, &paths).unwrap();
+
+        assert!(std::path::Path::new(&path).starts_with(paths.backups_dir()));
+        let bytes = std::fs::read(&path).unwrap();
+        let (user, vault_bytes) = pwmgr_core::backup::decode_bundle(&bytes).unwrap();
+        assert_eq!(user.username, "alice");
+        assert!(!vault_bytes.is_empty());
+    }
+
+    #[test]
+    fn create_backup_when_locked_returns_locked_error() {
+        let (state, paths, _dir) = test_state_and_paths();
+
+        let result = do_create_backup(&state, &paths);
+
+        assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    fn backup_for(state: &AppState, paths: &AppPaths, username: &str) -> Vec<u8> {
+        do_register(state, paths, username, "correct horse battery staple").unwrap();
+        let path = do_create_backup(state, paths).unwrap();
+        std::fs::read(path).unwrap()
+    }
+
+    #[test]
+    fn restore_backup_onto_a_brand_new_username_needs_no_confirmation() {
+        let (state, paths, dir) = test_state_and_paths();
+        let bundle = backup_for(&state, &paths, "alice");
+        let bundle_path = dir.path().join("alice.bak");
+        std::fs::write(&bundle_path, &bundle).unwrap();
+
+        // Simulate a fresh machine: brand new state/paths, nothing registered yet.
+        let (fresh_state, fresh_paths, _fresh_dir) = test_state_and_paths();
+
+        let result = do_restore_backup(&fresh_state, &fresh_paths, bundle_path.to_str().unwrap(), false);
+
+        assert!(result.is_ok());
+        let registry = fresh_state.registry.lock().unwrap();
+        assert!(pwmgr_core::registry::find_user(&registry, "alice").is_ok());
+        assert!(fresh_paths.vault_path("alice").exists());
+    }
+
+    #[test]
+    fn restore_backup_onto_an_existing_username_without_confirmation_is_rejected() {
+        let (state, paths, dir) = test_state_and_paths();
+        let bundle = backup_for(&state, &paths, "alice");
+        let bundle_path = dir.path().join("alice.bak");
+        std::fs::write(&bundle_path, &bundle).unwrap();
+
+        // "alice" already exists in this same state/paths - restoring onto it needs confirmation.
+        let result = do_restore_backup(&state, &paths, bundle_path.to_str().unwrap(), false);
+
+        assert_eq!(result.unwrap_err().code(), "confirm_required");
+    }
+
+    #[test]
+    fn restore_backup_onto_an_existing_username_with_confirmation_overwrites() {
+        // This state's vault connection for "alice" is still open (from backup_for's do_register)
+        // when the restore runs - on Windows, renaming a new vault file into place while the old
+        // one is held open by a live handle fails unless that handle is closed first. This test
+        // pins down that the restore closes it rather than relying on write-in-place semantics.
+        let (state, paths, dir) = test_state_and_paths();
+        let bundle = backup_for(&state, &paths, "alice");
+        let bundle_path = dir.path().join("alice.bak");
+        std::fs::write(&bundle_path, &bundle).unwrap();
+        assert!(state.vault.lock().unwrap().is_some(), "precondition: vault still open pre-restore");
+
+        let result = do_restore_backup(&state, &paths, bundle_path.to_str().unwrap(), true);
+
+        assert!(result.is_ok());
+        assert!(
+            state.vault.lock().unwrap().is_none(),
+            "restore must close the stale open connection, not leave it pointing at replaced data"
+        );
+        assert!(
+            state.session.lock().unwrap().is_locked(),
+            "session must be locked in lockstep with the vault, or unlock_status() would lie"
+        );
+    }
+
+    #[test]
+    fn restore_backup_rejects_a_file_that_is_not_a_valid_bundle() {
+        let (state, paths, dir) = test_state_and_paths();
+        let junk_path = dir.path().join("junk.bak");
+        std::fs::write(&junk_path, b"not a backup").unwrap();
+
+        let result = do_restore_backup(&state, &paths, junk_path.to_str().unwrap(), false);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    fn seeded_vault_state() -> (AppState, AppPaths, tempfile::TempDir) {
+        let (state, paths, dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "s3cret!", None).unwrap();
+        (state, paths, dir)
+    }
+
+    #[test]
+    fn export_csv_this_device_mode_produces_a_sealable_file_decryptable_with_the_session_key() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.pwenc");
+
+        do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::ThisDevice, false).unwrap();
+
+        let bytes = std::fs::read(&out_path).unwrap();
+        assert_eq!(bytes[1], 0); // mode byte: this-device
+        // Manually decrypt using the same session key, proving the ciphertext is genuinely sealed
+        // with it (not just opaque bytes) and contains real CSV content once opened.
+        let nonce: [u8; 12] = bytes[2..14].try_into().unwrap();
+        let len = u32::from_le_bytes(bytes[14..18].try_into().unwrap()) as usize;
+        let ciphertext = &bytes[18..18 + len];
+        let session = state.session.lock().unwrap();
+        let key = session.key().unwrap();
+        let plaintext = pwmgr_core::crypto::open(key, ciphertext, &nonce).unwrap();
+        assert!(String::from_utf8(plaintext).unwrap().contains("example.com"));
+    }
+
+    #[test]
+    fn export_csv_with_password_mode_embeds_a_salt_and_is_decryptable_with_that_password() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.pwenc");
+
+        do_export_csv(
+            &state,
+            &paths,
+            out_path.to_str().unwrap(),
+            &ExportMode::WithPassword { password: "export password".to_string() },
+            false,
+        )
+        .unwrap();
+
+        let bytes = std::fs::read(&out_path).unwrap();
+        assert_eq!(bytes[1], 1); // mode byte: with-password
+        let salt: [u8; 16] = bytes[2..18].try_into().unwrap();
+        let nonce: [u8; 12] = bytes[18..30].try_into().unwrap();
+        let len = u32::from_le_bytes(bytes[30..34].try_into().unwrap()) as usize;
+        let ciphertext = &bytes[34..34 + len];
+        let key = pwmgr_core::crypto::derive_key("export password", &salt).unwrap();
+        let plaintext = pwmgr_core::crypto::open(&key, ciphertext, &nonce).unwrap();
+        assert!(String::from_utf8(plaintext).unwrap().contains("example.com"));
+    }
+
+    #[test]
+    fn export_csv_plaintext_mode_without_confirmation_is_rejected() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.csv");
+
+        let result = do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, false);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+        assert!(!out_path.exists());
+        assert!(!paths.plaintext_export_log_path().exists(), "no log entry for a rejected export");
+    }
+
+    #[test]
+    fn export_csv_plaintext_mode_with_confirmation_writes_readable_csv() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.csv");
+
+        do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+
+        let text = std::fs::read_to_string(&out_path).unwrap();
+        assert!(text.contains("example.com"));
+        assert!(text.contains("s3cret!"));
+    }
+
+    #[test]
+    fn export_csv_plaintext_mode_appends_an_entry_to_the_local_export_log() {
+        // THREAT_MODEL's "export path is logged in-app (locally)" mitigation for plaintext CSV export.
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.csv");
+
+        do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+        // A second export appends rather than overwrites - the log is a history, not a single slot.
+        let out_path_2 = dir.path().join("export2.csv");
+        do_export_csv(&state, &paths, out_path_2.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+
+        let log = std::fs::read_to_string(paths.plaintext_export_log_path()).unwrap();
+        let lines: Vec<&str> = log.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains(out_path.to_str().unwrap()));
+        assert!(lines[1].contains(out_path_2.to_str().unwrap()));
+        // Each line's first tab-separated field is a unix timestamp (seconds), not zero/garbage.
+        let ts: u64 = lines[0].split('\t').next().unwrap().parse().unwrap();
+        assert!(ts > 1_700_000_000); // sane lower bound, well before this project existed
+    }
+
+    #[test]
+    fn export_csv_this_device_and_with_password_modes_do_not_touch_the_export_log() {
+        // Only the plaintext path is a real exposure worth logging - encrypted exports don't leak
+        // anything a log entry would need to warn the user about.
+        let (state, paths, dir) = seeded_vault_state();
+        do_export_csv(&state, &paths, dir.path().join("a.pwenc").to_str().unwrap(), &ExportMode::ThisDevice, false).unwrap();
+        do_export_csv(
+            &state, &paths, dir.path().join("b.pwenc").to_str().unwrap(),
+            &ExportMode::WithPassword { password: "x".to_string() }, false,
+        ).unwrap();
+
+        assert!(!paths.plaintext_export_log_path().exists());
+    }
+
+    #[test]
+    fn export_csv_when_locked_returns_locked_error() {
+        let (state, paths, dir) = test_state_and_paths();
+        let out_path = dir.path().join("export.csv");
+
+        let result = do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true);
+
+        assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn read_csv_headers_returns_the_header_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.csv");
+        std::fs::write(&path, "Site,Login,Pwd\nexample.com,alice,secret\n").unwrap();
+
+        let headers = do_read_csv_headers(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(headers, vec!["Site".to_string(), "Login".to_string(), "Pwd".to_string()]);
+    }
+
+    #[test]
+    fn read_csv_headers_on_a_missing_file_returns_invalid_input() {
+        let result = do_read_csv_headers("this-file-does-not-exist.csv");
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    use crate::dto::ImportFormat;
+
+    #[test]
+    fn import_csv_preview_parses_a_chromium_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("chrome.csv");
+        std::fs::write(&path, "name,url,username,password\nexample.com,https://example.com,alice,s3cret\n").unwrap();
+
+        let records = do_import_csv_preview(path.to_str().unwrap(), &ImportFormat::Chromium).unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].site_name, "example.com");
+        assert_eq!(&*records[0].secret, "s3cret");
+    }
+
+    #[test]
+    fn import_csv_preview_surfaces_a_header_mismatch_as_invalid_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.csv");
+        std::fs::write(&path, "a,b,c\n1,2,3\n").unwrap();
+
+        let result = do_import_csv_preview(path.to_str().unwrap(), &ImportFormat::Chromium);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn import_csv_preview_parses_generic_with_a_mapping() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("generic.csv");
+        std::fs::write(&path, "Site,Pwd\nexample.com,s3cret\n").unwrap();
+        let mut mapping = std::collections::HashMap::new();
+        mapping.insert("Site".to_string(), "site_name".to_string());
+        mapping.insert("Pwd".to_string(), "secret".to_string());
+
+        let records = do_import_csv_preview(
+            path.to_str().unwrap(),
+            &ImportFormat::Generic { mapping },
+        )
+        .unwrap();
+
+        assert_eq!(records[0].site_name, "example.com");
+    }
+
+    use crate::dto::ImportRecordDto;
+    use zeroize::Zeroizing;
+
+    fn import_record_dto(site: &str, username: &str, secret: &str) -> ImportRecordDto {
+        ImportRecordDto {
+            site_name: site.to_string(),
+            url: None,
+            notes: None,
+            username: Some(username.to_string()),
+            secret: Zeroizing::new(secret.to_string()),
+            remarks: None,
+        }
+    }
+
+    #[test]
+    fn import_csv_commit_inserts_records_and_returns_counts() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let summary = do_import_csv_commit(
+            &state,
+            vec![import_record_dto("example.com", "bob", "s3cret")],
+        )
+        .unwrap();
+
+        assert_eq!(summary.imported, 1);
+        assert_eq!(summary.duplicates, 0);
+        assert_eq!(do_list_sites(&state).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn import_csv_commit_when_locked_returns_locked_error() {
+        let (state, _paths, _dir) = test_state_and_paths();
+
+        let result = do_import_csv_commit(&state, vec![import_record_dto("example.com", "bob", "s3cret")]);
+
+        assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn import_csv_commit_surfaces_a_missing_site_name_as_invalid_input() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let result = do_import_csv_commit(&state, vec![import_record_dto("", "bob", "s3cret")]);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
     }
 }

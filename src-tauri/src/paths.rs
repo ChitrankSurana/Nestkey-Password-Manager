@@ -35,6 +35,10 @@ impl AppPaths {
         self.root.join("config.json")
     }
 
+    pub fn plaintext_export_log_path(&self) -> PathBuf {
+        self.root.join("plaintext_export_log.txt")
+    }
+
     /// Creates root/vaults/backups if missing and restricts each to the current user only.
     /// THREAT_MODEL A2 (shared machine) lists OS-level file permissions as a mitigation that
     /// nothing in pwmgr-core sets — this is the layer that owns app-directory scaffolding, so it

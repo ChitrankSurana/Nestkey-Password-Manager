@@ -36,6 +36,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .manage(app_paths)
         .setup(|app| {
@@ -75,6 +76,12 @@ pub fn run() {
             commands::generate_password,
             commands::analyze_strength,
             commands::copy_to_clipboard,
+            commands::create_backup,
+            commands::restore_backup,
+            commands::export_csv,
+            commands::read_csv_headers,
+            commands::import_csv_preview,
+            commands::import_csv_commit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

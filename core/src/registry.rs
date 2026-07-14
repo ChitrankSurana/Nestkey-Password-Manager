@@ -68,6 +68,28 @@ pub fn create_user(conn: &Connection, rec: &UserRecord) -> Result<(), RegistryEr
     }
 }
 
+pub fn upsert_user(conn: &Connection, rec: &UserRecord) -> Result<(), RegistryError> {
+    conn.execute(
+        "INSERT INTO users (username, kdf_salt, verifier_salt, verifier_hash, sentinel_ciphertext, sentinel_nonce)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(username) DO UPDATE SET
+           kdf_salt = excluded.kdf_salt,
+           verifier_salt = excluded.verifier_salt,
+           verifier_hash = excluded.verifier_hash,
+           sentinel_ciphertext = excluded.sentinel_ciphertext,
+           sentinel_nonce = excluded.sentinel_nonce",
+        params![
+            rec.username,
+            rec.kdf_salt,
+            rec.verifier_salt,
+            rec.verifier_hash,
+            rec.sentinel_ciphertext,
+            rec.sentinel_nonce
+        ],
+    )?;
+    Ok(())
+}
+
 pub fn find_user(conn: &Connection, username: &str) -> Result<UserRecord, RegistryError> {
     conn.query_row(
         "SELECT username, kdf_salt, verifier_salt, verifier_hash, sentinel_ciphertext, sentinel_nonce
@@ -156,5 +178,32 @@ mod tests {
 
         let names = list_usernames(&conn).unwrap();
         assert_eq!(names, vec!["amy".to_string(), "zoe".to_string()]);
+    }
+
+    #[test]
+    fn upsert_user_inserts_when_username_is_new() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+
+        upsert_user(&conn, &sample_record("alice")).unwrap();
+
+        let found = find_user(&conn, "alice").unwrap();
+        assert_eq!(found.username, "alice");
+    }
+
+    #[test]
+    fn upsert_user_replaces_existing_fields_without_erroring() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+
+        let mut replacement = sample_record("alice");
+        replacement.verifier_hash = vec![99; 32];
+        upsert_user(&conn, &replacement).unwrap();
+
+        let found = find_user(&conn, "alice").unwrap();
+        assert_eq!(found.verifier_hash, vec![99; 32]);
+        // Still exactly one row for "alice" - an upsert must not leave a duplicate behind.
+        assert_eq!(list_usernames(&conn).unwrap(), vec!["alice".to_string()]);
     }
 }

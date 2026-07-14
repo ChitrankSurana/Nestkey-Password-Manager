@@ -57,6 +57,27 @@ export type GenerateRequest =
 
 export interface StrengthDto { score: number; guessesLog10: number; label: string; }
 
+export type ExportMode =
+  | { mode: "thisDevice" }
+  | { mode: "withPassword"; password: string }
+  | { mode: "plaintext" };
+
+export type ImportFormat =
+  | { format: "chromium" }
+  | { format: "firefox" }
+  | { format: "generic"; mapping: Record<string, string> };
+
+export interface ImportRecordDto {
+  siteName: string;
+  url: string | null;
+  notes: string | null;
+  username: string | null;
+  secret: string;
+  remarks: string | null;
+}
+
+export interface ImportSummaryDto { imported: number; duplicates: number; }
+
 export const api = {
   registerUser: (username: string, masterPassword: string) =>
     invoke<AuthSuccess>("register_user", { username, masterPassword }),
@@ -87,4 +108,14 @@ export const api = {
   generatePassword: (request: GenerateRequest) => invoke<string>("generate_password", { request }),
   analyzeStrength: (password: string) => invoke<StrengthDto>("analyze_strength", { password }),
   copyToClipboard: (text: string) => invoke<void>("copy_to_clipboard", { text }),
+  createBackup: () => invoke<string>("create_backup"),
+  restoreBackup: (path: string, confirmed: boolean) =>
+    invoke<void>("restore_backup", { path, confirmed }),
+  exportCsv: (path: string, mode: ExportMode, confirmed: boolean) =>
+    invoke<void>("export_csv", { path, mode, confirmed }),
+  readCsvHeaders: (path: string) => invoke<string[]>("read_csv_headers", { path }),
+  importCsvPreview: (path: string, format: ImportFormat) =>
+    invoke<ImportRecordDto[]>("import_csv_preview", { path, format }),
+  importCsvCommit: (records: ImportRecordDto[]) =>
+    invoke<ImportSummaryDto>("import_csv_commit", { records }),
 };

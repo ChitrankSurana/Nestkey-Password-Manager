@@ -53,6 +53,7 @@ impl From<pwmgr_core::vault::VaultError> for CommandError {
             VaultError::NotFound => {
                 CommandError::new("not_found", "That item no longer exists.")
             }
+            VaultError::InvalidImportRecord(msg) => invalid_input_error(&msg),
             VaultError::UnlockFailed | VaultError::Db(_) | VaultError::Crypto(_) => {
                 CommandError::new("internal_error", "Something went wrong. Please try again.")
             }
@@ -64,6 +65,19 @@ impl From<pwmgr_core::generator::GenError> for CommandError {
     fn from(e: pwmgr_core::generator::GenError) -> Self {
         // GenError's Display strings are already safe, user-facing validation text - surface directly.
         invalid_input_error(&e.to_string())
+    }
+}
+
+impl From<pwmgr_core::portio::PortioError> for CommandError {
+    fn from(e: pwmgr_core::portio::PortioError) -> Self {
+        use pwmgr_core::portio::PortioError;
+        match e {
+            PortioError::Write => internal_error(),
+            PortioError::Parse
+            | PortioError::HeaderMismatch(_)
+            | PortioError::MissingColumn(_)
+            | PortioError::UnknownField(_) => invalid_input_error(&e.to_string()),
+        }
     }
 }
 
@@ -81,6 +95,14 @@ pub fn invalid_input_error(message: &str) -> CommandError {
 /// Generic catch-all for internal failures that must not leak detail to the frontend.
 pub fn internal_error() -> CommandError {
     CommandError::new("internal_error", "Something went wrong. Please try again.")
+}
+
+/// A destructive action needs explicit user confirmation before proceeding (e.g. restoring a
+/// backup over an existing username). Distinct from `invalid_input_error` so the frontend can
+/// branch on the code specifically - re-asking with `confirmed: true` is the intended remedy,
+/// unlike a genuine invalid_input which re-asking can't fix.
+pub fn confirm_required_error(message: &str) -> CommandError {
+    CommandError::new("confirm_required", message)
 }
 
 impl CommandError {

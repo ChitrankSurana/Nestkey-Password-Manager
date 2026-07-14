@@ -4,6 +4,9 @@ import { SiteEditor } from "./SiteEditor";
 import { SiteDetail } from "./SiteDetail";
 import { Trash } from "./Trash";
 import { Settings } from "./Settings";
+import { Backup } from "./Backup";
+import { CsvExport } from "./CsvExport";
+import { CsvImport } from "./CsvImport";
 import { Tooltip } from "../components/Tooltip";
 
 export function Vault({ username }: { username: string }) {
@@ -14,6 +17,9 @@ export function Vault({ username }: { username: string }) {
   const [addingSite, setAddingSite] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showBackup, setShowBackup] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function refreshSites() {
@@ -76,6 +82,18 @@ export function Vault({ username }: { username: string }) {
     return <Settings onBack={() => setShowSettings(false)} />;
   }
 
+  if (showBackup) {
+    return <Backup onBack={() => setShowBackup(false)} />;
+  }
+
+  if (showExport) {
+    return <CsvExport onBack={() => setShowExport(false)} />;
+  }
+
+  if (showImport) {
+    return <CsvImport onBack={() => setShowImport(false)} />;
+  }
+
   return (
     <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-4">
       <div className="flex justify-between items-center mb-4">
@@ -100,6 +118,30 @@ export function Vault({ username }: { username: string }) {
               className="rounded bg-slate-700 px-3 py-1"
             >
               Settings
+            </button>
+          </Tooltip>
+          <Tooltip text="Backup and restore your vault">
+            <button
+              onClick={() => setShowBackup(true)}
+              className="rounded bg-slate-700 px-3 py-1"
+            >
+              Backup
+            </button>
+          </Tooltip>
+          <Tooltip text="Export your vault to a CSV file">
+            <button
+              onClick={() => setShowExport(true)}
+              className="rounded bg-slate-700 px-3 py-1"
+            >
+              Export CSV
+            </button>
+          </Tooltip>
+          <Tooltip text="Import credentials from a CSV file">
+            <button
+              onClick={() => setShowImport(true)}
+              className="rounded bg-slate-700 px-3 py-1"
+            >
+              Import CSV
             </button>
           </Tooltip>
           <Tooltip text="Lock the vault now">
