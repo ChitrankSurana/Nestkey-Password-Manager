@@ -29,10 +29,10 @@ pub fn classify_reused(inputs: &[ReuseInput]) -> Vec<ReusedGroup> {
 /// that digest's first-5-char prefix, finds whether the digest's own suffix (chars 5..) is among
 /// them. Case-insensitive since HIBP's casing isn't a contract this function should depend on.
 pub fn hibp_match(full_hash_hex: &str, entries: &[(String, u32)]) -> Option<u32> {
-    let suffix = full_hash_hex.get(5..)?.to_ascii_uppercase();
+    let suffix = full_hash_hex.get(5..)?;
     entries
         .iter()
-        .find(|(s, _)| s.to_ascii_uppercase() == suffix)
+        .find(|(s, _)| s.eq_ignore_ascii_case(suffix))
         .map(|(_, count)| *count)
 }
 
