@@ -89,6 +89,7 @@ pub fn run() {
             commands::import_csv_preview,
             commands::import_csv_commit,
             commands::health_report,
+            commands::check_breach,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

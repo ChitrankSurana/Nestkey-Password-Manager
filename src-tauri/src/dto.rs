@@ -169,6 +169,12 @@ pub struct HealthReportDto {
     pub old: Vec<HealthEntryDto>,
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BreachReportDto {
+    pub breached: Vec<HealthEntryDto>,
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", tag = "method")]
 pub enum GenerateRequest {

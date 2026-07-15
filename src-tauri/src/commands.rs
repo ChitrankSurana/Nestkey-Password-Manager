@@ -1,5 +1,5 @@
 use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -700,6 +700,67 @@ pub fn do_health_report(state: &AppState) -> Result<HealthReportDto, CommandErro
 #[tauri::command]
 pub fn health_report(state: State<AppState>) -> Result<HealthReportDto, CommandError> {
     do_health_report(&state)
+}
+
+pub fn do_check_breach(state: &AppState, hibp_base_url: &str) -> Result<BreachReportDto, CommandError> {
+    // Server-side opt-in gate: rejects regardless of what the frontend sends, same defense-in-depth
+    // shape as do_export_csv's `confirmed` gate above. This temporary guard drops at the end of the
+    // statement, so config is never held while vault/session are acquired below.
+    if !state.config.lock().unwrap().hibp_opt_in {
+        return Err(crate::error::invalid_input_error(
+            "Breach checking is not enabled. Turn it on in Settings first.",
+        ));
+    }
+
+    // vault_guard and session are scoped to this block and dropped together as soon as rows (an
+    // owned Vec<HealthRow>) is built - do_health_report holds vault for its whole body, but that
+    // function never blocks on network I/O. This one does (one HTTP round trip per distinct secret
+    // below), so neither lock should be held any longer than the in-memory decrypt takes.
+    let rows = {
+        let vault_guard = state.vault.lock().unwrap();
+        let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+        let session = state.session.lock().unwrap();
+        let key = session.key().ok_or_else(crate::error::locked_error)?;
+        build_health_rows(conn, key)?
+    };
+
+    // One HTTP call per distinct secret, not per credential. Grouped by hand here rather than via
+    // core::health::classify_reused - that function only returns groups of 2+ (it's answering "is
+    // this reused", not "what are all the distinct secrets"), so a password used exactly once would
+    // be silently dropped from the batch and never checked against HIBP at all.
+    let mut by_secret: std::collections::HashMap<&str, Vec<&HealthRow>> = std::collections::HashMap::new();
+    for r in &rows {
+        by_secret.entry(r.secret.as_str()).or_default().push(r);
+    }
+
+    let client = reqwest::Client::new();
+    let mut breached = Vec::new();
+    for (secret, members) in &by_secret {
+        let hit = tauri::async_runtime::block_on(crate::hibp::check_password(&client, hibp_base_url, secret));
+        if matches!(hit, Ok(Some(_))) {
+            for r in members {
+                breached.push(HealthEntryDto {
+                    credential_id: r.credential_id,
+                    site_id: r.site_id,
+                    site_name: r.site_name.clone(),
+                    username: r.username.clone(),
+                });
+            }
+        }
+        // A single failed HIBP request (network hiccup) doesn't fail the whole batch - best-effort,
+        // matching the plaintext-export-log precedent below (a logging failure didn't undo the
+        // export the user already got). The credential simply isn't reported breached this run.
+    }
+
+    Ok(BreachReportDto { breached })
+}
+
+#[tauri::command]
+pub fn check_breach(state: State<AppState>) -> Result<BreachReportDto, CommandError> {
+    // do_check_breach is sync - it blocks internally (tauri::async_runtime::block_on per HTTP
+    // call) rather than being an async fn itself, so this wrapper needs no `async`/`State<'_, _>`
+    // either, matching every other command in this file.
+    do_check_breach(&state, crate::hibp::HIBP_BASE_URL)
 }
 
 fn append_plaintext_export_log(paths: &AppPaths, path: &str) -> std::io::Result<()> {
@@ -1712,5 +1773,43 @@ mod tests {
     fn health_report_when_locked_returns_locked_error() {
         let (state, _paths, _dir) = test_state_and_paths();
         assert_eq!(do_health_report(&state).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn check_breach_rejects_when_hibp_opt_in_is_false() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let result = do_check_breach(&state, "http://127.0.0.1:1"); // unreachable on purpose - must reject before ever connecting
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn check_breach_when_locked_returns_locked_error() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_hibp_opt_in(&state, &paths, true).unwrap();
+
+        let result = do_check_breach(&state, "http://127.0.0.1:1");
+
+        assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn check_breach_finds_a_breached_credential_via_a_mock_server() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_hibp_opt_in(&state, &paths, true).unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "password", None).unwrap();
+
+        let full_hash = crate::hibp::sha1_hex_upper("password");
+        let suffix = &full_hash[5..];
+        let body = format!("{}:999\r\n", suffix);
+        let base_url = crate::hibp::mock_hibp_server(body);
+
+        let report = do_check_breach(&state, &base_url).unwrap();
+
+        assert_eq!(report.breached.len(), 1);
     }
 }
