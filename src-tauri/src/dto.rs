@@ -144,6 +144,31 @@ pub struct StrengthDto {
     pub label: String,       // "Very weak" .. "Very strong"
 }
 
+// None of these carry a secret - plain `#[derive(Debug)]` is safe, same reasoning as
+// SiteDto/TrashedCredentialDto above.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthEntryDto {
+    pub credential_id: i64,
+    pub site_id: i64,
+    pub site_name: String,
+    pub username: Option<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReusedGroupDto {
+    pub entries: Vec<HealthEntryDto>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthReportDto {
+    pub weak: Vec<HealthEntryDto>,
+    pub reused: Vec<ReusedGroupDto>,
+    pub old: Vec<HealthEntryDto>,
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", tag = "method")]
 pub enum GenerateRequest {

@@ -1,5 +1,5 @@
 use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -604,6 +604,98 @@ fn build_csv_rows(
         }
     }
     Ok(rows)
+}
+
+// Module-level (not nested in do_health_report) so a future breach-check command can reuse it
+// without duplicating the site/credential iteration - same shape build_csv_rows above uses.
+struct HealthRow {
+    credential_id: i64,
+    site_id: i64,
+    site_name: String,
+    username: Option<String>,
+    secret: String,
+}
+
+fn build_health_rows(
+    conn: &rusqlite::Connection,
+    key: &pwmgr_core::crypto::VaultKey,
+) -> Result<Vec<HealthRow>, CommandError> {
+    let sites = pwmgr_core::vault::list_sites(conn)?;
+    let mut rows = Vec::new();
+    for site in &sites {
+        for c in pwmgr_core::vault::list_credentials_for_site(conn, key, site.id)? {
+            rows.push(HealthRow {
+                credential_id: c.id,
+                site_id: site.id,
+                site_name: site.name.clone(),
+                username: c.username,
+                secret: c.secret,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+pub fn do_health_report(state: &AppState) -> Result<HealthReportDto, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let rows = build_health_rows(conn, key)?;
+
+    // Weak: inline, always zxcvbn - kept out of pwmgr-core deliberately (see Task 7 judgment
+    // call). The user's Settings strength-algorithm toggle only affects the live meter elsewhere.
+    let weak: Vec<HealthEntryDto> = rows
+        .iter()
+        .filter(|r| do_analyze_strength(&r.secret).score <= 1)
+        .map(|r| HealthEntryDto {
+            credential_id: r.credential_id,
+            site_id: r.site_id,
+            site_name: r.site_name.clone(),
+            username: r.username.clone(),
+        })
+        .collect();
+
+    // Reused: core::health::classify_reused over the decrypted secrets.
+    let reuse_inputs: Vec<pwmgr_core::health::ReuseInput> = rows
+        .iter()
+        .map(|r| pwmgr_core::health::ReuseInput { credential_id: r.credential_id, secret: r.secret.clone() })
+        .collect();
+    let reused: Vec<ReusedGroupDto> = pwmgr_core::health::classify_reused(&reuse_inputs)
+        .into_iter()
+        .map(|group| ReusedGroupDto {
+            entries: group
+                .credential_ids
+                .into_iter()
+                .filter_map(|id| rows.iter().find(|r| r.credential_id == id))
+                .map(|r| HealthEntryDto {
+                    credential_id: r.credential_id,
+                    site_id: r.site_id,
+                    site_name: r.site_name.clone(),
+                    username: r.username.clone(),
+                })
+                .collect(),
+        })
+        .collect();
+
+    // Old: vault::list_old_credentials, SQL-native, respects the configured threshold.
+    let old_days = state.config.lock().unwrap().old_password_days;
+    let old: Vec<HealthEntryDto> = pwmgr_core::vault::list_old_credentials(conn, old_days)?
+        .into_iter()
+        .map(|o| HealthEntryDto {
+            credential_id: o.credential_id,
+            site_id: o.site_id,
+            site_name: o.site_name,
+            username: o.username,
+        })
+        .collect();
+
+    Ok(HealthReportDto { weak, reused, old })
+}
+
+#[tauri::command]
+pub fn health_report(state: State<AppState>) -> Result<HealthReportDto, CommandError> {
+    do_health_report(&state)
 }
 
 fn append_plaintext_export_log(paths: &AppPaths, path: &str) -> std::io::Result<()> {
@@ -1552,5 +1644,69 @@ mod tests {
         let result = do_import_csv_commit(&state, vec![import_record_dto("", "bob", "s3cret")]);
 
         assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn health_report_flags_a_weak_password() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "password", None).unwrap(); // weak
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.weak.len(), 1);
+        assert_eq!(report.weak[0].site_name, "example.com");
+    }
+
+    #[test]
+    fn health_report_does_not_flag_a_strong_password_as_weak() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+
+        assert!(do_health_report(&state).unwrap().weak.is_empty());
+    }
+
+    #[test]
+    fn health_report_groups_reused_passwords() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        do_add_credential(&state, site_id, Some("bob"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.reused.len(), 1);
+        assert_eq!(report.reused[0].entries.len(), 2);
+    }
+
+    #[test]
+    fn health_report_flags_an_old_password() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        {
+            let vault_guard = state.vault.lock().unwrap();
+            let (conn, _) = vault_guard.as_ref().unwrap();
+            conn.execute(
+                "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
+                rusqlite::params![cred_id],
+            ).unwrap();
+        }
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.old.len(), 1);
+        assert_eq!(report.old[0].credential_id, cred_id);
+    }
+
+    #[test]
+    fn health_report_when_locked_returns_locked_error() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_health_report(&state).unwrap_err().code(), "locked");
     }
 }
