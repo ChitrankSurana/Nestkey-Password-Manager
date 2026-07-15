@@ -76,9 +76,9 @@ export function HealthDashboard({
       </Tooltip>
       <h1 className="text-xl font-semibold mb-4">Health Dashboard</h1>
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
-      {!report ? (
+      {!report && !error ? (
         <p className="text-sm opacity-70">Loading…</p>
-      ) : (
+      ) : report ? (
         <>
           <p className="text-xs opacity-60 mb-4">
             "Weak" is always scored with the advanced algorithm, regardless of your strength-algorithm
@@ -143,7 +143,7 @@ export function HealthDashboard({
             </div>
           </div>
         </>
-      )}
+      ) : null}
     </div>
   );
 }
