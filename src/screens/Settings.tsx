@@ -79,6 +79,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
     try {
       setError(null);
       await api.updateTheme(value);
+      document.documentElement.classList.toggle("dark", value === "dark");
       setTheme(value);
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
@@ -93,6 +94,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
     try {
       setError(null);
       await api.updateAccentColor(value);
+      document.documentElement.setAttribute("data-accent", value);
       setAccentColor(value);
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
