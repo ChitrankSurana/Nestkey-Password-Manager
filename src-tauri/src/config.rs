@@ -3,6 +3,8 @@ use std::path::Path;
 
 pub(crate) const VALID_AUTO_LOCK_MINUTES: [u32; 3] = [1, 5, 15];
 pub(crate) const VALID_STRENGTH_ALGORITHMS: [&str; 2] = ["simple", "zxcvbn"];
+pub(crate) const VALID_ACCENT_COLORS: [&str; 5] = ["indigo", "sky", "teal", "purple", "pink"];
+pub(crate) const VALID_OLD_PASSWORD_DAYS: [u32; 3] = [90, 180, 365];
 
 fn default_theme() -> String {
     "dark".to_string()
@@ -16,6 +18,22 @@ fn default_strength_algorithm() -> String {
     "simple".to_string()
 }
 
+fn default_accent_color() -> String {
+    "indigo".to_string()
+}
+
+fn default_old_password_days() -> u32 {
+    365
+}
+
+fn default_hibp_opt_in() -> bool {
+    false
+}
+
+fn default_nav_collapsed() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default = "default_theme")]
@@ -24,6 +42,14 @@ pub struct Config {
     pub auto_lock_minutes: u32,
     #[serde(default = "default_strength_algorithm")]
     pub strength_algorithm: String,
+    #[serde(default = "default_accent_color")]
+    pub accent_color: String,
+    #[serde(default = "default_old_password_days")]
+    pub old_password_days: u32,
+    #[serde(default = "default_hibp_opt_in")]
+    pub hibp_opt_in: bool,
+    #[serde(default = "default_nav_collapsed")]
+    pub nav_collapsed: bool,
 }
 
 impl Default for Config {
@@ -32,6 +58,10 @@ impl Default for Config {
             theme: default_theme(),
             auto_lock_minutes: default_auto_lock_minutes(),
             strength_algorithm: default_strength_algorithm(),
+            accent_color: default_accent_color(),
+            old_password_days: default_old_password_days(),
+            hibp_opt_in: default_hibp_opt_in(),
+            nav_collapsed: default_nav_collapsed(),
         }
     }
 }
@@ -61,6 +91,14 @@ impl Config {
         };
         if !VALID_STRENGTH_ALGORITHMS.contains(&parsed.strength_algorithm.as_str()) {
             return Ok(Config { strength_algorithm: default_strength_algorithm(), ..parsed });
+        }
+        let parsed = if !VALID_ACCENT_COLORS.contains(&parsed.accent_color.as_str()) {
+            Config { accent_color: default_accent_color(), ..parsed }
+        } else {
+            parsed
+        };
+        if !VALID_OLD_PASSWORD_DAYS.contains(&parsed.old_password_days) {
+            return Ok(Config { old_password_days: default_old_password_days(), ..parsed });
         }
         Ok(parsed)
     }
@@ -95,6 +133,10 @@ mod tests {
             theme: "dark".to_string(),
             auto_lock_minutes: 15,
             strength_algorithm: "zxcvbn".to_string(),
+            accent_color: default_accent_color(),
+            old_password_days: default_old_password_days(),
+            hibp_opt_in: default_hibp_opt_in(),
+            nav_collapsed: default_nav_collapsed(),
         };
 
         config.save(&path).unwrap();
@@ -157,5 +199,64 @@ mod tests {
         let path = dir.path().join("config.json");
         std::fs::write(&path, r#"{"theme":"dark","auto_lock_minutes":5,"strength_algorithm":"bogus"}"#).unwrap();
         assert_eq!(Config::load(&path).unwrap().strength_algorithm, "simple");
+    }
+
+    #[test]
+    fn load_defaults_new_m4_fields() {
+        let dir = tempdir().unwrap();
+        let config = Config::load(&dir.path().join("config.json")).unwrap();
+        assert_eq!(config.accent_color, "indigo");
+        assert_eq!(config.old_password_days, 365);
+        assert_eq!(config.hibp_opt_in, false);
+        assert_eq!(config.nav_collapsed, false);
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_new_m4_fields() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let config = Config {
+            theme: "light".to_string(),
+            auto_lock_minutes: 5,
+            strength_algorithm: "simple".to_string(),
+            accent_color: "teal".to_string(),
+            old_password_days: 90,
+            hibp_opt_in: true,
+            nav_collapsed: true,
+        };
+
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+
+        assert_eq!(loaded.accent_color, "teal");
+        assert_eq!(loaded.old_password_days, 90);
+        assert_eq!(loaded.hibp_opt_in, true);
+        assert_eq!(loaded.nav_collapsed, true);
+    }
+
+    #[test]
+    fn load_rejects_invalid_accent_color_by_falling_back_to_default() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"accent_color":"bogus"}"#).unwrap();
+        assert_eq!(Config::load(&path).unwrap().accent_color, "indigo");
+    }
+
+    #[test]
+    fn load_rejects_invalid_old_password_days_by_falling_back_to_default() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"old_password_days":999}"#).unwrap();
+        assert_eq!(Config::load(&path).unwrap().old_password_days, 365);
+    }
+
+    #[test]
+    fn load_preserves_present_new_fields_when_another_field_is_missing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"hibp_opt_in":true}"#).unwrap();
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config.hibp_opt_in, true);
+        assert_eq!(config.accent_color, "indigo"); // untouched field still defaults correctly
     }
 }
