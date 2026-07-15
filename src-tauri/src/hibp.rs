@@ -1,5 +1,7 @@
 use sha1::{Digest, Sha1};
+#[cfg(test)]
 use std::io::{Read, Write};
+#[cfg(test)]
 use std::net::TcpListener;
 
 #[derive(Debug)]
