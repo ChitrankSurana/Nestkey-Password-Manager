@@ -89,17 +89,21 @@ impl Config {
         } else {
             parsed
         };
-        if !VALID_STRENGTH_ALGORITHMS.contains(&parsed.strength_algorithm.as_str()) {
-            return Ok(Config { strength_algorithm: default_strength_algorithm(), ..parsed });
-        }
+        let parsed = if !VALID_STRENGTH_ALGORITHMS.contains(&parsed.strength_algorithm.as_str()) {
+            Config { strength_algorithm: default_strength_algorithm(), ..parsed }
+        } else {
+            parsed
+        };
         let parsed = if !VALID_ACCENT_COLORS.contains(&parsed.accent_color.as_str()) {
             Config { accent_color: default_accent_color(), ..parsed }
         } else {
             parsed
         };
-        if !VALID_OLD_PASSWORD_DAYS.contains(&parsed.old_password_days) {
-            return Ok(Config { old_password_days: default_old_password_days(), ..parsed });
-        }
+        let parsed = if !VALID_OLD_PASSWORD_DAYS.contains(&parsed.old_password_days) {
+            Config { old_password_days: default_old_password_days(), ..parsed }
+        } else {
+            parsed
+        };
         Ok(parsed)
     }
 
@@ -248,6 +252,22 @@ mod tests {
         let path = dir.path().join("config.json");
         std::fs::write(&path, r#"{"old_password_days":999}"#).unwrap();
         assert_eq!(Config::load(&path).unwrap().old_password_days, 365);
+    }
+
+    #[test]
+    fn load_sanitizes_every_invalid_field_at_once_not_just_the_first() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(
+            &path,
+            r#"{"auto_lock_minutes":999,"strength_algorithm":"bogus","accent_color":"bogus","old_password_days":999}"#,
+        )
+        .unwrap();
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config.auto_lock_minutes, 5);
+        assert_eq!(config.strength_algorithm, "simple");
+        assert_eq!(config.accent_color, "indigo");
+        assert_eq!(config.old_password_days, 365);
     }
 
     #[test]
