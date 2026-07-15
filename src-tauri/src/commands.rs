@@ -1112,6 +1112,82 @@ mod tests {
     }
 
     #[test]
+    fn update_theme_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).theme;
+        let result = do_update_theme(&state, &bad_paths, "light");
+
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).theme, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn update_accent_color_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).accent_color;
+        let result = do_update_accent_color(&state, &bad_paths, "sky");
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).accent_color,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
+    fn update_old_password_days_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).old_password_days;
+        let result = do_update_old_password_days(&state, &bad_paths, 90);
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).old_password_days,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
+    fn update_hibp_opt_in_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).hibp_opt_in;
+        let result = do_update_hibp_opt_in(&state, &bad_paths, true);
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).hibp_opt_in,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
+    fn update_nav_collapsed_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).nav_collapsed;
+        let result = do_update_nav_collapsed(&state, &bad_paths, true);
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).nav_collapsed,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
     fn generate_password_random_returns_requested_length() {
         let req = GenerateRequest::Random { length: 20, uppercase: true, lowercase: true, digits: true, symbols: false };
         let pw = do_generate_password(&req).unwrap();
