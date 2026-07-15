@@ -6,6 +6,7 @@ import { Trash } from "./Trash";
 import { Settings } from "./Settings";
 import { NavRail } from "./NavRail";
 import { Data } from "./Data";
+import { HealthDashboard } from "./HealthDashboard";
 import { Tooltip } from "../components/Tooltip";
 
 export function Vault({ username }: { username: string }) {
@@ -17,6 +18,7 @@ export function Vault({ username }: { username: string }) {
   const [showTrash, setShowTrash] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showData, setShowData] = useState(false);
+  const [showHealth, setShowHealth] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,6 +101,18 @@ export function Vault({ username }: { username: string }) {
     return <Data onBack={() => setShowData(false)} />;
   }
 
+  if (showHealth) {
+    return (
+      <HealthDashboard
+        onBack={() => setShowHealth(false)}
+        onNavigateToSite={(siteId) => {
+          setShowHealth(false);
+          setSelectedSiteId(siteId);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 flex">
       <NavRail
@@ -115,6 +129,7 @@ export function Vault({ username }: { username: string }) {
         }}
         destinations={[
           { key: "vault", label: "Vault", icon: "🏠", tooltip: "Your sites and credentials", onClick: () => {} },
+          { key: "health", label: "Health", icon: "❤️", tooltip: "Password health dashboard", onClick: () => setShowHealth(true) },
           { key: "trash", label: "Trash", icon: "🗑️", tooltip: "View trash", onClick: () => setShowTrash(true) },
           { key: "data", label: "Data", icon: "📦", tooltip: "Backup, export, and import", onClick: () => setShowData(true) },
           { key: "settings", label: "Settings", icon: "⚙️", tooltip: "Open settings", onClick: () => setShowSettings(true) },
