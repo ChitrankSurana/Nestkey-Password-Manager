@@ -642,6 +642,10 @@ pub fn do_health_report(state: &AppState) -> Result<HealthReportDto, CommandErro
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
     let rows = build_health_rows(conn, key)?;
+    // Drop session before locking state.config below - do_update_auto_lock_minutes locks
+    // config then session, so holding both here in the opposite order would be a lock-order
+    // inversion (deadlock risk if the two commands run concurrently on Tauri's thread pool).
+    drop(session);
 
     // Weak: inline, always zxcvbn - kept out of pwmgr-core deliberately (see Task 7 judgment
     // call). The user's Settings strength-algorithm toggle only affects the live meter elsewhere.
