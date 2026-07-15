@@ -129,6 +129,10 @@ pub struct ConfigDto {
     pub theme: String,
     pub auto_lock_minutes: u32,
     pub strength_algorithm: String,
+    pub accent_color: String,
+    pub old_password_days: u32,
+    pub hibp_opt_in: bool,
+    pub nav_collapsed: bool,
 }
 
 // Non-secret score/label output - normal `Debug` derive is fine (unlike CredentialDto above).

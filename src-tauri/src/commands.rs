@@ -1,4 +1,4 @@
-use crate::config::{VALID_AUTO_LOCK_MINUTES, VALID_STRENGTH_ALGORITHMS};
+use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
 use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
@@ -262,6 +262,10 @@ pub fn do_get_config(state: &AppState) -> ConfigDto {
         theme: config.theme.clone(),
         auto_lock_minutes: config.auto_lock_minutes,
         strength_algorithm: config.strength_algorithm.clone(),
+        accent_color: config.accent_color.clone(),
+        old_password_days: config.old_password_days,
+        hibp_opt_in: config.hibp_opt_in,
+        nav_collapsed: config.nav_collapsed,
     }
 }
 
@@ -302,6 +306,60 @@ pub fn do_update_strength_algorithm(
     Ok(())
 }
 
+pub fn do_update_theme(state: &AppState, paths: &AppPaths, theme: &str) -> Result<(), CommandError> {
+    if theme != "light" && theme != "dark" {
+        return Err(crate::error::invalid_input_error("Theme must be \"light\" or \"dark\"."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.theme = theme.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_accent_color(state: &AppState, paths: &AppPaths, color: &str) -> Result<(), CommandError> {
+    if !VALID_ACCENT_COLORS.contains(&color) {
+        return Err(crate::error::invalid_input_error("Unknown accent color."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.accent_color = color.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_old_password_days(state: &AppState, paths: &AppPaths, days: u32) -> Result<(), CommandError> {
+    if !VALID_OLD_PASSWORD_DAYS.contains(&days) {
+        return Err(crate::error::invalid_input_error("Old-password threshold must be 90, 180, or 365 days."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.old_password_days = days;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_hibp_opt_in(state: &AppState, paths: &AppPaths, enabled: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.hibp_opt_in = enabled;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_nav_collapsed(state: &AppState, paths: &AppPaths, collapsed: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.nav_collapsed = collapsed;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_config(state: State<AppState>) -> ConfigDto {
     do_get_config(&state)
@@ -323,6 +381,31 @@ pub fn update_strength_algorithm(
     algorithm: String,
 ) -> Result<(), CommandError> {
     do_update_strength_algorithm(&state, &paths, &algorithm)
+}
+
+#[tauri::command]
+pub fn update_theme(state: State<AppState>, paths: State<AppPaths>, theme: String) -> Result<(), CommandError> {
+    do_update_theme(&state, &paths, &theme)
+}
+
+#[tauri::command]
+pub fn update_accent_color(state: State<AppState>, paths: State<AppPaths>, color: String) -> Result<(), CommandError> {
+    do_update_accent_color(&state, &paths, &color)
+}
+
+#[tauri::command]
+pub fn update_old_password_days(state: State<AppState>, paths: State<AppPaths>, days: u32) -> Result<(), CommandError> {
+    do_update_old_password_days(&state, &paths, days)
+}
+
+#[tauri::command]
+pub fn update_hibp_opt_in(state: State<AppState>, paths: State<AppPaths>, enabled: bool) -> Result<(), CommandError> {
+    do_update_hibp_opt_in(&state, &paths, enabled)
+}
+
+#[tauri::command]
+pub fn update_nav_collapsed(state: State<AppState>, paths: State<AppPaths>, collapsed: bool) -> Result<(), CommandError> {
+    do_update_nav_collapsed(&state, &paths, collapsed)
 }
 
 pub fn do_generate_password(req: &GenerateRequest) -> Result<Zeroizing<String>, CommandError> {
@@ -976,6 +1059,56 @@ mod tests {
             before,
             "state.config must not change when the save fails"
         );
+    }
+
+    #[test]
+    fn get_config_includes_all_m4_fields() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        let config = do_get_config(&state);
+        assert_eq!(config.accent_color, "indigo");
+        assert_eq!(config.old_password_days, 365);
+        assert_eq!(config.hibp_opt_in, false);
+        assert_eq!(config.nav_collapsed, false);
+    }
+
+    #[test]
+    fn update_theme_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_theme(&state, &paths, "light").unwrap();
+        assert_eq!(do_get_config(&state).theme, "light");
+        assert_eq!(do_update_theme(&state, &paths, "neon").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_accent_color_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_accent_color(&state, &paths, "sky").unwrap();
+        assert_eq!(do_get_config(&state).accent_color, "sky");
+        assert_eq!(do_update_accent_color(&state, &paths, "chartreuse").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_old_password_days_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_old_password_days(&state, &paths, 90).unwrap();
+        assert_eq!(do_get_config(&state).old_password_days, 90);
+        assert_eq!(do_update_old_password_days(&state, &paths, 42).unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_hibp_opt_in_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_hibp_opt_in(&state, &paths, true).unwrap();
+        assert_eq!(do_get_config(&state).hibp_opt_in, true);
+        let reloaded = crate::config::Config::load(&paths.config_path()).unwrap();
+        assert_eq!(reloaded.hibp_opt_in, true);
+    }
+
+    #[test]
+    fn update_nav_collapsed_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_nav_collapsed(&state, &paths, true).unwrap();
+        assert_eq!(do_get_config(&state).nav_collapsed, true);
     }
 
     #[test]
