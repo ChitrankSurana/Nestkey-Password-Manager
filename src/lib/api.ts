@@ -47,6 +47,10 @@ export interface ConfigDto {
   theme: string;
   autoLockMinutes: number;
   strengthAlgorithm: string;
+  accentColor: string;
+  oldPasswordDays: number;
+  hibpOptIn: boolean;
+  navCollapsed: boolean;
 }
 
 export type GenerateRequest =
@@ -105,6 +109,7 @@ export const api = {
   updateAutoLockMinutes: (minutes: number) => invoke<void>("update_auto_lock_minutes", { minutes }),
   updateStrengthAlgorithm: (algorithm: string) =>
     invoke<void>("update_strength_algorithm", { algorithm }),
+  updateNavCollapsed: (collapsed: boolean) => invoke<void>("update_nav_collapsed", { collapsed }),
   generatePassword: (request: GenerateRequest) => invoke<string>("generate_password", { request }),
   analyzeStrength: (password: string) => invoke<StrengthDto>("analyze_strength", { password }),
   copyToClipboard: (text: string) => invoke<void>("copy_to_clipboard", { text }),
