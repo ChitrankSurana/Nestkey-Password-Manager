@@ -7,10 +7,22 @@ const ALGORITHM_OPTIONS = [
   { value: "simple", label: "Simple (entropy)" },
   { value: "zxcvbn", label: "Advanced (zxcvbn)" },
 ] as const;
+const ACCENT_OPTIONS = [
+  { value: "indigo", label: "Indigo" },
+  { value: "sky", label: "Sky" },
+  { value: "teal", label: "Teal" },
+  { value: "purple", label: "Purple" },
+  { value: "pink", label: "Pink" },
+] as const;
+const OLD_PASSWORD_DAYS_OPTIONS = [90, 180, 365] as const;
 
 export function Settings({ onBack }: { onBack: () => void }) {
   const [autoLockMinutes, setAutoLockMinutes] = useState<number | null>(null);
   const [strengthAlgorithm, setStrengthAlgorithm] = useState<string | null>(null);
+  const [theme, setTheme] = useState<string | null>(null);
+  const [accentColor, setAccentColor] = useState<string | null>(null);
+  const [oldPasswordDays, setOldPasswordDays] = useState<number | null>(null);
+  const [hibpOptIn, setHibpOptIn] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const editedRef = useRef(false);
@@ -22,6 +34,10 @@ export function Settings({ onBack }: { onBack: () => void }) {
         if (!editedRef.current) {
           setAutoLockMinutes(c.autoLockMinutes);
           setStrengthAlgorithm(c.strengthAlgorithm);
+          setTheme(c.theme);
+          setAccentColor(c.accentColor);
+          setOldPasswordDays(c.oldPasswordDays);
+          setHibpOptIn(c.hibpOptIn);
         }
       })
       .catch((err) => {
@@ -50,6 +66,62 @@ export function Settings({ onBack }: { onBack: () => void }) {
       setError(null);
       await api.updateStrengthAlgorithm(algorithm);
       setStrengthAlgorithm(algorithm);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleThemeChange(value: string) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateTheme(value);
+      setTheme(value);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleAccentChange(value: string) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateAccentColor(value);
+      setAccentColor(value);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleOldPasswordDaysChange(value: number) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateOldPasswordDays(value);
+      setOldPasswordDays(value);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleHibpOptInChange(value: boolean) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateHibpOptIn(value);
+      setHibpOptIn(value);
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -102,6 +174,69 @@ export function Settings({ onBack }: { onBack: () => void }) {
             ))}
           </select>
         </Tooltip>
+      </label>
+
+      <label className="block max-w-xs mt-4">
+        <span className="text-sm">Theme</span>
+        <Tooltip text="Light or dark appearance" className="w-full">
+          <select
+            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600 disabled:opacity-50"
+            value={theme ?? ""}
+            onChange={(e) => handleThemeChange(e.target.value)}
+            disabled={submitting}
+          >
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </Tooltip>
+      </label>
+
+      <label className="block max-w-xs mt-4">
+        <span className="text-sm">Accent color</span>
+        <Tooltip text="Highlight color used throughout the app" className="w-full">
+          <select
+            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600 disabled:opacity-50"
+            value={accentColor ?? ""}
+            onChange={(e) => handleAccentChange(e.target.value)}
+            disabled={submitting}
+          >
+            {ACCENT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </Tooltip>
+      </label>
+
+      <label className="block max-w-xs mt-4">
+        <span className="text-sm">Consider a password "old" after</span>
+        <Tooltip text="Threshold used by the Health Dashboard's Old card" className="w-full">
+          <select
+            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600 disabled:opacity-50"
+            value={oldPasswordDays ?? ""}
+            onChange={(e) => handleOldPasswordDaysChange(Number(e.target.value))}
+            disabled={submitting}
+          >
+            {OLD_PASSWORD_DAYS_OPTIONS.map((d) => (
+              <option key={d} value={d}>
+                {d} days
+              </option>
+            ))}
+          </select>
+        </Tooltip>
+      </label>
+
+      <label className="flex items-center gap-2 mt-4">
+        <Tooltip text="Opt in to checking passwords against Have I Been Pwned (k-anonymity, no plaintext leaves this app)">
+          <input
+            type="checkbox"
+            checked={hibpOptIn ?? false}
+            onChange={(e) => handleHibpOptInChange(e.target.checked)}
+            disabled={submitting}
+          />
+        </Tooltip>
+        <span className="text-sm">Enable breach check (HIBP) on the Health Dashboard</span>
       </label>
     </div>
   );

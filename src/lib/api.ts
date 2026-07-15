@@ -127,6 +127,8 @@ export const api = {
   updateStrengthAlgorithm: (algorithm: string) =>
     invoke<void>("update_strength_algorithm", { algorithm }),
   updateNavCollapsed: (collapsed: boolean) => invoke<void>("update_nav_collapsed", { collapsed }),
+  updateTheme: (theme: string) => invoke<void>("update_theme", { theme }),
+  updateAccentColor: (color: string) => invoke<void>("update_accent_color", { color }),
   generatePassword: (request: GenerateRequest) => invoke<string>("generate_password", { request }),
   analyzeStrength: (password: string) => invoke<StrengthDto>("analyze_strength", { password }),
   copyToClipboard: (text: string) => invoke<void>("copy_to_clipboard", { text }),
