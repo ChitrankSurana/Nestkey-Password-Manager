@@ -3,6 +3,7 @@ mod commands;
 mod config;
 mod dto;
 mod error;
+mod hibp;
 mod paths;
 mod state;
 
