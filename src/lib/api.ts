@@ -82,6 +82,23 @@ export interface ImportRecordDto {
 
 export interface ImportSummaryDto { imported: number; duplicates: number; }
 
+export interface HealthEntryDto {
+  credentialId: number;
+  siteId: number;
+  siteName: string;
+  username: string | null;
+}
+
+export interface ReusedGroupDto { entries: HealthEntryDto[]; }
+
+export interface HealthReportDto {
+  weak: HealthEntryDto[];
+  reused: ReusedGroupDto[];
+  old: HealthEntryDto[];
+}
+
+export interface BreachReportDto { breached: HealthEntryDto[]; }
+
 export const api = {
   registerUser: (username: string, masterPassword: string) =>
     invoke<AuthSuccess>("register_user", { username, masterPassword }),
@@ -123,4 +140,8 @@ export const api = {
     invoke<ImportRecordDto[]>("import_csv_preview", { path, format }),
   importCsvCommit: (records: ImportRecordDto[]) =>
     invoke<ImportSummaryDto>("import_csv_commit", { records }),
+  healthReport: () => invoke<HealthReportDto>("health_report"),
+  checkBreach: () => invoke<BreachReportDto>("check_breach"),
+  updateHibpOptIn: (enabled: boolean) => invoke<void>("update_hibp_opt_in", { enabled }),
+  updateOldPasswordDays: (days: number) => invoke<void>("update_old_password_days", { days }),
 };
