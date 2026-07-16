@@ -7,6 +7,7 @@ import { Settings } from "./Settings";
 import { NavRail } from "./NavRail";
 import { Data } from "./Data";
 import { HealthDashboard } from "./HealthDashboard";
+import { Generator } from "./Generator";
 import { Tooltip } from "../components/Tooltip";
 
 export function Vault({ username }: { username: string }) {
@@ -19,6 +20,7 @@ export function Vault({ username }: { username: string }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showData, setShowData] = useState(false);
   const [showHealth, setShowHealth] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,6 +103,10 @@ export function Vault({ username }: { username: string }) {
     return <Data onBack={() => setShowData(false)} />;
   }
 
+  if (showGenerator) {
+    return <Generator onBack={() => setShowGenerator(false)} />;
+  }
+
   if (showHealth) {
     return (
       <HealthDashboard
@@ -130,6 +136,7 @@ export function Vault({ username }: { username: string }) {
         destinations={[
           { key: "vault", label: "Vault", icon: "🏠", tooltip: "Your sites and credentials", onClick: () => {} },
           { key: "health", label: "Health", icon: "❤️", tooltip: "Password health dashboard", onClick: () => setShowHealth(true) },
+          { key: "generator", label: "Generator", icon: "🎲", tooltip: "Generate a password", onClick: () => setShowGenerator(true) },
           { key: "trash", label: "Trash", icon: "🗑️", tooltip: "View trash", onClick: () => setShowTrash(true) },
           { key: "data", label: "Data", icon: "📦", tooltip: "Backup, export, and import", onClick: () => setShowData(true) },
           { key: "settings", label: "Settings", icon: "⚙️", tooltip: "Open settings", onClick: () => setShowSettings(true) },
