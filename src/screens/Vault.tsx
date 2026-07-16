@@ -139,7 +139,7 @@ export function Vault({ username }: { username: string }) {
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-xl font-semibold">Vault — {username}</h1>
           <Tooltip text="Add a new site">
-            <button onClick={() => setAddingSite(true)} className="rounded bg-blue-600 px-3 py-1">
+            <button onClick={() => setAddingSite(true)} className="rounded bg-[var(--accent)] px-3 py-1">
               Add site
             </button>
           </Tooltip>

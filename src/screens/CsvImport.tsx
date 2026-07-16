@@ -149,7 +149,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
       )}
 
       <Tooltip text="Parse the file without saving anything yet">
-        <button onClick={handlePreview} disabled={!path || busy} className="rounded bg-blue-600 px-3 py-1 disabled:opacity-50">
+        <button onClick={handlePreview} disabled={!path || busy} className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
           Preview
         </button>
       </Tooltip>
@@ -177,7 +177,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
             </tbody>
           </table>
           <Tooltip text="Insert these records into your vault">
-            <button onClick={handleCommit} disabled={busy} className="mt-3 rounded bg-blue-600 px-3 py-1 disabled:opacity-50">
+            <button onClick={handleCommit} disabled={busy} className="mt-3 rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
               Commit Import
             </button>
           </Tooltip>

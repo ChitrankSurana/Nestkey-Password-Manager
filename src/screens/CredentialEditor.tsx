@@ -252,7 +252,7 @@ export function CredentialEditor({
                 type="button"
                 onClick={handleGenerate}
                 disabled={submitting}
-                className="rounded bg-blue-600 px-3 py-1 disabled:opacity-50"
+                className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50"
               >
                 Generate
               </button>
@@ -290,7 +290,7 @@ export function CredentialEditor({
             <button
               type="submit"
               disabled={submitting || secret.trim() === ""}
-              className="rounded bg-blue-600 px-3 py-1 disabled:opacity-50"
+              className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50"
             >
               Save
             </button>

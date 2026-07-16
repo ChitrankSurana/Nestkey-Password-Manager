@@ -60,7 +60,7 @@ export function Register({
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded bg-blue-600 py-1.5 disabled:opacity-50"
+            className="w-full rounded bg-[var(--accent)] py-1.5 disabled:opacity-50"
           >
             Register
           </button>

@@ -40,7 +40,7 @@ export function NavRail({
           <button
             onClick={d.onClick}
             className={`rounded px-2 py-1 text-left ${
-              d.key === activeKey ? "bg-blue-600" : "hover:bg-slate-800"
+              d.key === activeKey ? "bg-[var(--accent)]" : "hover:bg-slate-800"
             }`}
           >
             {collapsed ? d.icon : `${d.icon} ${d.label}`}

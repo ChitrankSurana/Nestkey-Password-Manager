@@ -130,7 +130,7 @@ export function HealthDashboard({
                     <button
                       onClick={handleCheckBreach}
                       disabled={checkingBreach}
-                      className="rounded bg-blue-600 px-3 py-1 text-sm disabled:opacity-50"
+                      className="rounded bg-[var(--accent)] px-3 py-1 text-sm disabled:opacity-50"
                     >
                       {checkingBreach ? "Checking…" : "Check now"}
                     </button>

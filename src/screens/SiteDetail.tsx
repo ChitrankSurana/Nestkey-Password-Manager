@@ -33,7 +33,7 @@ export function SiteDetail({ site, onBack }: { site: SiteDto; onBack: () => void
         <Tooltip text="Add a credential to this site">
           <button
             onClick={() => setEditing("new")}
-            className="rounded bg-blue-600 px-3 py-1"
+            className="rounded bg-[var(--accent)] px-3 py-1"
           >
             Add credential
           </button>
