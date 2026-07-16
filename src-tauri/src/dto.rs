@@ -129,6 +129,10 @@ pub struct ConfigDto {
     pub theme: String,
     pub auto_lock_minutes: u32,
     pub strength_algorithm: String,
+    pub accent_color: String,
+    pub old_password_days: u32,
+    pub hibp_opt_in: bool,
+    pub nav_collapsed: bool,
 }
 
 // Non-secret score/label output - normal `Debug` derive is fine (unlike CredentialDto above).
@@ -138,6 +142,37 @@ pub struct StrengthDto {
     pub score: u8,           // zxcvbn 0..=4
     pub guesses_log10: f64,  // log10(estimated guesses)
     pub label: String,       // "Very weak" .. "Very strong"
+}
+
+// None of these carry a secret - plain `#[derive(Debug)]` is safe, same reasoning as
+// SiteDto/TrashedCredentialDto above.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthEntryDto {
+    pub credential_id: i64,
+    pub site_id: i64,
+    pub site_name: String,
+    pub username: Option<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReusedGroupDto {
+    pub entries: Vec<HealthEntryDto>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthReportDto {
+    pub weak: Vec<HealthEntryDto>,
+    pub reused: Vec<ReusedGroupDto>,
+    pub old: Vec<HealthEntryDto>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BreachReportDto {
+    pub breached: Vec<HealthEntryDto>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

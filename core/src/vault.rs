@@ -217,12 +217,38 @@ pub fn update_credential(
     secret: &str,
     remarks: Option<&str>,
 ) -> Result<(), VaultError> {
+    let existing: Option<(Vec<u8>, Vec<u8>)> = conn
+        .query_row(
+            "SELECT secret_enc, secret_nonce FROM credentials WHERE id = ?1 AND deleted_at IS NULL",
+            rusqlite::params![credential_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let (old_enc, old_nonce_bytes) = existing.ok_or(VaultError::NotFound)?;
+    if old_nonce_bytes.len() != 12 {
+        return Err(VaultError::UnlockFailed);
+    }
+    let mut old_nonce = [0u8; 12];
+    old_nonce.copy_from_slice(&old_nonce_bytes);
+    let old_plaintext = crate::crypto::open(key, &old_enc, &old_nonce)?;
+    let old_secret = String::from_utf8(old_plaintext).map_err(|_| VaultError::UnlockFailed)?;
+    let secret_changed = old_secret != secret;
+
     let (secret_enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
-    let updated = conn.execute(
-        "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
-         updated_at = datetime('now') WHERE id = ?5 AND deleted_at IS NULL",
-        rusqlite::params![username, secret_enc, nonce.to_vec(), remarks, credential_id],
-    )?;
+    let updated = if secret_changed {
+        conn.execute(
+            "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
+             updated_at = datetime('now'), password_updated_at = datetime('now')
+             WHERE id = ?5 AND deleted_at IS NULL",
+            rusqlite::params![username, secret_enc, nonce.to_vec(), remarks, credential_id],
+        )?
+    } else {
+        conn.execute(
+            "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
+             updated_at = datetime('now') WHERE id = ?5 AND deleted_at IS NULL",
+            rusqlite::params![username, secret_enc, nonce.to_vec(), remarks, credential_id],
+        )?
+    };
     if updated == 0 {
         return Err(VaultError::NotFound);
     }
@@ -287,6 +313,42 @@ pub fn list_trash(conn: &Connection) -> Result<Vec<TrashedCredential>, VaultErro
 pub fn purge_trash(conn: &Connection) -> Result<usize, VaultError> {
     let count = conn.execute("DELETE FROM credentials WHERE deleted_at IS NOT NULL", [])?;
     Ok(count)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OldCredential {
+    pub credential_id: i64,
+    pub site_id: i64,
+    pub site_name: String,
+    pub username: Option<String>,
+    pub password_updated_at: String,
+}
+
+/// Credentials whose password hasn't changed in more than `threshold_days`. Uses SQLite's own
+/// date arithmetic (no Rust-side date parsing, no new dependency) - `password_updated_at` is a
+/// plaintext column, so this needs no decryption either.
+pub fn list_old_credentials(conn: &Connection, threshold_days: u32) -> Result<Vec<OldCredential>, VaultError> {
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.site_id, s.name, c.username, c.password_updated_at
+         FROM credentials c JOIN sites s ON s.id = c.site_id
+         WHERE c.deleted_at IS NULL AND s.deleted_at IS NULL
+           AND c.password_updated_at < datetime('now', '-' || ?1 || ' days')
+         ORDER BY c.password_updated_at ASC",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![threshold_days], |row| {
+        Ok(OldCredential {
+            credential_id: row.get(0)?,
+            site_id: row.get(1)?,
+            site_name: row.get(2)?,
+            username: row.get(3)?,
+            password_updated_at: row.get(4)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -408,6 +470,25 @@ mod tests {
     use super::*;
     use crate::crypto::derive_key;
     use tempfile::tempdir;
+
+    fn get_password_updated_at(conn: &Connection, credential_id: i64) -> String {
+        conn.query_row(
+            "SELECT password_updated_at FROM credentials WHERE id = ?1",
+            rusqlite::params![credential_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn set_password_updated_at_sentinel(conn: &Connection, credential_id: i64) {
+        // A clearly-stale fixed value (not "now") so the tests can assert "unchanged" vs "changed"
+        // without racing datetime('now')'s 1-second resolution.
+        conn.execute(
+            "UPDATE credentials SET password_updated_at = '2000-01-01 00:00:00' WHERE id = ?1",
+            rusqlite::params![credential_id],
+        )
+        .unwrap();
+    }
 
     fn sample_import_record(site: &str, username: &str, secret: &str) -> ImportRecord {
         ImportRecord {
@@ -575,6 +656,34 @@ mod tests {
         let result = update_credential(&conn, &key, cred_id, Some("alice2"), "new-secret", None);
 
         assert!(matches!(result, Err(VaultError::NotFound)));
+    }
+
+    #[test]
+    fn update_credential_editing_only_username_does_not_bump_password_updated_at() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[40u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "same-secret", None).unwrap();
+        set_password_updated_at_sentinel(&conn, cred_id);
+
+        update_credential(&conn, &key, cred_id, Some("alice2"), "same-secret", Some("a note")).unwrap();
+
+        assert_eq!(get_password_updated_at(&conn, cred_id), "2000-01-01 00:00:00");
+    }
+
+    #[test]
+    fn update_credential_changing_the_secret_bumps_password_updated_at() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[41u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "old-secret", None).unwrap();
+        set_password_updated_at_sentinel(&conn, cred_id);
+
+        update_credential(&conn, &key, cred_id, Some("alice"), "new-secret", None).unwrap();
+
+        assert_ne!(get_password_updated_at(&conn, cred_id), "2000-01-01 00:00:00");
     }
 
     #[test]
@@ -788,5 +897,66 @@ mod tests {
         assert!(matches!(result, Err(VaultError::InvalidImportRecord(_))));
         // Nothing from the batch was persisted, including the row BEFORE the failing one.
         assert!(list_sites(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_old_credentials_returns_only_credentials_older_than_the_threshold() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[42u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let old_id = add_credential(&conn, &key, site_id, Some("alice"), "secret-a", None).unwrap();
+        let fresh_id = add_credential(&conn, &key, site_id, Some("bob"), "secret-b", None).unwrap();
+        conn.execute(
+            "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
+            rusqlite::params![old_id],
+        )
+        .unwrap();
+        // fresh_id keeps its just-created (now) password_updated_at.
+
+        let old = list_old_credentials(&conn, 365).unwrap();
+
+        assert_eq!(old.len(), 1);
+        assert_eq!(old[0].credential_id, old_id);
+        assert_eq!(old[0].site_name, "example.com");
+        assert_eq!(old[0].username.as_deref(), Some("alice"));
+        let _ = fresh_id; // not returned - kept only to make the "one is old, one isn't" setup explicit
+    }
+
+    #[test]
+    fn list_old_credentials_excludes_soft_deleted_rows() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[43u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None).unwrap();
+        conn.execute(
+            "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
+            rusqlite::params![cred_id],
+        )
+        .unwrap();
+        soft_delete_credential(&conn, cred_id).unwrap();
+
+        assert!(list_old_credentials(&conn, 365).unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_old_credentials_excludes_credentials_on_a_soft_deleted_site() {
+        // The join's other half - s.deleted_at IS NULL - has no coverage without this: a
+        // credential can be individually untouched but its site soft-deleted (e.g. via Trash),
+        // and it must still be excluded from the "old" report.
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[44u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None).unwrap();
+        conn.execute(
+            "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
+            rusqlite::params![cred_id],
+        )
+        .unwrap();
+        soft_delete_site(&conn, site_id).unwrap();
+
+        assert!(list_old_credentials(&conn, 365).unwrap().is_empty());
     }
 }

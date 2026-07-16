@@ -66,7 +66,7 @@ export function SiteEditor({ onClose, onSaved }: { onClose: () => void; onSaved:
             <button
               type="submit"
               disabled={submitting || name.trim() === ""}
-              className="rounded bg-blue-600 px-3 py-1 disabled:opacity-50"
+              className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50"
             >
               Save
             </button>

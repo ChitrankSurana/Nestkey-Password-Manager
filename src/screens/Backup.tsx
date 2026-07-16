@@ -60,7 +60,7 @@ export function Backup({ onBack }: { onBack: () => void }) {
       {status && <p className="text-sm text-green-400 mb-4">{status}</p>}
       <div className="space-x-2">
         <Tooltip text="Write an encrypted backup of this vault to ~/.pwmgr/backups">
-          <button onClick={handleCreate} disabled={busy} className="rounded bg-blue-600 px-3 py-1 disabled:opacity-50">
+          <button onClick={handleCreate} disabled={busy} className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
             Create Backup
           </button>
         </Tooltip>
