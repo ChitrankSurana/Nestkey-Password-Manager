@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+pub(crate) const VALID_THEMES: [&str; 2] = ["light", "dark"];
 pub(crate) const VALID_AUTO_LOCK_MINUTES: [u32; 3] = [1, 5, 15];
 pub(crate) const VALID_STRENGTH_ALGORITHMS: [&str; 2] = ["simple", "zxcvbn"];
 pub(crate) const VALID_ACCENT_COLORS: [&str; 5] = ["indigo", "sky", "teal", "purple", "pink"];
@@ -83,6 +84,11 @@ impl Config {
                 eprintln!("warning: config.json unreadable ({e}), resetting to defaults");
                 Config::default()
             }
+        };
+        let parsed = if !VALID_THEMES.contains(&parsed.theme.as_str()) {
+            Config { theme: default_theme(), ..parsed }
+        } else {
+            parsed
         };
         let parsed = if !VALID_AUTO_LOCK_MINUTES.contains(&parsed.auto_lock_minutes) {
             Config { auto_lock_minutes: default_auto_lock_minutes(), ..parsed }
@@ -236,6 +242,17 @@ mod tests {
         assert_eq!(loaded.old_password_days, 90);
         assert_eq!(loaded.hibp_opt_in, true);
         assert_eq!(loaded.nav_collapsed, true);
+    }
+
+    #[test]
+    fn load_rejects_invalid_theme_by_falling_back_to_default() {
+        // theme predates M4 but never got the same load-time sanitization the other
+        // string/enum-like fields did - a hand-edited config.json with a bogus theme must not
+        // flow an unvalidated value through to the frontend, same guarantee as accent_color.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"theme":"bogus"}"#).unwrap();
+        assert_eq!(Config::load(&path).unwrap().theme, "dark");
     }
 
     #[test]
