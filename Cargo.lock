@@ -3165,6 +3165,8 @@ dependencies = [
  "csv",
  "rand 0.8.6",
  "rusqlite",
+ "serde",
+ "serde_json",
  "subtle",
  "tempfile",
  "thiserror 1.0.69",
