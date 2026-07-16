@@ -12,9 +12,10 @@
    Tailwind v4 doesn't support brace-expansion globs here, and an uncovered extension
    fails silently (classes just render unstyled, no build error). */
 
-/* Tailwind v4 defaults the `dark:` variant to `prefers-color-scheme`.
-   M1 is dark-theme-only and forces dark mode via a `dark` class on <html>
-   (see index.html), so override the variant to be class-based instead. */
+/* Tailwind v4 defaults the `dark:` variant to `prefers-color-scheme`. This app
+   drives dark mode via a `dark` class on <html> instead (set reactively from
+   config by App.tsx/Settings.tsx, not hardcoded), so override the variant to
+   be class-based instead. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 [data-accent="indigo"] { --accent: #6366f1; --accent-hover: #4f46e5; }
