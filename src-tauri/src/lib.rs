@@ -3,6 +3,7 @@ mod commands;
 mod config;
 mod dto;
 mod error;
+mod hibp;
 mod paths;
 mod state;
 
@@ -73,6 +74,11 @@ pub fn run() {
             commands::get_config,
             commands::update_auto_lock_minutes,
             commands::update_strength_algorithm,
+            commands::update_theme,
+            commands::update_accent_color,
+            commands::update_old_password_days,
+            commands::update_hibp_opt_in,
+            commands::update_nav_collapsed,
             commands::generate_password,
             commands::analyze_strength,
             commands::copy_to_clipboard,
@@ -82,6 +88,8 @@ pub fn run() {
             commands::read_csv_headers,
             commands::import_csv_preview,
             commands::import_csv_commit,
+            commands::health_report,
+            commands::check_breach,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,5 @@
-use crate::config::{VALID_AUTO_LOCK_MINUTES, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
+use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::state::AppState;
@@ -262,6 +262,10 @@ pub fn do_get_config(state: &AppState) -> ConfigDto {
         theme: config.theme.clone(),
         auto_lock_minutes: config.auto_lock_minutes,
         strength_algorithm: config.strength_algorithm.clone(),
+        accent_color: config.accent_color.clone(),
+        old_password_days: config.old_password_days,
+        hibp_opt_in: config.hibp_opt_in,
+        nav_collapsed: config.nav_collapsed,
     }
 }
 
@@ -302,6 +306,60 @@ pub fn do_update_strength_algorithm(
     Ok(())
 }
 
+pub fn do_update_theme(state: &AppState, paths: &AppPaths, theme: &str) -> Result<(), CommandError> {
+    if theme != "light" && theme != "dark" {
+        return Err(crate::error::invalid_input_error("Theme must be \"light\" or \"dark\"."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.theme = theme.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_accent_color(state: &AppState, paths: &AppPaths, color: &str) -> Result<(), CommandError> {
+    if !VALID_ACCENT_COLORS.contains(&color) {
+        return Err(crate::error::invalid_input_error("Unknown accent color."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.accent_color = color.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_old_password_days(state: &AppState, paths: &AppPaths, days: u32) -> Result<(), CommandError> {
+    if !VALID_OLD_PASSWORD_DAYS.contains(&days) {
+        return Err(crate::error::invalid_input_error("Old-password threshold must be 90, 180, or 365 days."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.old_password_days = days;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_hibp_opt_in(state: &AppState, paths: &AppPaths, enabled: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.hibp_opt_in = enabled;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_nav_collapsed(state: &AppState, paths: &AppPaths, collapsed: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.nav_collapsed = collapsed;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_config(state: State<AppState>) -> ConfigDto {
     do_get_config(&state)
@@ -323,6 +381,31 @@ pub fn update_strength_algorithm(
     algorithm: String,
 ) -> Result<(), CommandError> {
     do_update_strength_algorithm(&state, &paths, &algorithm)
+}
+
+#[tauri::command]
+pub fn update_theme(state: State<AppState>, paths: State<AppPaths>, theme: String) -> Result<(), CommandError> {
+    do_update_theme(&state, &paths, &theme)
+}
+
+#[tauri::command]
+pub fn update_accent_color(state: State<AppState>, paths: State<AppPaths>, color: String) -> Result<(), CommandError> {
+    do_update_accent_color(&state, &paths, &color)
+}
+
+#[tauri::command]
+pub fn update_old_password_days(state: State<AppState>, paths: State<AppPaths>, days: u32) -> Result<(), CommandError> {
+    do_update_old_password_days(&state, &paths, days)
+}
+
+#[tauri::command]
+pub fn update_hibp_opt_in(state: State<AppState>, paths: State<AppPaths>, enabled: bool) -> Result<(), CommandError> {
+    do_update_hibp_opt_in(&state, &paths, enabled)
+}
+
+#[tauri::command]
+pub fn update_nav_collapsed(state: State<AppState>, paths: State<AppPaths>, collapsed: bool) -> Result<(), CommandError> {
+    do_update_nav_collapsed(&state, &paths, collapsed)
 }
 
 pub fn do_generate_password(req: &GenerateRequest) -> Result<Zeroizing<String>, CommandError> {
@@ -521,6 +604,163 @@ fn build_csv_rows(
         }
     }
     Ok(rows)
+}
+
+// Module-level (not nested in do_health_report) so a future breach-check command can reuse it
+// without duplicating the site/credential iteration - same shape build_csv_rows above uses.
+struct HealthRow {
+    credential_id: i64,
+    site_id: i64,
+    site_name: String,
+    username: Option<String>,
+    secret: String,
+}
+
+fn build_health_rows(
+    conn: &rusqlite::Connection,
+    key: &pwmgr_core::crypto::VaultKey,
+) -> Result<Vec<HealthRow>, CommandError> {
+    let sites = pwmgr_core::vault::list_sites(conn)?;
+    let mut rows = Vec::new();
+    for site in &sites {
+        for c in pwmgr_core::vault::list_credentials_for_site(conn, key, site.id)? {
+            rows.push(HealthRow {
+                credential_id: c.id,
+                site_id: site.id,
+                site_name: site.name.clone(),
+                username: c.username,
+                secret: c.secret,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+pub fn do_health_report(state: &AppState) -> Result<HealthReportDto, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let rows = build_health_rows(conn, key)?;
+    // Drop session before locking state.config below - do_update_auto_lock_minutes locks
+    // config then session, so holding both here in the opposite order would be a lock-order
+    // inversion (deadlock risk if the two commands run concurrently on Tauri's thread pool).
+    drop(session);
+
+    // Weak: inline, always zxcvbn - kept out of pwmgr-core deliberately (see Task 7 judgment
+    // call). The user's Settings strength-algorithm toggle only affects the live meter elsewhere.
+    let weak: Vec<HealthEntryDto> = rows
+        .iter()
+        .filter(|r| do_analyze_strength(&r.secret).score <= 1)
+        .map(|r| HealthEntryDto {
+            credential_id: r.credential_id,
+            site_id: r.site_id,
+            site_name: r.site_name.clone(),
+            username: r.username.clone(),
+        })
+        .collect();
+
+    // Reused: core::health::classify_reused over the decrypted secrets.
+    let reuse_inputs: Vec<pwmgr_core::health::ReuseInput> = rows
+        .iter()
+        .map(|r| pwmgr_core::health::ReuseInput { credential_id: r.credential_id, secret: r.secret.clone() })
+        .collect();
+    let reused: Vec<ReusedGroupDto> = pwmgr_core::health::classify_reused(&reuse_inputs)
+        .into_iter()
+        .map(|group| ReusedGroupDto {
+            entries: group
+                .credential_ids
+                .into_iter()
+                .filter_map(|id| rows.iter().find(|r| r.credential_id == id))
+                .map(|r| HealthEntryDto {
+                    credential_id: r.credential_id,
+                    site_id: r.site_id,
+                    site_name: r.site_name.clone(),
+                    username: r.username.clone(),
+                })
+                .collect(),
+        })
+        .collect();
+
+    // Old: vault::list_old_credentials, SQL-native, respects the configured threshold.
+    let old_days = state.config.lock().unwrap().old_password_days;
+    let old: Vec<HealthEntryDto> = pwmgr_core::vault::list_old_credentials(conn, old_days)?
+        .into_iter()
+        .map(|o| HealthEntryDto {
+            credential_id: o.credential_id,
+            site_id: o.site_id,
+            site_name: o.site_name,
+            username: o.username,
+        })
+        .collect();
+
+    Ok(HealthReportDto { weak, reused, old })
+}
+
+#[tauri::command]
+pub fn health_report(state: State<AppState>) -> Result<HealthReportDto, CommandError> {
+    do_health_report(&state)
+}
+
+pub fn do_check_breach(state: &AppState, hibp_base_url: &str) -> Result<BreachReportDto, CommandError> {
+    // Server-side opt-in gate: rejects regardless of what the frontend sends, same defense-in-depth
+    // shape as do_export_csv's `confirmed` gate above. This temporary guard drops at the end of the
+    // statement, so config is never held while vault/session are acquired below.
+    if !state.config.lock().unwrap().hibp_opt_in {
+        return Err(crate::error::invalid_input_error(
+            "Breach checking is not enabled. Turn it on in Settings first.",
+        ));
+    }
+
+    // vault_guard and session are scoped to this block and dropped together as soon as rows (an
+    // owned Vec<HealthRow>) is built - do_health_report holds vault for its whole body, but that
+    // function never blocks on network I/O. This one does (one HTTP round trip per distinct secret
+    // below), so neither lock should be held any longer than the in-memory decrypt takes.
+    let rows = {
+        let vault_guard = state.vault.lock().unwrap();
+        let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+        let session = state.session.lock().unwrap();
+        let key = session.key().ok_or_else(crate::error::locked_error)?;
+        build_health_rows(conn, key)?
+    };
+
+    // One HTTP call per distinct secret, not per credential. Grouped by hand here rather than via
+    // core::health::classify_reused - that function only returns groups of 2+ (it's answering "is
+    // this reused", not "what are all the distinct secrets"), so a password used exactly once would
+    // be silently dropped from the batch and never checked against HIBP at all.
+    let mut by_secret: std::collections::HashMap<&str, Vec<&HealthRow>> = std::collections::HashMap::new();
+    for r in &rows {
+        by_secret.entry(r.secret.as_str()).or_default().push(r);
+    }
+
+    let client = reqwest::Client::new();
+    let mut breached = Vec::new();
+    for (secret, members) in &by_secret {
+        let hit = tauri::async_runtime::block_on(crate::hibp::check_password(&client, hibp_base_url, secret));
+        if matches!(hit, Ok(Some(_))) {
+            for r in members {
+                breached.push(HealthEntryDto {
+                    credential_id: r.credential_id,
+                    site_id: r.site_id,
+                    site_name: r.site_name.clone(),
+                    username: r.username.clone(),
+                });
+            }
+        }
+        // A single failed HIBP request (network hiccup) doesn't fail the whole batch - best-effort,
+        // matching the plaintext-export-log precedent below (a logging failure didn't undo the
+        // export the user already got). The credential simply isn't reported breached this run.
+    }
+
+    Ok(BreachReportDto { breached })
+}
+
+#[tauri::command]
+pub fn check_breach(state: State<AppState>) -> Result<BreachReportDto, CommandError> {
+    // do_check_breach is sync - it blocks internally (tauri::async_runtime::block_on per HTTP
+    // call) rather than being an async fn itself, so this wrapper needs no `async`/`State<'_, _>`
+    // either, matching every other command in this file.
+    do_check_breach(&state, crate::hibp::HIBP_BASE_URL)
 }
 
 fn append_plaintext_export_log(paths: &AppPaths, path: &str) -> std::io::Result<()> {
@@ -979,6 +1219,132 @@ mod tests {
     }
 
     #[test]
+    fn get_config_includes_all_m4_fields() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        let config = do_get_config(&state);
+        assert_eq!(config.accent_color, "indigo");
+        assert_eq!(config.old_password_days, 365);
+        assert_eq!(config.hibp_opt_in, false);
+        assert_eq!(config.nav_collapsed, false);
+    }
+
+    #[test]
+    fn update_theme_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_theme(&state, &paths, "light").unwrap();
+        assert_eq!(do_get_config(&state).theme, "light");
+        assert_eq!(do_update_theme(&state, &paths, "neon").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_accent_color_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_accent_color(&state, &paths, "sky").unwrap();
+        assert_eq!(do_get_config(&state).accent_color, "sky");
+        assert_eq!(do_update_accent_color(&state, &paths, "chartreuse").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_old_password_days_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_old_password_days(&state, &paths, 90).unwrap();
+        assert_eq!(do_get_config(&state).old_password_days, 90);
+        assert_eq!(do_update_old_password_days(&state, &paths, 42).unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_hibp_opt_in_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_hibp_opt_in(&state, &paths, true).unwrap();
+        assert_eq!(do_get_config(&state).hibp_opt_in, true);
+        let reloaded = crate::config::Config::load(&paths.config_path()).unwrap();
+        assert_eq!(reloaded.hibp_opt_in, true);
+    }
+
+    #[test]
+    fn update_nav_collapsed_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_nav_collapsed(&state, &paths, true).unwrap();
+        assert_eq!(do_get_config(&state).nav_collapsed, true);
+    }
+
+    #[test]
+    fn update_theme_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).theme;
+        let result = do_update_theme(&state, &bad_paths, "light");
+
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).theme, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn update_accent_color_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).accent_color;
+        let result = do_update_accent_color(&state, &bad_paths, "sky");
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).accent_color,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
+    fn update_old_password_days_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).old_password_days;
+        let result = do_update_old_password_days(&state, &bad_paths, 90);
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).old_password_days,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
+    fn update_hibp_opt_in_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).hibp_opt_in;
+        let result = do_update_hibp_opt_in(&state, &bad_paths, true);
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).hibp_opt_in,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
+    fn update_nav_collapsed_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).nav_collapsed;
+        let result = do_update_nav_collapsed(&state, &bad_paths, true);
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).nav_collapsed,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
     fn generate_password_random_returns_requested_length() {
         let req = GenerateRequest::Random { length: 20, uppercase: true, lowercase: true, digits: true, symbols: false };
         let pw = do_generate_password(&req).unwrap();
@@ -1343,5 +1709,107 @@ mod tests {
         let result = do_import_csv_commit(&state, vec![import_record_dto("", "bob", "s3cret")]);
 
         assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn health_report_flags_a_weak_password() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "password", None).unwrap(); // weak
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.weak.len(), 1);
+        assert_eq!(report.weak[0].site_name, "example.com");
+    }
+
+    #[test]
+    fn health_report_does_not_flag_a_strong_password_as_weak() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+
+        assert!(do_health_report(&state).unwrap().weak.is_empty());
+    }
+
+    #[test]
+    fn health_report_groups_reused_passwords() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        do_add_credential(&state, site_id, Some("bob"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.reused.len(), 1);
+        assert_eq!(report.reused[0].entries.len(), 2);
+    }
+
+    #[test]
+    fn health_report_flags_an_old_password() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        {
+            let vault_guard = state.vault.lock().unwrap();
+            let (conn, _) = vault_guard.as_ref().unwrap();
+            conn.execute(
+                "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
+                rusqlite::params![cred_id],
+            ).unwrap();
+        }
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.old.len(), 1);
+        assert_eq!(report.old[0].credential_id, cred_id);
+    }
+
+    #[test]
+    fn health_report_when_locked_returns_locked_error() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_health_report(&state).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn check_breach_rejects_when_hibp_opt_in_is_false() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let result = do_check_breach(&state, "http://127.0.0.1:1"); // unreachable on purpose - must reject before ever connecting
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn check_breach_when_locked_returns_locked_error() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_hibp_opt_in(&state, &paths, true).unwrap();
+
+        let result = do_check_breach(&state, "http://127.0.0.1:1");
+
+        assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn check_breach_finds_a_breached_credential_via_a_mock_server() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_hibp_opt_in(&state, &paths, true).unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "password", None).unwrap();
+
+        let full_hash = crate::hibp::sha1_hex_upper("password");
+        let suffix = &full_hash[5..];
+        let body = format!("{}:999\r\n", suffix);
+        let base_url = crate::hibp::mock_hibp_server(body);
+
+        let report = do_check_breach(&state, &base_url).unwrap();
+
+        assert_eq!(report.breached.len(), 1);
     }
 }

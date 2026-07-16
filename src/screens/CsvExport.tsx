@@ -108,7 +108,7 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
         <button
           onClick={handleExport}
           disabled={!canExport}
-          className="mt-4 rounded bg-blue-600 px-3 py-1 disabled:opacity-50"
+          className="mt-4 rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50"
         >
           Export
         </button>
