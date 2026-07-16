@@ -29,7 +29,7 @@ export function NavRail({
       <Tooltip text={collapsed ? "Expand" : "Collapse"}>
         <button
           onClick={onToggleCollapsed}
-          className="rounded px-2 py-1 text-left hover:bg-slate-800"
+          className="rounded px-2 py-1 text-left dark:hover:bg-slate-800"
         >
           {collapsed ? "»" : "« Collapse"}
         </button>
@@ -40,7 +40,7 @@ export function NavRail({
           <button
             onClick={d.onClick}
             className={`rounded px-2 py-1 text-left ${
-              d.key === activeKey ? "bg-[var(--accent)]" : "hover:bg-slate-800"
+              d.key === activeKey ? "bg-[var(--accent)]" : "dark:hover:bg-slate-800"
             }`}
           >
             {collapsed ? d.icon : `${d.icon} ${d.label}`}
@@ -49,7 +49,7 @@ export function NavRail({
       ))}
       <div className="flex-1" />
       <Tooltip text="Lock the vault now">
-        <button onClick={onLock} className="rounded px-2 py-1 text-left hover:bg-slate-800">
+        <button onClick={onLock} className="rounded px-2 py-1 text-left dark:hover:bg-slate-800">
           {collapsed ? "🔒" : "🔒 Lock"}
         </button>
       </Tooltip>

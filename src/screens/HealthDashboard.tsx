@@ -10,7 +10,7 @@ function EntryList({ entries, onNavigateToSite }: { entries: HealthEntryDto[]; o
         <Tooltip key={e.credentialId} text="Go to this site to edit the credential">
           <button
             onClick={() => onNavigateToSite(e.siteId)}
-            className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-slate-800"
+            className="block w-full rounded px-2 py-1 text-left text-sm dark:hover:bg-slate-800"
           >
             {e.siteName} — {e.username ?? "(no username)"}
           </button>
