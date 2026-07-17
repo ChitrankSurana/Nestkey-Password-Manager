@@ -1,9 +1,11 @@
-use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
-use crate::error::CommandError;
-use crate::paths::AppPaths;
-use crate::state::AppState;
+use crate::dto::{BreachReportDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, StrengthDto, TrashedCredentialDto};
+use pwmgr_core::commands::{do_get_config, do_lock, do_list_credentials_for_site, do_list_sites, do_login, do_search, do_touch, do_unlock_status};
+use pwmgr_core::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
+use pwmgr_core::dto::{AuthSuccess, ConfigDto, CredentialDto, SearchResultDto, SiteDto};
+use pwmgr_core::error::CommandError;
+use pwmgr_core::paths::AppPaths;
 use pwmgr_core::session::SystemClock;
+use pwmgr_core::state::AppState;
 use std::time::Duration;
 use tauri::{Emitter, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -13,11 +15,7 @@ use zeroize::Zeroizing;
 /// return) works end-to-end before Slice 1 adds real auth commands on the same pattern.
 #[tauri::command]
 pub fn unlock_status(state: State<AppState>) -> bool {
-    unlock_status_inner(&state)
-}
-
-fn unlock_status_inner(state: &AppState) -> bool {
-    !state.session.lock().unwrap().is_locked()
+    do_unlock_status(&state)
 }
 
 pub fn do_register(
@@ -35,32 +33,6 @@ pub fn do_register(
     state.session.lock().unwrap().unlock(key, &SystemClock);
     state.set_vault(conn, vault_path);
     Ok(AuthSuccess { username: username.to_string() })
-}
-
-pub fn do_login(
-    state: &AppState,
-    paths: &AppPaths,
-    username: &str,
-    master_password: &str,
-) -> Result<AuthSuccess, CommandError> {
-    let vault_path = paths.vault_path(username);
-    let key = {
-        let registry = state.registry.lock().unwrap();
-        pwmgr_core::auth::login(&registry, &vault_path, username, master_password)?
-    };
-    let conn = pwmgr_core::vault::open_vault(&vault_path, &key)?;
-    state.session.lock().unwrap().unlock(key, &SystemClock);
-    state.set_vault(conn, vault_path);
-    Ok(AuthSuccess { username: username.to_string() })
-}
-
-pub fn do_lock(state: &AppState) {
-    state.session.lock().unwrap().lock();
-    state.clear_vault();
-}
-
-pub fn do_touch(state: &AppState) {
-    state.session.lock().unwrap().touch(&SystemClock);
 }
 
 #[tauri::command]
@@ -96,13 +68,6 @@ pub fn touch(state: State<AppState>) {
     do_touch(&state);
 }
 
-pub fn do_list_sites(state: &AppState) -> Result<Vec<SiteDto>, CommandError> {
-    let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
-    let sites = pwmgr_core::vault::list_sites(conn)?;
-    Ok(sites.into_iter().map(SiteDto::from).collect())
-}
-
 pub fn do_add_site(
     state: &AppState,
     name: &str,
@@ -110,7 +75,7 @@ pub fn do_add_site(
     notes: Option<&str>,
 ) -> Result<i64, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let (conn, _) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
     Ok(pwmgr_core::vault::add_site(conn, name, url, notes)?)
 }
 
@@ -122,9 +87,9 @@ pub fn do_add_credential(
     remarks: Option<&str>,
 ) -> Result<i64, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let (conn, _) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
     let session = state.session.lock().unwrap();
-    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let key = session.key().ok_or_else(pwmgr_core::error::locked_error)?;
     Ok(pwmgr_core::vault::add_credential(conn, key, site_id, username, secret, remarks)?)
 }
 
@@ -136,53 +101,34 @@ pub fn do_update_credential(
     remarks: Option<&str>,
 ) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let (conn, _) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
     let session = state.session.lock().unwrap();
-    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let key = session.key().ok_or_else(pwmgr_core::error::locked_error)?;
     Ok(pwmgr_core::vault::update_credential(conn, key, credential_id, username, secret, remarks)?)
-}
-
-pub fn do_list_credentials_for_site(
-    state: &AppState,
-    site_id: i64,
-) -> Result<Vec<CredentialDto>, CommandError> {
-    let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
-    let session = state.session.lock().unwrap();
-    let key = session.key().ok_or_else(crate::error::locked_error)?;
-    let creds = pwmgr_core::vault::list_credentials_for_site(conn, key, site_id)?;
-    Ok(creds.into_iter().map(CredentialDto::from).collect())
-}
-
-pub fn do_search(state: &AppState, query: &str) -> Result<Vec<SearchResultDto>, CommandError> {
-    let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
-    let results = pwmgr_core::vault::search(conn, query)?;
-    Ok(results.into_iter().map(SearchResultDto::from).collect())
 }
 
 pub fn do_soft_delete_credential(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let (conn, _) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
     Ok(pwmgr_core::vault::soft_delete_credential(conn, credential_id)?)
 }
 
 pub fn do_list_trash(state: &AppState) -> Result<Vec<TrashedCredentialDto>, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let (conn, _) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
     let trash = pwmgr_core::vault::list_trash(conn)?;
     Ok(trash.into_iter().map(TrashedCredentialDto::from).collect())
 }
 
 pub fn do_restore_credential(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let (conn, _) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
     Ok(pwmgr_core::vault::restore_credential(conn, credential_id)?)
 }
 
 pub fn do_purge_trash(state: &AppState) -> Result<usize, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let (conn, _) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
     Ok(pwmgr_core::vault::purge_trash(conn)?)
 }
 
@@ -256,31 +202,18 @@ pub fn purge_trash(state: State<AppState>) -> Result<usize, CommandError> {
     do_purge_trash(&state)
 }
 
-pub fn do_get_config(state: &AppState) -> ConfigDto {
-    let config = state.config.lock().unwrap();
-    ConfigDto {
-        theme: config.theme.clone(),
-        auto_lock_minutes: config.auto_lock_minutes,
-        strength_algorithm: config.strength_algorithm.clone(),
-        accent_color: config.accent_color.clone(),
-        old_password_days: config.old_password_days,
-        hibp_opt_in: config.hibp_opt_in,
-        nav_collapsed: config.nav_collapsed,
-    }
-}
-
 pub fn do_update_auto_lock_minutes(
     state: &AppState,
     paths: &AppPaths,
     minutes: u32,
 ) -> Result<(), CommandError> {
     if !VALID_AUTO_LOCK_MINUTES.contains(&minutes) {
-        return Err(crate::error::invalid_input_error("Auto-lock must be 1, 5, or 15 minutes."));
+        return Err(pwmgr_core::error::invalid_input_error("Auto-lock must be 1, 5, or 15 minutes."));
     }
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.auto_lock_minutes = minutes;
-    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    updated.save(&paths.config_path()).map_err(|_| pwmgr_core::error::internal_error())?;
     *config = updated;
     state
         .session
@@ -296,48 +229,48 @@ pub fn do_update_strength_algorithm(
     algorithm: &str,
 ) -> Result<(), CommandError> {
     if !VALID_STRENGTH_ALGORITHMS.contains(&algorithm) {
-        return Err(crate::error::invalid_input_error("Unknown strength algorithm."));
+        return Err(pwmgr_core::error::invalid_input_error("Unknown strength algorithm."));
     }
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.strength_algorithm = algorithm.to_string();
-    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    updated.save(&paths.config_path()).map_err(|_| pwmgr_core::error::internal_error())?;
     *config = updated;
     Ok(())
 }
 
 pub fn do_update_theme(state: &AppState, paths: &AppPaths, theme: &str) -> Result<(), CommandError> {
     if theme != "light" && theme != "dark" {
-        return Err(crate::error::invalid_input_error("Theme must be \"light\" or \"dark\"."));
+        return Err(pwmgr_core::error::invalid_input_error("Theme must be \"light\" or \"dark\"."));
     }
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.theme = theme.to_string();
-    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    updated.save(&paths.config_path()).map_err(|_| pwmgr_core::error::internal_error())?;
     *config = updated;
     Ok(())
 }
 
 pub fn do_update_accent_color(state: &AppState, paths: &AppPaths, color: &str) -> Result<(), CommandError> {
     if !VALID_ACCENT_COLORS.contains(&color) {
-        return Err(crate::error::invalid_input_error("Unknown accent color."));
+        return Err(pwmgr_core::error::invalid_input_error("Unknown accent color."));
     }
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.accent_color = color.to_string();
-    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    updated.save(&paths.config_path()).map_err(|_| pwmgr_core::error::internal_error())?;
     *config = updated;
     Ok(())
 }
 
 pub fn do_update_old_password_days(state: &AppState, paths: &AppPaths, days: u32) -> Result<(), CommandError> {
     if !VALID_OLD_PASSWORD_DAYS.contains(&days) {
-        return Err(crate::error::invalid_input_error("Old-password threshold must be 90, 180, or 365 days."));
+        return Err(pwmgr_core::error::invalid_input_error("Old-password threshold must be 90, 180, or 365 days."));
     }
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.old_password_days = days;
-    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    updated.save(&paths.config_path()).map_err(|_| pwmgr_core::error::internal_error())?;
     *config = updated;
     Ok(())
 }
@@ -346,7 +279,7 @@ pub fn do_update_hibp_opt_in(state: &AppState, paths: &AppPaths, enabled: bool) 
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.hibp_opt_in = enabled;
-    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    updated.save(&paths.config_path()).map_err(|_| pwmgr_core::error::internal_error())?;
     *config = updated;
     Ok(())
 }
@@ -355,7 +288,7 @@ pub fn do_update_nav_collapsed(state: &AppState, paths: &AppPaths, collapsed: bo
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.nav_collapsed = collapsed;
-    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    updated.save(&paths.config_path()).map_err(|_| pwmgr_core::error::internal_error())?;
     *config = updated;
     Ok(())
 }
@@ -452,7 +385,7 @@ const CLIPBOARD_CLEAR_SECS: u64 = 30; // hardcoded constant, NOT a user setting 
 #[tauri::command]
 pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), CommandError> {
     let secret = Zeroizing::new(text);
-    app.clipboard().write_text(secret.as_str()).map_err(|_| crate::error::internal_error())?;
+    app.clipboard().write_text(secret.as_str()).map_err(|_| pwmgr_core::error::internal_error())?;
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(CLIPBOARD_CLEAR_SECS)).await;
@@ -469,22 +402,22 @@ pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), Comm
 pub fn do_create_backup(state: &AppState, paths: &AppPaths) -> Result<String, CommandError> {
     let vault_path = {
         let vault_guard = state.vault.lock().unwrap();
-        let (_, path) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+        let (_, path) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
         path.clone()
     };
     let username = vault_path
         .file_stem()
         .and_then(|s| s.to_str())
-        .ok_or_else(crate::error::internal_error)?
+        .ok_or_else(pwmgr_core::error::internal_error)?
         .to_string();
 
     let user_record = {
         let registry = state.registry.lock().unwrap();
         pwmgr_core::registry::find_user(&registry, &username)
-            .map_err(|_| crate::error::internal_error())?
+            .map_err(|_| pwmgr_core::error::internal_error())?
     };
 
-    let vault_bytes = std::fs::read(&vault_path).map_err(|_| crate::error::internal_error())?;
+    let vault_bytes = std::fs::read(&vault_path).map_err(|_| pwmgr_core::error::internal_error())?;
     let bundle = pwmgr_core::backup::encode_bundle(&user_record, &vault_bytes);
 
     // Millisecond (not second) precision: a whole-second timestamp lets two backups created in
@@ -494,7 +427,7 @@ pub fn do_create_backup(state: &AppState, paths: &AppPaths) -> Result<String, Co
         .unwrap_or_default()
         .as_millis();
     let backup_path = paths.backups_dir().join(format!("{}-{}.bak", username, timestamp));
-    std::fs::write(&backup_path, &bundle).map_err(|_| crate::error::internal_error())?;
+    std::fs::write(&backup_path, &bundle).map_err(|_| pwmgr_core::error::internal_error())?;
 
     Ok(backup_path.to_string_lossy().to_string())
 }
@@ -511,9 +444,9 @@ pub fn do_restore_backup(
     confirmed: bool,
 ) -> Result<(), CommandError> {
     let bytes = std::fs::read(backup_file_path)
-        .map_err(|_| crate::error::invalid_input_error("Could not read that backup file."))?;
+        .map_err(|_| pwmgr_core::error::invalid_input_error("Could not read that backup file."))?;
     let (user_record, vault_bytes) = pwmgr_core::backup::decode_bundle(&bytes)
-        .map_err(|_| crate::error::invalid_input_error("That file isn't a valid backup."))?;
+        .map_err(|_| pwmgr_core::error::invalid_input_error("That file isn't a valid backup."))?;
 
     let vault_path = paths.vault_path(&user_record.username);
     let already_exists = vault_path.exists() || {
@@ -521,7 +454,7 @@ pub fn do_restore_backup(
         pwmgr_core::registry::find_user(&registry, &user_record.username).is_ok()
     };
     if already_exists && !confirmed {
-        return Err(crate::error::confirm_required_error(
+        return Err(pwmgr_core::error::confirm_required_error(
             "A vault for that username already exists. Restoring will overwrite it.",
         ));
     }
@@ -547,18 +480,18 @@ pub fn do_restore_backup(
     // succeeded. Rename is the last step and is effectively atomic on the same volume, so the
     // only remaining failure window is far narrower than a plain write-then-upsert ordering.
     let tmp_path = vault_path.with_extension("vault.tmp");
-    std::fs::write(&tmp_path, &vault_bytes).map_err(|_| crate::error::internal_error())?;
+    std::fs::write(&tmp_path, &vault_bytes).map_err(|_| pwmgr_core::error::internal_error())?;
 
     let registry = state.registry.lock().unwrap();
     if pwmgr_core::registry::upsert_user(&registry, &user_record).is_err() {
         let _ = std::fs::remove_file(&tmp_path); // best-effort cleanup, don't mask the real error
-        return Err(crate::error::internal_error());
+        return Err(pwmgr_core::error::internal_error());
     }
     drop(registry);
 
     if std::fs::rename(&tmp_path, &vault_path).is_err() {
         let _ = std::fs::remove_file(&tmp_path); // best-effort cleanup, don't mask the real error
-        return Err(crate::error::internal_error());
+        return Err(pwmgr_core::error::internal_error());
     }
     Ok(())
 }
@@ -638,9 +571,9 @@ fn build_health_rows(
 
 pub fn do_health_report(state: &AppState) -> Result<HealthReportDto, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let (conn, _) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
     let session = state.session.lock().unwrap();
-    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let key = session.key().ok_or_else(pwmgr_core::error::locked_error)?;
     let rows = build_health_rows(conn, key)?;
     // Drop session before locking state.config below - do_update_auto_lock_minutes locks
     // config then session, so holding both here in the opposite order would be a lock-order
@@ -707,7 +640,7 @@ pub fn do_check_breach(state: &AppState, hibp_base_url: &str) -> Result<BreachRe
     // shape as do_export_csv's `confirmed` gate above. This temporary guard drops at the end of the
     // statement, so config is never held while vault/session are acquired below.
     if !state.config.lock().unwrap().hibp_opt_in {
-        return Err(crate::error::invalid_input_error(
+        return Err(pwmgr_core::error::invalid_input_error(
             "Breach checking is not enabled. Turn it on in Settings first.",
         ));
     }
@@ -718,9 +651,9 @@ pub fn do_check_breach(state: &AppState, hibp_base_url: &str) -> Result<BreachRe
     // below), so neither lock should be held any longer than the in-memory decrypt takes.
     let rows = {
         let vault_guard = state.vault.lock().unwrap();
-        let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+        let (conn, _) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
         let session = state.session.lock().unwrap();
-        let key = session.key().ok_or_else(crate::error::locked_error)?;
+        let key = session.key().ok_or_else(pwmgr_core::error::locked_error)?;
         build_health_rows(conn, key)?
     };
 
@@ -784,15 +717,15 @@ pub fn do_export_csv(
     confirmed: bool,
 ) -> Result<(), CommandError> {
     if matches!(mode, ExportMode::Plaintext) && !confirmed {
-        return Err(crate::error::invalid_input_error(
+        return Err(pwmgr_core::error::invalid_input_error(
             "Plaintext export requires explicit confirmation.",
         ));
     }
 
     let vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let (conn, _) = vault_guard.as_ref().ok_or_else(pwmgr_core::error::locked_error)?;
     let session = state.session.lock().unwrap();
-    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let key = session.key().ok_or_else(pwmgr_core::error::locked_error)?;
 
     let rows = build_csv_rows(conn, key)?;
     let csv_text = pwmgr_core::portio::rows_to_csv(&rows)?;
@@ -801,19 +734,19 @@ pub fn do_export_csv(
         ExportMode::Plaintext => csv_text.into_bytes(),
         ExportMode::ThisDevice => {
             let (ciphertext, nonce) = pwmgr_core::crypto::seal(key, csv_text.as_bytes())
-                .map_err(|_| crate::error::internal_error())?;
+                .map_err(|_| pwmgr_core::error::internal_error())?;
             pwmgr_core::portio::encode_sealed_csv(None, &nonce, &ciphertext)
         }
         ExportMode::WithPassword { password } => {
             let salt = pwmgr_core::crypto::random_salt();
             let pw_key = pwmgr_core::crypto::derive_key(password, &salt)
-                .map_err(|_| crate::error::internal_error())?;
+                .map_err(|_| pwmgr_core::error::internal_error())?;
             let (ciphertext, nonce) = pwmgr_core::crypto::seal(&pw_key, csv_text.as_bytes())
-                .map_err(|_| crate::error::internal_error())?;
+                .map_err(|_| pwmgr_core::error::internal_error())?;
             pwmgr_core::portio::encode_sealed_csv(Some(&salt), &nonce, &ciphertext)
         }
     };
-    std::fs::write(path, &bytes).map_err(|_| crate::error::internal_error())?;
+    std::fs::write(path, &bytes).map_err(|_| pwmgr_core::error::internal_error())?;
 
     // THREAT_MODEL: plaintext export path must be logged locally. Best-effort - a log-write
     // failure must not undo or fail the export the user already confirmed and got.
@@ -838,11 +771,11 @@ pub fn export_csv(
 
 pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
     let text = std::fs::read_to_string(path)
-        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+        .map_err(|_| pwmgr_core::error::invalid_input_error("Could not read that file."))?;
     let mut reader = csv::Reader::from_reader(text.as_bytes());
     let headers = reader
         .headers()
-        .map_err(|_| crate::error::invalid_input_error("That file doesn't look like a CSV."))?;
+        .map_err(|_| pwmgr_core::error::invalid_input_error("That file doesn't look like a CSV."))?;
     Ok(headers.iter().map(|h| h.to_string()).collect())
 }
 
@@ -856,7 +789,7 @@ pub fn do_import_csv_preview(
     format: &ImportFormat,
 ) -> Result<Vec<ImportRecordDto>, CommandError> {
     let text = std::fs::read_to_string(path)
-        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+        .map_err(|_| pwmgr_core::error::invalid_input_error("Could not read that file."))?;
     let records = match format {
         ImportFormat::Chromium => pwmgr_core::portio::parse_chromium_csv(&text)?,
         ImportFormat::Firefox => pwmgr_core::portio::parse_firefox_csv(&text)?,
@@ -881,9 +814,9 @@ pub fn do_import_csv_commit(
         records.into_iter().map(Into::into).collect();
 
     let mut vault_guard = state.vault.lock().unwrap();
-    let (conn, _) = vault_guard.as_mut().ok_or_else(crate::error::locked_error)?;
+    let (conn, _) = vault_guard.as_mut().ok_or_else(pwmgr_core::error::locked_error)?;
     let session = state.session.lock().unwrap();
-    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let key = session.key().ok_or_else(pwmgr_core::error::locked_error)?;
 
     let summary = pwmgr_core::vault::import_credentials(conn, key, &core_records)?;
     Ok(ImportSummaryDto::from(summary))
@@ -900,7 +833,7 @@ pub fn import_csv_commit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use pwmgr_core::config::Config;
     use pwmgr_core::session::{Clock, Session};
     use std::cell::RefCell;
     use std::sync::Mutex;
@@ -926,8 +859,8 @@ mod tests {
 
     #[test]
     fn unlock_status_inner_reflects_locked_session() {
-        let state = AppState::new(Config::default(), Duration::from_secs(300));
-        assert!(!unlock_status_inner(&state));
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert!(!do_unlock_status(&state));
     }
 
     fn test_state_and_paths() -> (AppState, AppPaths, tempfile::TempDir) {
@@ -1042,7 +975,7 @@ mod tests {
             // `last_activity` (via the real `SystemClock`) and this `clock.advance` call (on the
             // separate `FakeClock`) - a 1s margin was flaky under that KDF cost; 30s is not.
             clock.advance(timeout + Duration::from_secs(30));
-            assert!(crate::autolock::tick(&state, &clock));
+            assert!(pwmgr_core::autolock::tick(&state, &clock));
             assert!(state.vault.lock().unwrap().is_none());
             assert!(state.session.lock().unwrap().is_locked());
 
@@ -1151,7 +1084,7 @@ mod tests {
         do_update_auto_lock_minutes(&state, &paths, 1).unwrap();
 
         assert_eq!(do_get_config(&state).auto_lock_minutes, 1);
-        let reloaded = crate::config::Config::load(&paths.config_path()).unwrap();
+        let reloaded = Config::load(&paths.config_path()).unwrap();
         assert_eq!(reloaded.auto_lock_minutes, 1);
     }
 
@@ -1257,7 +1190,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_update_hibp_opt_in(&state, &paths, true).unwrap();
         assert_eq!(do_get_config(&state).hibp_opt_in, true);
-        let reloaded = crate::config::Config::load(&paths.config_path()).unwrap();
+        let reloaded = Config::load(&paths.config_path()).unwrap();
         assert_eq!(reloaded.hibp_opt_in, true);
     }
 
