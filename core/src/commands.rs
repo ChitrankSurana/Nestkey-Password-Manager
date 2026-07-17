@@ -162,13 +162,19 @@ mod tests {
         let site_id = {
             let vault_guard = state.vault.lock().unwrap();
             let (conn, _) = vault_guard.as_ref().unwrap();
-            crate::vault::add_site(conn, "example.com", None, None).unwrap()
+            let session = state.session.lock().unwrap();
+            let key = session.key().unwrap();
+            let site_id = crate::vault::add_site(conn, "example.com", None, None).unwrap();
+            crate::vault::add_credential(conn, key, site_id, Some("alice"), "s3cret", None).unwrap();
+            site_id
         };
         let sites = do_list_sites(&state).unwrap();
         assert_eq!(sites.len(), 1);
         assert_eq!(sites[0].name, "example.com");
         let creds = do_list_credentials_for_site(&state, site_id).unwrap();
-        assert!(creds.is_empty());
+        assert_eq!(creds.len(), 1);
+        assert_eq!(creds[0].username.as_deref(), Some("alice"));
+        assert_eq!(creds[0].secret.as_str(), "s3cret");
     }
 
     #[test]
