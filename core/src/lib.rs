@@ -1,3 +1,4 @@
+pub mod autolock;
 pub mod crypto;
 pub mod error;
 pub mod registry;
