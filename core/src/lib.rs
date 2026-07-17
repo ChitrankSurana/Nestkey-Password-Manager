@@ -1,4 +1,5 @@
 pub mod autolock;
+pub mod commands;
 pub mod crypto;
 pub mod dto;
 pub mod error;
