@@ -1,5 +1,6 @@
 pub mod autolock;
 pub mod crypto;
+pub mod dto;
 pub mod error;
 pub mod registry;
 pub mod vault;
