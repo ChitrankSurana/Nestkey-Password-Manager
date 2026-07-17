@@ -7,3 +7,4 @@ pub mod generator;
 pub mod backup;
 pub mod portio;
 pub mod health;
+pub mod paths;
