@@ -90,7 +90,13 @@ else.**
   (`chore(viewer): trim dead Cargo.toml deps, add .gitignore for generated schemas`) — verified
   `cargo build -p pwmgr-viewer` clean and `cargo test --workspace` still 224/224 after the trim.
   **Slice 2 is fully closed out as of `f47c84f`.**
-- **Tasks 12-15: not started.**
+- **Task 12** (make `Login.tsx`'s `onSwitchToRegister` prop optional) — **DONE, reviewed clean.**
+  Commit `02d9857`. Both spec-compliance and code-quality review passed with zero findings — a
+  1-character type change (`?`) plus one JSX conditional wrap, `App.tsx` needed zero changes (backward
+  compatible), `npm run build` clean.
+- **Tasks 13-15: not started.** User confirmed continuing through the rest of M5 (asked fresh at the
+  Slice 2/3 boundary, answered "Yes, continue through M5" — also asked to update this file after every
+  task completion, not just at slice boundaries, going forward).
 
 ## What to do next
 
