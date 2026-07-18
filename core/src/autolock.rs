@@ -1,5 +1,5 @@
+use crate::session::Clock;
 use crate::state::AppState;
-use pwmgr_core::session::Clock;
 
 /// Returns true only on the transition from unlocked to locked (so the caller emits the
 /// `vault-locked` event exactly once per lock, not on every tick of an already-locked session).
@@ -48,11 +48,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = AppPaths::new(dir.path().to_path_buf());
         paths.ensure_app_dirs().unwrap();
-        let registry = pwmgr_core::registry::open_registry(&paths.registry_db_path()).unwrap();
+        let registry = crate::registry::open_registry(&paths.registry_db_path()).unwrap();
         let state = AppState {
             registry: Mutex::new(registry),
             vault: Mutex::new(None),
-            session: Mutex::new(pwmgr_core::session::Session::new(timeout)),
+            session: Mutex::new(crate::session::Session::new(timeout)),
             config: Mutex::new(Config::default()),
         };
         (state, dir)
@@ -70,7 +70,7 @@ mod tests {
     fn tick_before_timeout_elapses_stays_unlocked() {
         let (state, _dir) = test_state(Duration::from_secs(300));
         let clock = FakeClock::new();
-        let key = pwmgr_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
+        let key = crate::crypto::derive_key("pw", &[1u8; 16]).unwrap();
         state.session.lock().unwrap().unlock(key, &clock);
 
         clock.advance(Duration::from_secs(100));
@@ -82,7 +82,7 @@ mod tests {
     fn tick_after_timeout_elapses_locks_and_returns_true() {
         let (state, _dir) = test_state(Duration::from_secs(300));
         let clock = FakeClock::new();
-        let key = pwmgr_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
+        let key = crate::crypto::derive_key("pw", &[1u8; 16]).unwrap();
         state.session.lock().unwrap().unlock(key, &clock);
         state.set_vault(Connection::open_in_memory().unwrap(), PathBuf::from("dummy.vault"));
 

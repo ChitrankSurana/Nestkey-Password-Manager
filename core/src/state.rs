@@ -1,5 +1,5 @@
 use crate::config::Config;
-use pwmgr_core::session::Session;
+use crate::session::Session;
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -9,9 +9,14 @@ use std::time::Duration;
 /// `State<AppState>`. `rusqlite::Connection` is `Send + !Sync`, so every field holding one
 /// must be wrapped in a `Mutex` before it can be shared across Tauri's async command
 /// threadpool.
+///
+/// `vault` is `pub` (not `pub(crate)`) so that both `src-tauri` and `viewer-src-tauri` - separate
+/// crates depending on this one - can lock/read it directly, the same way they already lock
+/// `registry`/`session`/`config` directly. No new invariant is weakened: this field was already
+/// freely accessible to every module within the one crate that used to own it.
 pub struct AppState {
     pub registry: Mutex<Connection>,
-    pub(crate) vault: Mutex<Option<(Connection, PathBuf)>>,
+    pub vault: Mutex<Option<(Connection, PathBuf)>>,
     pub session: Mutex<Session>,
     pub config: Mutex<Config>,
 }

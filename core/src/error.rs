@@ -27,9 +27,9 @@ impl CommandError {
     }
 }
 
-impl From<pwmgr_core::auth::AuthError> for CommandError {
-    fn from(e: pwmgr_core::auth::AuthError) -> Self {
-        use pwmgr_core::auth::AuthError;
+impl From<crate::auth::AuthError> for CommandError {
+    fn from(e: crate::auth::AuthError) -> Self {
+        use crate::auth::AuthError;
         match e {
             // Single generic message on any auth failure - TRD §3.2 / THREAT_MODEL wrong-password
             // oracle: no distinguishing signal about which of username/password/vault was wrong.
@@ -46,9 +46,9 @@ impl From<pwmgr_core::auth::AuthError> for CommandError {
     }
 }
 
-impl From<pwmgr_core::vault::VaultError> for CommandError {
-    fn from(e: pwmgr_core::vault::VaultError) -> Self {
-        use pwmgr_core::vault::VaultError;
+impl From<crate::vault::VaultError> for CommandError {
+    fn from(e: crate::vault::VaultError) -> Self {
+        use crate::vault::VaultError;
         match e {
             VaultError::NotFound => {
                 CommandError::new("not_found", "That item no longer exists.")
@@ -61,16 +61,16 @@ impl From<pwmgr_core::vault::VaultError> for CommandError {
     }
 }
 
-impl From<pwmgr_core::generator::GenError> for CommandError {
-    fn from(e: pwmgr_core::generator::GenError) -> Self {
+impl From<crate::generator::GenError> for CommandError {
+    fn from(e: crate::generator::GenError) -> Self {
         // GenError's Display strings are already safe, user-facing validation text - surface directly.
         invalid_input_error(&e.to_string())
     }
 }
 
-impl From<pwmgr_core::portio::PortioError> for CommandError {
-    fn from(e: pwmgr_core::portio::PortioError) -> Self {
-        use pwmgr_core::portio::PortioError;
+impl From<crate::portio::PortioError> for CommandError {
+    fn from(e: crate::portio::PortioError) -> Self {
+        use crate::portio::PortioError;
         match e {
             PortioError::Write => internal_error(),
             PortioError::Parse
@@ -107,12 +107,19 @@ pub fn confirm_required_error(message: &str) -> CommandError {
 
 impl CommandError {
     // `code`/`message` are deliberately private (see the doc comment on the struct) so no call
-    // site can construct a CommandError by hand - but callers outside this module (e.g.
-    // commands.rs's tests) still need read access to assert on the code without falling back to
-    // matching on the derived Debug string. A read-only accessor preserves the "no external
-    // construction" guarantee (it can't be used to build an instance) while allowing that.
-    #[cfg(test)]
-    pub(crate) fn code(&self) -> &str {
+    // site can construct a CommandError by hand - but callers outside this module still need
+    // read access to assert on the code without falling back to matching on the derived Debug
+    // string. A read-only accessor preserves the "no external construction" guarantee (it can't
+    // be used to build an instance) while allowing that.
+    //
+    // Unconditional `pub fn`, not `#[cfg(test)] pub(crate)`: `#[cfg(test)]` only compiles in when
+    // this defining crate (pwmgr-core) is itself under `cargo test`, not when a dependent crate
+    // (src-tauri, viewer-src-tauri) runs its own tests against this now-external type. Both
+    // binaries' test suites need `.code()` on errors returned from their promoted do_* functions.
+    // Not a new information exposure: `code`/`message` are already Serialize'd across IPC to the
+    // frontend on every error today: this just adds a same-information read accessor for Rust
+    // callers too.
+    pub fn code(&self) -> &str {
         &self.code
     }
 }
@@ -120,7 +127,7 @@ impl CommandError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pwmgr_core::auth::AuthError;
+    use crate::auth::AuthError;
 
     #[test]
     fn auth_error_invalid_credentials_maps_to_single_generic_message() {
@@ -141,7 +148,7 @@ mod tests {
         // that must never reach the frontend verbatim - THREAT_MODEL's wrong-password-oracle
         // concern generalizes to "don't leak internals through any error path," not just login.
         let err = CommandError::from(AuthError::Registry(
-            pwmgr_core::registry::RegistryError::NotFound,
+            crate::registry::RegistryError::NotFound,
         ));
         assert_eq!(err.code, "internal_error");
         assert_eq!(err.message, "Something went wrong. Please try again.");

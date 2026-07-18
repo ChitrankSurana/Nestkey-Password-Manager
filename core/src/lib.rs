@@ -1,4 +1,8 @@
+pub mod autolock;
+pub mod commands;
 pub mod crypto;
+pub mod dto;
+pub mod error;
 pub mod registry;
 pub mod vault;
 pub mod auth;
@@ -7,3 +11,6 @@ pub mod generator;
 pub mod backup;
 pub mod portio;
 pub mod health;
+pub mod paths;
+pub mod config;
+pub mod state;

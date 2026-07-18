@@ -3165,9 +3165,24 @@ dependencies = [
  "csv",
  "rand 0.8.6",
  "rusqlite",
+ "serde",
+ "serde_json",
  "subtle",
  "tempfile",
  "thiserror 1.0.69",
+ "zeroize",
+]
+
+[[package]]
+name = "pwmgr-viewer"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "pwmgr-core",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tokio",
  "zeroize",
 ]
 

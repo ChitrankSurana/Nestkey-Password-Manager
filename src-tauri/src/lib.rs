@@ -1,15 +1,10 @@
-mod autolock;
 mod commands;
-mod config;
 mod dto;
-mod error;
 mod hibp;
-mod paths;
-mod state;
 
-use config::Config;
-use paths::AppPaths;
-use state::AppState;
+use pwmgr_core::config::Config;
+use pwmgr_core::paths::AppPaths;
+use pwmgr_core::state::AppState;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
@@ -46,7 +41,7 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     let state = handle.state::<AppState>();
-                    if autolock::tick(&state, &pwmgr_core::session::SystemClock) {
+                    if pwmgr_core::autolock::tick(&state, &pwmgr_core::session::SystemClock) {
                         if let Err(e) = handle.emit("vault-locked", ()) {
                             eprintln!("warning: failed to emit vault-locked event ({e})");
                         }

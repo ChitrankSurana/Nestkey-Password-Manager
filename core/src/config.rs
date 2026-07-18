@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-pub(crate) const VALID_THEMES: [&str; 2] = ["light", "dark"];
-pub(crate) const VALID_AUTO_LOCK_MINUTES: [u32; 3] = [1, 5, 15];
-pub(crate) const VALID_STRENGTH_ALGORITHMS: [&str; 2] = ["simple", "zxcvbn"];
-pub(crate) const VALID_ACCENT_COLORS: [&str; 5] = ["indigo", "sky", "teal", "purple", "pink"];
-pub(crate) const VALID_OLD_PASSWORD_DAYS: [u32; 3] = [90, 180, 365];
+pub const VALID_THEMES: [&str; 2] = ["light", "dark"];
+pub const VALID_AUTO_LOCK_MINUTES: [u32; 3] = [1, 5, 15];
+pub const VALID_STRENGTH_ALGORITHMS: [&str; 2] = ["simple", "zxcvbn"];
+pub const VALID_ACCENT_COLORS: [&str; 5] = ["indigo", "sky", "teal", "purple", "pink"];
+pub const VALID_OLD_PASSWORD_DAYS: [u32; 3] = [90, 180, 365];
 
 fn default_theme() -> String {
     "dark".to_string()
