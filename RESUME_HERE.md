@@ -94,7 +94,17 @@ else.**
   Commit `02d9857`. Both spec-compliance and code-quality review passed with zero findings — a
   1-character type change (`?`) plus one JSX conditional wrap, `App.tsx` needed zero changes (backward
   compatible), `npm run build` clean.
-- **Tasks 13-15: not started.** User confirmed continuing through the rest of M5 (asked fresh at the
+- **Task 13** (`viewer.html` Vite entry point + `ViewerApp.tsx`) — **DONE, reviewed.** Commit `a8ec143`.
+  Spec-compliance clean. Code-quality found one non-blocking "Important" finding worth remembering for
+  the milestone-end summary: `ViewerApp.tsx` duplicates ~23 lines (theme-loading effect + `vault-locked`
+  listener) from `App.tsx` rather than sharing via a hook — larger than the plan's own "3 lines" framing
+  suggested, and arguably inconsistent with this same file's own use of a shared `useActivityWatcher`
+  hook for a similar need. The plan text explicitly pre-approved this duplication as a deliberate design
+  choice at authoring time, so it wasn't fixed now — flagged as a possible future cleanup
+  (`useThemeFromConfig()` hook), not a blocker. This task's build deliberately fails at this checkpoint
+  (`Cannot find module './screens/ViewerVault'`) — that's the plan's own intended intermediate state,
+  verified to be the ONE sanctioned error with nothing else masked behind it; Task 14 resolves it.
+- **Tasks 14-15: not started.** User confirmed continuing through the rest of M5 (asked fresh at the
   Slice 2/3 boundary, answered "Yes, continue through M5" — also asked to update this file after every
   task completion, not just at slice boundaries, going forward).
 
