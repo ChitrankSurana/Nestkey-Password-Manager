@@ -1,12 +1,10 @@
-# Resume Notes — Password Manager — M5 (read-only viewer) COMPLETE, all 15 tasks + milestone-wide review passed, ready to push + open PR
+# Resume Notes — Password Manager — M5 (read-only viewer) COMPLETE, pushed, PR #2 open
 
-**Written:** 2026-07-18. **All 15 tasks of M5 are done.** Every task individually implemented and
-reviewed (spec-compliance + code-quality), all 3 slice boundaries checked in with the user, Task 15's
-final regression is clean, and the milestone-wide spec-compliance + code-quality reviews (covering the
-whole 15-task diff at once, looking for cross-cutting issues no single task's review could see) both
-came back **zero Critical/Important findings**. **The only remaining step is asking the user whether to
-push the branch and open a GitHub PR** (a visible, hard-to-reverse action — confirm scope first, same
-habit as M4). **Read this first before doing anything else.**
+**Written:** 2026-07-18. **All 15 tasks of M5 are done, reviewed clean, branch pushed, PR open:**
+**https://github.com/ChitrankSurana/Password_Manager_Local/pull/2**. User was asked whether to push +
+open a PR (a visible, hard-to-reverse action) and said yes. Nothing left to do on M5 itself except
+wait for the PR to be reviewed/merged (a separate future step — see "What to do next"). **Read this
+first before doing anything else.**
 
 ## Where everything stands
 
@@ -152,13 +150,10 @@ habit as M4). **Read this first before doing anything else.**
   ("Yes, continue through M5") and asked to update this file after every task completion — done for
   every task through the milestone-wide reviews.
 
-## What to do next (only remaining step)
+## What to do next
 
-1. **Ask the user whether to push the `m5-readonly-viewer` branch and open a GitHub PR** — same habit
-   as M4 (PR #1 on `ChitrankSurana/Password_Manager_Local`). This is a visible, harder-to-reverse action
-   — confirm scope with the user first, don't just do it. If yes: push the branch, open the PR (title/
-   description summarizing the 3-slice structure and the one real security fix caught+closed in Task 14
-   would be good PR-description material), report the PR URL back to the user.
+1. **PR #2 is open, awaiting review/merge:** https://github.com/ChitrankSurana/Password_Manager_Local/pull/2
+   — this is a human decision point, not something to act on proactively.
 2. **After the PR is merged (a separate future step, not to be done proactively):** sync local `main` to
    match, same as M4's `b22f2c8` merge-back. Update the ROOT `RESUME_HERE.md` (not this worktree one) to
    reflect M5 done and merged, matching the pattern the root file used for M1-M4.
