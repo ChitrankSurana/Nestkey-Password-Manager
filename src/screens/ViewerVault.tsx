@@ -20,6 +20,11 @@ export function ViewerVault({ username }: { username: string }) {
   }
 
   async function runSearch(q: string) {
+    // A stale expanded/revealed site must not resurface just because the search query changed
+    // (e.g. clearing back to browse, or re-matching a previously-expanded site).
+    setExpandedSiteId(null);
+    setCredentials([]);
+    setRevealedId(null);
     if (q.trim() === "") {
       setSearchResults(null);
       return;
