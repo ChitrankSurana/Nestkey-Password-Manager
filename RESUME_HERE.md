@@ -1,9 +1,12 @@
-# Resume Notes — Password Manager — M5 (read-only viewer), Slice 1 + Slice 2 fully done, checkpointing before Slice 3
+# Resume Notes — Password Manager — M5 (read-only viewer) COMPLETE, all 15 tasks + milestone-wide review passed, ready to push + open PR
 
-**Written:** 2026-07-18. Slices 1 and 2 are both complete, reviewed (spec-compliance + code-quality),
-and hygiene follow-ups applied. Paused at the Slice 2/Slice 3 boundary per the plan's own checkpoint
-pattern — same as was done at the Slice 1/Slice 2 boundary. **Read this first before doing anything
-else.**
+**Written:** 2026-07-18. **All 15 tasks of M5 are done.** Every task individually implemented and
+reviewed (spec-compliance + code-quality), all 3 slice boundaries checked in with the user, Task 15's
+final regression is clean, and the milestone-wide spec-compliance + code-quality reviews (covering the
+whole 15-task diff at once, looking for cross-cutting issues no single task's review could see) both
+came back **zero Critical/Important findings**. **The only remaining step is asking the user whether to
+push the branch and open a GitHub PR** (a visible, hard-to-reverse action — confirm scope first, same
+habit as M4). **Read this first before doing anything else.**
 
 ## Where everything stands
 
@@ -18,15 +21,14 @@ else.**
   - **Slice 1** (Tasks 1-9): promote `AppState`/`AppPaths`/`Config`/`CommandError`/4 read-path DTOs/8
     shared `do_*` functions from `src-tauri` into `pwmgr-core`. **DONE, reviewed, approved.**
   - **Slice 2** (Tasks 10-11): new `viewer-src-tauri` binary crate (package `pwmgr-viewer`), 9-command
-    read-only IPC surface, own `tauri.conf.json`/capabilities. **DONE and spec-compliance-reviewed
-    clean. Code-quality review is the one thing still outstanding — see "What to do next" below.**
+    read-only IPC surface, own `tauri.conf.json`/capabilities. **DONE, reviewed, approved.**
   - **Slice 3** (Tasks 12-14): frontend — `viewer.html` Vite entry point, `Login.tsx`'s
-    `onSwitchToRegister` made optional, new `ViewerVault.tsx` screen. **Not started.**
-  - **Task 15**: final full-workspace regression + milestone review. **Not started.**
+    `onSwitchToRegister` made optional, new `ViewerVault.tsx` screen. **DONE, reviewed, approved.**
+  - **Task 15**: final full-workspace regression + milestone review. **DONE.**
 - **Execution mode:** `superpowers:subagent-driven-development` — fresh implementer subagent per task,
   fresh spec-compliance reviewer, fresh code-quality reviewer, cross-task review at each slice boundary
-  (end of Slice 1 after Task 9 — done; end of Slice 2 after Task 11 — spec-compliance done, code-quality
-  outstanding), full-milestone review at the end (after Task 15).
+  (all 3 done), full-milestone review at the end (done, after Task 15). **All complete — the milestone
+  is done, only the push/PR decision remains.**
 
 ### Progress so far
 
@@ -117,36 +119,58 @@ else.**
   against the actual shipped code, not just the fix's self-report. `npm run build` succeeds end-to-end,
   producing both `dist/index.html` and `dist/viewer.html` for the first time (Task 13 had left it
   deliberately failing on the missing `ViewerVault` module this task provided).
-- **Slice 3 (Tasks 12-14) is now fully complete.** One outstanding non-blocking note carried from Task 13
-  for the milestone-end summary: `ViewerApp.tsx` duplicates ~23 lines from `App.tsx` (theme-loading +
-  `vault-locked` listener) rather than sharing via a hook, larger than the plan's own "3 lines" framing —
-  plan explicitly pre-approved this, not fixed, just worth mentioning to the user at the end.
-- **Task 15 (final full-workspace regression + milestone-end review) — IN PROGRESS.** Not started yet.
-  User confirmed continuing through the rest of M5 (asked fresh at the Slice 2/3 boundary, answered
-  "Yes, continue through M5" — also asked to update this file after every task completion, not just at
-  slice boundaries, which has been done for every task since).
+- **Slice 3 (Tasks 12-14) is fully complete.**
+- **Task 15 (final full-workspace regression + milestone-end review) — DONE.** `cargo build --workspace`
+  clean; `cargo test --workspace` → **224/224** (72 `pwmgr-app` + 150 `pwmgr-core` + 2 e2e), 0 failed;
+  `npm run build` → 0 TypeScript errors, both `dist/index.html` and `dist/viewer.html` produced. No
+  fix-up needed, so per the plan's own "no-op checkpoint" design, no commit was made for this task.
+- **Milestone-wide spec-compliance review (whole 15-task diff, `b22f2c8..HEAD`) — DONE, clean, zero
+  issues.** Re-verified holistically (not just trusting each task's own isolated review): `viewer-src-
+  tauri`'s 9-command surface still has zero write path at the FINAL state; `ViewerVault.tsx` (post-fix)
+  calls only read-only commands; `Login.tsx`'s optional prop doesn't affect the main app's Register flow
+  (`App.tsx` still passes it unconditionally); `core/` has been byte-for-byte untouched since Task 9
+  (`git diff ef4aa14..HEAD -- core/` empty) — zero drift from later slices; cross-slice integration
+  clean (no orphaned frontend/backend command mismatch); 224/224 tests, clean build, both dist HTML
+  files confirmed.
+- **Milestone-wide code-quality review (whole 15-task diff) — DONE, clean, zero Critical/Important
+  findings.** This is the review that specifically looks for things no single task's review could see.
+  Notable cross-cutting finding: `viewer-src-tauri/src/lib.rs` and `src-tauri/src/lib.rs` independently
+  duplicate the entire `run()` scaffold (~40 lines: AppState construction, the autolock ticker) for the
+  exact same structural reason as `ViewerApp.tsx`'s flagged duplication (`pwmgr-core` deliberately has
+  no Tauri dependency, so this Tauri-`AppHandle`-bound wiring can't be shared without coupling `core` to
+  a UI framework). Seeing the SAME pattern recur independently on both the Rust and frontend sides was
+  read as evidence this is this codebase's actual established convention for "two independently-
+  bootstrapped entry points," not an isolated shortcut — **final verdict: the `ViewerApp.tsx`
+  duplication does NOT block the milestone gate, confirmed rather than just deferred.** One harmless,
+  non-blocking Minor note: the viewer's production bundle ships ~15 unused write-command `invoke()`
+  wrapper functions from the shared `src/lib/api.ts` (dead code in the WebView, but Tauri's
+  `invoke_handler!` registration is the real enforcement boundary — calling any of them would fail at
+  the IPC layer regardless, since they were never registered in `viewer-src-tauri`). Not worth splitting
+  `api.ts` for a few KB of unreachable dead code — noted for a future milestone if bundle size ever
+  matters.
+- **M5 IS COMPLETE.** User confirmed continuing through the rest of M5 at the Slice 2/3 boundary
+  ("Yes, continue through M5") and asked to update this file after every task completion — done for
+  every task through the milestone-wide reviews.
 
-## What to do next
+## What to do next (only remaining step)
 
-1. **Present the Slice 2 summary to the user and ask whether to continue into Slice 3** (Tasks 12-14:
-   frontend), same as was done at the Slice 1 boundary. **Don't skip this check-in** — it's an explicit
-   checkpoint in the plan's own text, and the user has been asked fresh at every slice boundary so far
-   in this session, not assumed from a prior "keep going." (If you're reading this because a session
-   ended right after this point without the user's answer being captured, ask again — don't assume yes.)
-2. **Then continue Task 12 onward exactly per the plan file**, task by task, using the same implementer
-   → spec-reviewer → code-quality-reviewer cycle. Tasks 12-13 are small (a `viewer.html` Vite entry
-   point + making one prop optional on `Login.tsx`); Task 14 (`ViewerVault.tsx`, a new screen) is the
-   biggest remaining task. **Pause again at the end of Slice 3 (after Task 14)** for a cross-task
-   review plus user check-in, per the plan's own pattern, before Task 15's final full-milestone review.
-3. **When all 15 tasks + the full-milestone review are done:** push the branch and open a GitHub PR,
-   same habit as M4 (confirm with the user first — pushing/opening a PR is a visible, harder-to-reverse
-   action).
-4. **Manual UI walkthrough (including the viewer's own installer/bundle) stays deferred** until M6 is
-   complete, per the standing project-wide decision — not something to do early for M5 alone.
-5. **Remember the deferred decision from M4:** once M6 is complete, remind the user about the Health
+1. **Ask the user whether to push the `m5-readonly-viewer` branch and open a GitHub PR** — same habit
+   as M4 (PR #1 on `ChitrankSurana/Password_Manager_Local`). This is a visible, harder-to-reverse action
+   — confirm scope with the user first, don't just do it. If yes: push the branch, open the PR (title/
+   description summarizing the 3-slice structure and the one real security fix caught+closed in Task 14
+   would be good PR-description material), report the PR URL back to the user.
+2. **After the PR is merged (a separate future step, not to be done proactively):** sync local `main` to
+   match, same as M4's `b22f2c8` merge-back. Update the ROOT `RESUME_HERE.md` (not this worktree one) to
+   reflect M5 done and merged, matching the pattern the root file used for M1-M4.
+3. **Still deferred to after M6:** the manual UI walkthrough covering M1 through M6 in one pass — do NOT
+   do this early for M5 alone, per the standing project-wide decision (repeated in every milestone's
+   resume notes so far).
+4. **Remember the deferred decision from M4:** once M6 is complete, remind the user about the Health
    Dashboard's "Weak" classification always using zxcvbn regardless of the Settings algorithm toggle
    (user-approved spec deviation "for now") — ask if they want it changed. See
    `project_m4_weak_scoring_followup.md` in the memory system.
+5. **Remaining roadmap after M5:** **M6** (localhost web mode, responsive layout), then **Later**
+   (Android companion + sync design, macOS/Linux builds) — not started.
 
 ## Toolchain (already installed, but NOT on PATH for fresh shells)
 
