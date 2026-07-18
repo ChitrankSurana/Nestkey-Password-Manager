@@ -1,17 +1,19 @@
-# Resume Notes — Password Manager — M5 (read-only viewer) COMPLETE, pushed, PR #2 open
+# Resume Notes — Password Manager — M1-M5 all merged to `main`, M6 not started
 
-**Written:** 2026-07-18. **All 15 tasks of M5 are done, reviewed clean, branch pushed, PR open:**
-**https://github.com/ChitrankSurana/Password_Manager_Local/pull/2**. User was asked whether to push +
-open a PR (a visible, hard-to-reverse action) and said yes. Nothing left to do on M5 itself except
-wait for the PR to be reviewed/merged (a separate future step — see "What to do next"). **Read this
-first before doing anything else.**
+**Written:** 2026-07-18. **M5 (read-only viewer) is merged.** PR #2 (`m5-readonly-viewer` → `main`)
+merged via `57bced3`, local `main` fast-forwarded to match, PR #2 closed. This file is now on `main`
+itself (not a worktree copy) — the `m5-readonly-viewer` and `m4-health-nav-theming` worktrees/branches
+are being cleaned up (removed once fully merged, per this project's standing worktree-per-milestone
+pattern). **M6 ("Localhost-bound web mode, responsive layout," per `docs/PRD.md` §7) has not started
+yet** — no design spec exists, and per the user's explicit choice this session, M6 will go through the
+same spec-first process M4/M5 used (brainstorm → written design spec → user approval → THEN an
+implementation plan) before any code is written. **Read this first before doing anything else.**
 
 ## Where everything stands
 
-- **Project root:** `E:\Coding_Projects-CS\Account_1\Password_Manager` — this file lives in the worktree
-  at `.worktrees/m5-readonly-viewer`, branch `m5-readonly-viewer`, branched from `main` at `b22f2c8`
-  (M1-M4 merged).
-- **M1-M4 are DONE and merged to `main`** (unchanged). See the root `RESUME_HERE.md` for that history.
+- **Project root:** `E:\Coding_Projects-CS\Account_1\Password_Manager` — `main` branch, all of M1-M5
+  merged in.
+- **M1-M4 are DONE and merged to `main`.**
 - **The design spec:** `docs/superpowers/specs/2026-07-16-m5-readonly-viewer-design.md` — approved,
   committed. Don't re-brainstorm.
 - **The plan:** `docs/superpowers/plans/2026-07-16-m5-readonly-viewer.md` — 15 tasks (0-15) across 3
@@ -152,20 +154,34 @@ first before doing anything else.**
 
 ## What to do next
 
-1. **PR #2 is open, awaiting review/merge:** https://github.com/ChitrankSurana/Password_Manager_Local/pull/2
-   — this is a human decision point, not something to act on proactively.
-2. **After the PR is merged (a separate future step, not to be done proactively):** sync local `main` to
-   match, same as M4's `b22f2c8` merge-back. Update the ROOT `RESUME_HERE.md` (not this worktree one) to
-   reflect M5 done and merged, matching the pattern the root file used for M1-M4.
-3. **Still deferred to after M6:** the manual UI walkthrough covering M1 through M6 in one pass — do NOT
-   do this early for M5 alone, per the standing project-wide decision (repeated in every milestone's
-   resume notes so far).
-4. **Remember the deferred decision from M4:** once M6 is complete, remind the user about the Health
+1. **M5 is merged.** PR #2 merged via `57bced3`, local `main` fast-forwarded to match, pushed.
+2. **Worktree/branch cleanup for M4 and M5** — both fully merged, safe to remove
+   (`.worktrees/m5-readonly-viewer`, `.worktrees/m4-health-nav-theming`, local branches
+   `m5-readonly-viewer`/`m4-health-nav-theming`). In progress as of this commit.
+3. **M6 is starting via the spec-first process** (user's explicit choice this session, matching M4/M5's
+   pattern): a new isolated worktree, `superpowers:brainstorming` to explore the design space with the
+   user, then a written design spec at `docs/superpowers/specs/2026-07-18-m6-web-mode-responsive-design.md`
+   for the user to review and approve — **only after that** does an implementation plan get written.
+   M6 covers two distinct pieces per `docs/PRD.md` §7: a localhost-bound (127.0.0.1-only) HTTP web-mode
+   layer with session-token auth reusing the existing `pwmgr-core`/`commands.rs` surface (per
+   `docs/ARCHITECTURE.md:56-57`, `docs/TRD.md:68-70`), and a separate responsive-CSS pass. Key open
+   design questions the existing docs don't answer yet (worth raising during brainstorming): web
+   framework choice for the new HTTP layer (no server framework exists in this codebase yet — `axum` is
+   a natural fit given `tokio` is already a workspace dependency via M5's `viewer-src-tauri`, but this
+   is a real decision, not an assumption); session-token lifetime/rotation and CSRF protection (the TRD
+   only specifies the token/cookie/bind-address basics); how "enable web mode" gets toggled in the UI;
+   whether web mode reuses the M5 viewer's read-only `do_*` surface or needs the full read+write
+   command set (a browser session presumably needs to add/edit credentials, unlike the read-only
+   viewer) — this determines whether it's architecturally closer to `src-tauri` or `viewer-src-tauri`.
+4. **Still deferred to after M6:** the manual UI walkthrough covering M1 through M6 in one pass — do NOT
+   do this early, per the standing project-wide decision (repeated in every milestone's resume notes so
+   far).
+5. **Remember the deferred decision from M4:** once M6 is complete, remind the user about the Health
    Dashboard's "Weak" classification always using zxcvbn regardless of the Settings algorithm toggle
    (user-approved spec deviation "for now") — ask if they want it changed. See
    `project_m4_weak_scoring_followup.md` in the memory system.
-5. **Remaining roadmap after M5:** **M6** (localhost web mode, responsive layout), then **Later**
-   (Android companion + sync design, macOS/Linux builds) — not started.
+6. **Remaining roadmap after M6:** **Later** (Android companion + sync design, macOS/Linux builds) —
+   not started.
 
 ## Toolchain (already installed, but NOT on PATH for fresh shells)
 
