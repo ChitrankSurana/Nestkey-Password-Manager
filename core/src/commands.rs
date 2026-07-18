@@ -341,7 +341,12 @@ pub fn do_restore_backup(
 
     // Write to a temp path and commit the registry row BEFORE renaming into place: rename is the
     // last step and is effectively atomic on the same volume, so the failure window is far narrower
-    // than a plain write-then-upsert ordering.
+    // than a plain write-then-upsert ordering. Note this is the mirror-opposite order of
+    // auth::register_user (vault-before-registry, to avoid an orphaned registry row) - here a crash
+    // between the upsert and the rename can leave the registry pointing at a username with no vault
+    // file yet. That's recoverable (retrying the same restore is deterministic and self-heals via the
+    // already_exists check above), unlike reversing the order, which would risk destroying the old
+    // vault file with no rollback if the upsert then failed.
     let tmp_path = vault_path.with_extension("vault.tmp");
     std::fs::write(&tmp_path, &vault_bytes).map_err(|_| crate::error::internal_error())?;
 
