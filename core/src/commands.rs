@@ -1,3 +1,4 @@
+use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
 use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, SearchResultDto, SiteDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
@@ -152,6 +153,97 @@ pub fn do_purge_trash(state: &AppState) -> Result<usize, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     Ok(crate::vault::purge_trash(conn)?)
+}
+
+pub fn do_update_auto_lock_minutes(
+    state: &AppState,
+    paths: &AppPaths,
+    minutes: u32,
+) -> Result<(), CommandError> {
+    if !VALID_AUTO_LOCK_MINUTES.contains(&minutes) {
+        return Err(crate::error::invalid_input_error("Auto-lock must be 1, 5, or 15 minutes."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.auto_lock_minutes = minutes;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    state
+        .session
+        .lock()
+        .unwrap()
+        .set_timeout(std::time::Duration::from_secs(minutes as u64 * 60));
+    Ok(())
+}
+
+pub fn do_update_strength_algorithm(
+    state: &AppState,
+    paths: &AppPaths,
+    algorithm: &str,
+) -> Result<(), CommandError> {
+    if !VALID_STRENGTH_ALGORITHMS.contains(&algorithm) {
+        return Err(crate::error::invalid_input_error("Unknown strength algorithm."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.strength_algorithm = algorithm.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_theme(state: &AppState, paths: &AppPaths, theme: &str) -> Result<(), CommandError> {
+    if theme != "light" && theme != "dark" {
+        return Err(crate::error::invalid_input_error("Theme must be \"light\" or \"dark\"."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.theme = theme.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_accent_color(state: &AppState, paths: &AppPaths, color: &str) -> Result<(), CommandError> {
+    if !VALID_ACCENT_COLORS.contains(&color) {
+        return Err(crate::error::invalid_input_error("Unknown accent color."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.accent_color = color.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_old_password_days(state: &AppState, paths: &AppPaths, days: u32) -> Result<(), CommandError> {
+    if !VALID_OLD_PASSWORD_DAYS.contains(&days) {
+        return Err(crate::error::invalid_input_error("Old-password threshold must be 90, 180, or 365 days."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.old_password_days = days;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_hibp_opt_in(state: &AppState, paths: &AppPaths, enabled: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.hibp_opt_in = enabled;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_nav_collapsed(state: &AppState, paths: &AppPaths, collapsed: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.nav_collapsed = collapsed;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -474,5 +566,184 @@ mod tests {
         let purged = do_purge_trash(&state).unwrap();
         assert_eq!(purged, 1);
         assert!(do_list_trash(&state).unwrap().is_empty());
+    }
+
+    #[test]
+    fn get_config_returns_current_theme_and_auto_lock_minutes() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        let config = do_get_config(&state);
+        assert_eq!(config.theme, "dark");
+        assert_eq!(config.auto_lock_minutes, 5);
+    }
+
+    #[test]
+    fn update_auto_lock_minutes_persists_and_updates_live_session_timeout() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        do_update_auto_lock_minutes(&state, &paths, 1).unwrap();
+
+        assert_eq!(do_get_config(&state).auto_lock_minutes, 1);
+        let reloaded = Config::load(&paths.config_path()).unwrap();
+        assert_eq!(reloaded.auto_lock_minutes, 1);
+    }
+
+    #[test]
+    fn update_auto_lock_minutes_rejects_an_out_of_range_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        let result = do_update_auto_lock_minutes(&state, &paths, 7);
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_auto_lock_minutes_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).auto_lock_minutes;
+        let result = do_update_auto_lock_minutes(&state, &bad_paths, 1);
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).auto_lock_minutes,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
+    fn get_config_includes_strength_algorithm() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_get_config(&state).strength_algorithm, "simple");
+    }
+
+    #[test]
+    fn update_strength_algorithm_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_strength_algorithm(&state, &paths, "zxcvbn").unwrap();
+        assert_eq!(do_get_config(&state).strength_algorithm, "zxcvbn");
+        assert_eq!(Config::load(&paths.config_path()).unwrap().strength_algorithm, "zxcvbn");
+    }
+
+    #[test]
+    fn update_strength_algorithm_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        assert_eq!(do_update_strength_algorithm(&state, &paths, "bogus").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_strength_algorithm_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+
+        let before = do_get_config(&state).strength_algorithm;
+        let result = do_update_strength_algorithm(&state, &bad_paths, "zxcvbn");
+
+        assert!(result.is_err());
+        assert_eq!(
+            do_get_config(&state).strength_algorithm,
+            before,
+            "state.config must not change when the save fails"
+        );
+    }
+
+    #[test]
+    fn get_config_includes_all_m4_fields() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        let config = do_get_config(&state);
+        assert_eq!(config.accent_color, "indigo");
+        assert_eq!(config.old_password_days, 365);
+        assert_eq!(config.hibp_opt_in, false);
+        assert_eq!(config.nav_collapsed, false);
+    }
+
+    #[test]
+    fn update_theme_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_theme(&state, &paths, "light").unwrap();
+        assert_eq!(do_get_config(&state).theme, "light");
+        assert_eq!(do_update_theme(&state, &paths, "neon").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_accent_color_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_accent_color(&state, &paths, "sky").unwrap();
+        assert_eq!(do_get_config(&state).accent_color, "sky");
+        assert_eq!(do_update_accent_color(&state, &paths, "chartreuse").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_old_password_days_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_old_password_days(&state, &paths, 90).unwrap();
+        assert_eq!(do_get_config(&state).old_password_days, 90);
+        assert_eq!(do_update_old_password_days(&state, &paths, 42).unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_hibp_opt_in_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_hibp_opt_in(&state, &paths, true).unwrap();
+        assert_eq!(do_get_config(&state).hibp_opt_in, true);
+        let reloaded = Config::load(&paths.config_path()).unwrap();
+        assert_eq!(reloaded.hibp_opt_in, true);
+    }
+
+    #[test]
+    fn update_nav_collapsed_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_nav_collapsed(&state, &paths, true).unwrap();
+        assert_eq!(do_get_config(&state).nav_collapsed, true);
+    }
+
+    #[test]
+    fn update_theme_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+        let before = do_get_config(&state).theme;
+        let result = do_update_theme(&state, &bad_paths, "light");
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).theme, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn update_accent_color_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+        let before = do_get_config(&state).accent_color;
+        let result = do_update_accent_color(&state, &bad_paths, "sky");
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).accent_color, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn update_old_password_days_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+        let before = do_get_config(&state).old_password_days;
+        let result = do_update_old_password_days(&state, &bad_paths, 90);
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).old_password_days, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn update_hibp_opt_in_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+        let before = do_get_config(&state).hibp_opt_in;
+        let result = do_update_hibp_opt_in(&state, &bad_paths, true);
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).hibp_opt_in, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn update_nav_collapsed_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+        let before = do_get_config(&state).nav_collapsed;
+        let result = do_update_nav_collapsed(&state, &bad_paths, true);
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).nav_collapsed, before, "state.config must not change when the save fails");
     }
 }
