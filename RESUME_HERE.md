@@ -104,9 +104,27 @@ else.**
   (`useThemeFromConfig()` hook), not a blocker. This task's build deliberately fails at this checkpoint
   (`Cannot find module './screens/ViewerVault'`) — that's the plan's own intended intermediate state,
   verified to be the ONE sanctioned error with nothing else masked behind it; Task 14 resolves it.
-- **Tasks 14-15: not started.** User confirmed continuing through the rest of M5 (asked fresh at the
-  Slice 2/3 boundary, answered "Yes, continue through M5" — also asked to update this file after every
-  task completion, not just at slice boundaries, going forward).
+- **Task 14** (`src/screens/ViewerVault.tsx` — searchable list, inline expand, reveal, copy) — **DONE,
+  reviewed, one real security-relevant fix applied.** Commit `8f1fbd5`. Spec-compliance review gave
+  standalone rigorous attention to 3 security-critical properties and confirmed all clean: no eager
+  decryption (credentials fetched only on explicit site click), reveal toggle makes zero IPC calls
+  (pure client state), `copyToClipboard` call shape matches `api.ts` exactly. Code-quality review found
+  one real Important issue: a previously-revealed secret could silently resurface unmasked after a
+  search-box interaction (typing a query didn't reset `expandedSiteId`/`credentials`/`revealedId`, so
+  clearing/retyping a matching query would re-show an already-expanded, already-revealed row with zero
+  new click). **Fixed in commit `c9a2684`** (reset those 3 states at the top of `runSearch`, unconditional,
+  before the early-return) — re-reviewed and confirmed the gap is genuinely closed via manual trace
+  against the actual shipped code, not just the fix's self-report. `npm run build` succeeds end-to-end,
+  producing both `dist/index.html` and `dist/viewer.html` for the first time (Task 13 had left it
+  deliberately failing on the missing `ViewerVault` module this task provided).
+- **Slice 3 (Tasks 12-14) is now fully complete.** One outstanding non-blocking note carried from Task 13
+  for the milestone-end summary: `ViewerApp.tsx` duplicates ~23 lines from `App.tsx` (theme-loading +
+  `vault-locked` listener) rather than sharing via a hook, larger than the plan's own "3 lines" framing —
+  plan explicitly pre-approved this, not fixed, just worth mentioning to the user at the end.
+- **Task 15 (final full-workspace regression + milestone-end review) — IN PROGRESS.** Not started yet.
+  User confirmed continuing through the rest of M5 (asked fresh at the Slice 2/3 boundary, answered
+  "Yes, continue through M5" — also asked to update this file after every task completion, not just at
+  slice boundaries, which has been done for every task since).
 
 ## What to do next
 
