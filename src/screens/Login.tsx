@@ -7,7 +7,7 @@ export function Login({
   onSwitchToRegister,
 }: {
   onSuccess: (username: string) => void;
-  onSwitchToRegister: () => void;
+  onSwitchToRegister?: () => void;
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -68,15 +68,17 @@ export function Login({
             Log in
           </button>
         </Tooltip>
-        <Tooltip text="Create a new account" className="w-full">
-          <button
-            type="button"
-            onClick={onSwitchToRegister}
-            className="w-full text-sm underline"
-          >
-            Need an account? Register
-          </button>
-        </Tooltip>
+        {onSwitchToRegister && (
+          <Tooltip text="Create a new account" className="w-full">
+            <button
+              type="button"
+              onClick={onSwitchToRegister}
+              className="w-full text-sm underline"
+            >
+              Need an account? Register
+            </button>
+          </Tooltip>
+        )}
       </form>
     </div>
   );
