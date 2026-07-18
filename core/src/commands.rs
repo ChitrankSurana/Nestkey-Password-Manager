@@ -1,5 +1,5 @@
 use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, GenerateRequest, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::session::SystemClock;
@@ -362,6 +362,128 @@ pub fn do_restore_backup(
         return Err(crate::error::internal_error());
     }
     Ok(())
+}
+
+fn build_csv_rows(
+    conn: &rusqlite::Connection,
+    key: &crate::crypto::VaultKey,
+) -> Result<Vec<crate::portio::CsvRow>, CommandError> {
+    let sites = crate::vault::list_sites(conn)?;
+    let mut rows = Vec::new();
+    for site in sites {
+        let creds = crate::vault::list_credentials_for_site(conn, key, site.id)?;
+        for c in creds {
+            rows.push(crate::portio::CsvRow {
+                site_name: site.name.clone(),
+                url: site.url.clone(),
+                notes: site.notes.clone(),
+                username: c.username,
+                secret: c.secret,
+                remarks: c.remarks,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+fn append_plaintext_export_log(paths: &AppPaths, path: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(paths.plaintext_export_log_path())?;
+    writeln!(file, "{}\t{}", ts, path)
+}
+
+pub fn do_export_csv(
+    state: &AppState,
+    paths: &AppPaths,
+    path: &str,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    if matches!(mode, ExportMode::Plaintext) && !confirmed {
+        return Err(crate::error::invalid_input_error(
+            "Plaintext export requires explicit confirmation.",
+        ));
+    }
+
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+
+    let rows = build_csv_rows(conn, key)?;
+    let csv_text = crate::portio::rows_to_csv(&rows)?;
+
+    let bytes: Vec<u8> = match mode {
+        ExportMode::Plaintext => csv_text.into_bytes(),
+        ExportMode::ThisDevice => {
+            let (ciphertext, nonce) = crate::crypto::seal(key, csv_text.as_bytes())
+                .map_err(|_| crate::error::internal_error())?;
+            crate::portio::encode_sealed_csv(None, &nonce, &ciphertext)
+        }
+        ExportMode::WithPassword { password } => {
+            let salt = crate::crypto::random_salt();
+            let pw_key = crate::crypto::derive_key(password, &salt)
+                .map_err(|_| crate::error::internal_error())?;
+            let (ciphertext, nonce) = crate::crypto::seal(&pw_key, csv_text.as_bytes())
+                .map_err(|_| crate::error::internal_error())?;
+            crate::portio::encode_sealed_csv(Some(&salt), &nonce, &ciphertext)
+        }
+    };
+    std::fs::write(path, &bytes).map_err(|_| crate::error::internal_error())?;
+
+    if matches!(mode, ExportMode::Plaintext) {
+        if let Err(e) = append_plaintext_export_log(paths, path) {
+            eprintln!("warning: failed to append plaintext export log entry: {e}");
+        }
+    }
+    Ok(())
+}
+
+pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+    let mut reader = csv::Reader::from_reader(text.as_bytes());
+    let headers = reader
+        .headers()
+        .map_err(|_| crate::error::invalid_input_error("That file doesn't look like a CSV."))?;
+    Ok(headers.iter().map(|h| h.to_string()).collect())
+}
+
+pub fn do_import_csv_preview(
+    path: &str,
+    format: &ImportFormat,
+) -> Result<Vec<ImportRecordDto>, CommandError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+    let records = match format {
+        ImportFormat::Chromium => crate::portio::parse_chromium_csv(&text)?,
+        ImportFormat::Firefox => crate::portio::parse_firefox_csv(&text)?,
+        ImportFormat::Generic { mapping } => crate::portio::parse_generic_csv(&text, mapping)?,
+    };
+    Ok(records.into_iter().map(ImportRecordDto::from).collect())
+}
+
+pub fn do_import_csv_commit(
+    state: &AppState,
+    records: Vec<ImportRecordDto>,
+) -> Result<ImportSummaryDto, CommandError> {
+    let core_records: Vec<crate::portio::ImportRecord> =
+        records.into_iter().map(Into::into).collect();
+
+    let mut vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_mut().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+
+    let summary = crate::vault::import_credentials(conn, key, &core_records)?;
+    Ok(ImportSummaryDto::from(summary))
 }
 
 #[cfg(test)]
@@ -987,6 +1109,214 @@ mod tests {
 
         let result = do_restore_backup(&state, &paths, junk_path.to_str().unwrap(), false);
 
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    fn seeded_vault_state() -> (AppState, AppPaths, tempfile::TempDir) {
+        let (state, paths, dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "s3cret!", None).unwrap();
+        (state, paths, dir)
+    }
+
+    #[test]
+    fn export_csv_this_device_mode_produces_a_sealable_file_decryptable_with_the_session_key() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.pwenc");
+
+        do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::ThisDevice, false).unwrap();
+
+        let bytes = std::fs::read(&out_path).unwrap();
+        assert_eq!(bytes[1], 0); // mode byte: this-device
+        let nonce: [u8; 12] = bytes[2..14].try_into().unwrap();
+        let len = u32::from_le_bytes(bytes[14..18].try_into().unwrap()) as usize;
+        let ciphertext = &bytes[18..18 + len];
+        let session = state.session.lock().unwrap();
+        let key = session.key().unwrap();
+        let plaintext = crate::crypto::open(key, ciphertext, &nonce).unwrap();
+        assert!(String::from_utf8(plaintext).unwrap().contains("example.com"));
+    }
+
+    #[test]
+    fn export_csv_with_password_mode_embeds_a_salt_and_is_decryptable_with_that_password() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.pwenc");
+
+        do_export_csv(
+            &state, &paths, out_path.to_str().unwrap(),
+            &ExportMode::WithPassword { password: "export password".to_string() }, false,
+        ).unwrap();
+
+        let bytes = std::fs::read(&out_path).unwrap();
+        assert_eq!(bytes[1], 1); // mode byte: with-password
+        let salt: [u8; 16] = bytes[2..18].try_into().unwrap();
+        let nonce: [u8; 12] = bytes[18..30].try_into().unwrap();
+        let len = u32::from_le_bytes(bytes[30..34].try_into().unwrap()) as usize;
+        let ciphertext = &bytes[34..34 + len];
+        let key = crate::crypto::derive_key("export password", &salt).unwrap();
+        let plaintext = crate::crypto::open(&key, ciphertext, &nonce).unwrap();
+        assert!(String::from_utf8(plaintext).unwrap().contains("example.com"));
+    }
+
+    #[test]
+    fn export_csv_plaintext_mode_without_confirmation_is_rejected() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.csv");
+
+        let result = do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, false);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+        assert!(!out_path.exists());
+        assert!(!paths.plaintext_export_log_path().exists(), "no log entry for a rejected export");
+    }
+
+    #[test]
+    fn export_csv_plaintext_mode_with_confirmation_writes_readable_csv() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.csv");
+
+        do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+
+        let text = std::fs::read_to_string(&out_path).unwrap();
+        assert!(text.contains("example.com"));
+        assert!(text.contains("s3cret!"));
+    }
+
+    #[test]
+    fn export_csv_plaintext_mode_appends_an_entry_to_the_local_export_log() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.csv");
+
+        do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+        let out_path_2 = dir.path().join("export2.csv");
+        do_export_csv(&state, &paths, out_path_2.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+
+        let log = std::fs::read_to_string(paths.plaintext_export_log_path()).unwrap();
+        let lines: Vec<&str> = log.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains(out_path.to_str().unwrap()));
+        assert!(lines[1].contains(out_path_2.to_str().unwrap()));
+        let ts: u64 = lines[0].split('\t').next().unwrap().parse().unwrap();
+        assert!(ts > 1_700_000_000);
+    }
+
+    #[test]
+    fn export_csv_this_device_and_with_password_modes_do_not_touch_the_export_log() {
+        let (state, paths, dir) = seeded_vault_state();
+        do_export_csv(&state, &paths, dir.path().join("a.pwenc").to_str().unwrap(), &ExportMode::ThisDevice, false).unwrap();
+        do_export_csv(
+            &state, &paths, dir.path().join("b.pwenc").to_str().unwrap(),
+            &ExportMode::WithPassword { password: "x".to_string() }, false,
+        ).unwrap();
+
+        assert!(!paths.plaintext_export_log_path().exists());
+    }
+
+    #[test]
+    fn export_csv_when_locked_returns_locked_error() {
+        let (state, paths, dir) = test_state_and_paths();
+        let out_path = dir.path().join("export.csv");
+        let result = do_export_csv(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true);
+        assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn read_csv_headers_returns_the_header_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.csv");
+        std::fs::write(&path, "Site,Login,Pwd\nexample.com,alice,secret\n").unwrap();
+
+        let headers = do_read_csv_headers(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(headers, vec!["Site".to_string(), "Login".to_string(), "Pwd".to_string()]);
+    }
+
+    fn import_record_dto(site: &str, username: &str, secret: &str) -> ImportRecordDto {
+        ImportRecordDto {
+            site_name: site.to_string(),
+            url: None,
+            notes: None,
+            username: Some(username.to_string()),
+            secret: Zeroizing::new(secret.to_string()),
+            remarks: None,
+        }
+    }
+
+    #[test]
+    fn read_csv_headers_on_a_missing_file_returns_invalid_input() {
+        let result = do_read_csv_headers("this-file-does-not-exist.csv");
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn import_csv_preview_parses_a_chromium_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("chrome.csv");
+        std::fs::write(&path, "name,url,username,password\nexample.com,https://example.com,alice,s3cret\n").unwrap();
+
+        let records = do_import_csv_preview(path.to_str().unwrap(), &ImportFormat::Chromium).unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].site_name, "example.com");
+        assert_eq!(&*records[0].secret, "s3cret");
+    }
+
+    #[test]
+    fn import_csv_preview_surfaces_a_header_mismatch_as_invalid_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.csv");
+        std::fs::write(&path, "a,b,c\n1,2,3\n").unwrap();
+
+        let result = do_import_csv_preview(path.to_str().unwrap(), &ImportFormat::Chromium);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn import_csv_preview_parses_generic_with_a_mapping() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("generic.csv");
+        std::fs::write(&path, "Site,Pwd\nexample.com,s3cret\n").unwrap();
+        let mut mapping = std::collections::HashMap::new();
+        mapping.insert("Site".to_string(), "site_name".to_string());
+        mapping.insert("Pwd".to_string(), "secret".to_string());
+
+        let records = do_import_csv_preview(
+            path.to_str().unwrap(),
+            &ImportFormat::Generic { mapping },
+        ).unwrap();
+
+        assert_eq!(records[0].site_name, "example.com");
+    }
+
+    #[test]
+    fn import_csv_commit_inserts_records_and_returns_counts() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let summary = do_import_csv_commit(
+            &state,
+            vec![import_record_dto("example.com", "bob", "s3cret")],
+        ).unwrap();
+
+        assert_eq!(summary.imported, 1);
+        assert_eq!(summary.duplicates, 0);
+        assert_eq!(do_list_sites(&state).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn import_csv_commit_when_locked_returns_locked_error() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        let result = do_import_csv_commit(&state, vec![import_record_dto("example.com", "bob", "s3cret")]);
+        assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn import_csv_commit_surfaces_a_missing_site_name_as_invalid_input() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let result = do_import_csv_commit(&state, vec![import_record_dto("", "bob", "s3cret")]);
         assert_eq!(result.unwrap_err().code(), "invalid_input");
     }
 }
