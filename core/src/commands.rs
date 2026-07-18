@@ -1,9 +1,10 @@
 use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, SearchResultDto, SiteDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, GenerateRequest, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::session::SystemClock;
 use crate::state::AppState;
+use zeroize::Zeroizing;
 
 pub fn do_unlock_status(state: &AppState) -> bool {
     !state.session.lock().unwrap().is_locked()
@@ -244,6 +245,32 @@ pub fn do_update_nav_collapsed(state: &AppState, paths: &AppPaths, collapsed: bo
     updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
     *config = updated;
     Ok(())
+}
+
+pub fn do_generate_password(req: &GenerateRequest) -> Result<Zeroizing<String>, CommandError> {
+    use crate::generator as gen;
+    let pw = match req {
+        GenerateRequest::Random { length, uppercase, lowercase, digits, symbols } =>
+            gen::generate_random(&gen::RandomOptions {
+                length: *length, uppercase: *uppercase, lowercase: *lowercase, digits: *digits, symbols: *symbols,
+            })?,
+        GenerateRequest::Memorable { words, separator } => gen::generate_memorable(*words, separator)?,
+        GenerateRequest::Pattern { template } => gen::generate_pattern(template)?,
+        GenerateRequest::Pronounceable { length } => gen::generate_pronounceable(*length)?,
+    };
+    Ok(pw)
+}
+
+pub fn do_analyze_strength(password: &str) -> StrengthDto {
+    if password.is_empty() {
+        return StrengthDto { score: 0, guesses_log10: 0.0, label: "Very weak".into() };
+    }
+    let est = zxcvbn::zxcvbn(password, &[]);
+    let score = u8::from(est.score());
+    let label = match score {
+        0 => "Very weak", 1 => "Weak", 2 => "Fair", 3 => "Strong", _ => "Very strong",
+    }.to_string();
+    StrengthDto { score, guesses_log10: est.guesses_log10(), label }
 }
 
 #[cfg(test)]
@@ -745,5 +772,42 @@ mod tests {
         let result = do_update_nav_collapsed(&state, &bad_paths, true);
         assert!(result.is_err());
         assert_eq!(do_get_config(&state).nav_collapsed, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn generate_password_random_returns_requested_length() {
+        let req = GenerateRequest::Random { length: 20, uppercase: true, lowercase: true, digits: true, symbols: false };
+        let pw = do_generate_password(&req).unwrap();
+        assert_eq!(pw.chars().count(), 20);
+    }
+
+    #[test]
+    fn generate_password_memorable_uses_separator() {
+        // "|" not "-": the EFF short wordlist's "yo-yo" entry contains a literal hyphen.
+        let req = GenerateRequest::Memorable { words: 3, separator: "|".into() };
+        let pw = do_generate_password(&req).unwrap();
+        assert_eq!(pw.split('|').count(), 3);
+    }
+
+    #[test]
+    fn generate_password_maps_gen_error_to_invalid_input() {
+        let req = GenerateRequest::Random { length: 0, uppercase: true, lowercase: false, digits: false, symbols: false };
+        assert_eq!(do_generate_password(&req).unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn analyze_strength_scores_a_weak_password_low() {
+        assert!(do_analyze_strength("password").score <= 1);
+    }
+
+    #[test]
+    fn analyze_strength_scores_a_strong_password_high() {
+        assert!(do_analyze_strength("7#kLp!qZ2r@Vx9W").score >= 3);
+    }
+
+    #[test]
+    fn analyze_strength_handles_empty_without_panicking() {
+        let s = do_analyze_strength("");
+        assert_eq!(s.score, 0);
     }
 }
