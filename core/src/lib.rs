@@ -11,6 +11,7 @@ pub mod generator;
 pub mod backup;
 pub mod portio;
 pub mod health;
+pub mod hibp;
 pub mod paths;
 pub mod config;
 pub mod state;

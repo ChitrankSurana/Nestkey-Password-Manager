@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { webCopyToClipboard } from "./clipboard";
 
 export interface AuthSuccess {
   username: string;
@@ -99,51 +100,84 @@ export interface HealthReportDto {
 
 export interface BreachReportDto { breached: HealthEntryDto[]; }
 
+// Tauri v2 always injects window.__TAURI_INTERNALS__ (that is how `invoke` reaches the backend);
+// withGlobalTauri is off in this app, so window.__TAURI__ is NOT present - detect via the internals
+// marker (see the plan's Finding 2).
+const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+async function httpPost<T>(command: string, args: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`/api/${command}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-PWMGR-CSRF": "1" },
+    credentials: "same-origin",
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) {
+    let err: CommandError = { code: "internal_error", message: "Something went wrong. Please try again." };
+    try {
+      err = (await res.json()) as CommandError;
+    } catch {
+      // Non-JSON error body (e.g. a raw 404 from the static layer) - keep the generic fallback.
+    }
+    throw err;
+  }
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+// Single dispatch point: Tauri IPC in the desktop app, same-origin HTTP in web mode. The command name
+// and camelCase args are identical on both sides.
+function call<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+  return isTauri ? invoke<T>(command, args) : httpPost<T>(command, args);
+}
+
 export const api = {
   registerUser: (username: string, masterPassword: string) =>
-    invoke<AuthSuccess>("register_user", { username, masterPassword }),
+    call<AuthSuccess>("register_user", { username, masterPassword }),
   login: (username: string, masterPassword: string) =>
-    invoke<AuthSuccess>("login", { username, masterPassword }),
-  lock: () => invoke<void>("lock"),
-  touch: () => invoke<void>("touch"),
-  unlockStatus: () => invoke<boolean>("unlock_status"),
-  listSites: () => invoke<SiteDto[]>("list_sites"),
+    call<AuthSuccess>("login", { username, masterPassword }),
+  lock: () => call<void>("lock"),
+  touch: () => call<void>("touch"),
+  unlockStatus: () => call<boolean>("unlock_status"),
+  listSites: () => call<SiteDto[]>("list_sites"),
   addSite: (name: string, url: string | null, notes: string | null) =>
-    invoke<number>("add_site", { name, url, notes }),
+    call<number>("add_site", { name, url, notes }),
   addCredential: (siteId: number, username: string | null, secret: string, remarks: string | null) =>
-    invoke<number>("add_credential", { siteId, username, secret, remarks }),
+    call<number>("add_credential", { siteId, username, secret, remarks }),
   updateCredential: (credentialId: number, username: string | null, secret: string, remarks: string | null) =>
-    invoke<void>("update_credential", { credentialId, username, secret, remarks }),
+    call<void>("update_credential", { credentialId, username, secret, remarks }),
   listCredentialsForSite: (siteId: number) =>
-    invoke<CredentialDto[]>("list_credentials_for_site", { siteId }),
-  search: (query: string) => invoke<SearchResultDto[]>("search", { query }),
+    call<CredentialDto[]>("list_credentials_for_site", { siteId }),
+  search: (query: string) => call<SearchResultDto[]>("search", { query }),
   softDeleteCredential: (credentialId: number) =>
-    invoke<void>("soft_delete_credential", { credentialId }),
-  listTrash: () => invoke<TrashedCredentialDto[]>("list_trash"),
-  restoreCredential: (credentialId: number) => invoke<void>("restore_credential", { credentialId }),
-  purgeTrash: () => invoke<number>("purge_trash"),
-  getConfig: () => invoke<ConfigDto>("get_config"),
-  updateAutoLockMinutes: (minutes: number) => invoke<void>("update_auto_lock_minutes", { minutes }),
+    call<void>("soft_delete_credential", { credentialId }),
+  listTrash: () => call<TrashedCredentialDto[]>("list_trash"),
+  restoreCredential: (credentialId: number) => call<void>("restore_credential", { credentialId }),
+  purgeTrash: () => call<number>("purge_trash"),
+  getConfig: () => call<ConfigDto>("get_config"),
+  updateAutoLockMinutes: (minutes: number) => call<void>("update_auto_lock_minutes", { minutes }),
   updateStrengthAlgorithm: (algorithm: string) =>
-    invoke<void>("update_strength_algorithm", { algorithm }),
-  updateNavCollapsed: (collapsed: boolean) => invoke<void>("update_nav_collapsed", { collapsed }),
-  updateTheme: (theme: string) => invoke<void>("update_theme", { theme }),
-  updateAccentColor: (color: string) => invoke<void>("update_accent_color", { color }),
-  generatePassword: (request: GenerateRequest) => invoke<string>("generate_password", { request }),
-  analyzeStrength: (password: string) => invoke<StrengthDto>("analyze_strength", { password }),
-  copyToClipboard: (text: string) => invoke<void>("copy_to_clipboard", { text }),
-  createBackup: () => invoke<string>("create_backup"),
+    call<void>("update_strength_algorithm", { algorithm }),
+  updateNavCollapsed: (collapsed: boolean) => call<void>("update_nav_collapsed", { collapsed }),
+  updateTheme: (theme: string) => call<void>("update_theme", { theme }),
+  updateAccentColor: (color: string) => call<void>("update_accent_color", { color }),
+  generatePassword: (request: GenerateRequest) => call<string>("generate_password", { request }),
+  analyzeStrength: (password: string) => call<StrengthDto>("analyze_strength", { password }),
+  // No HTTP endpoint for clipboard - the browser has its own API. Desktop keeps the Tauri command.
+  copyToClipboard: (text: string) =>
+    isTauri ? invoke<void>("copy_to_clipboard", { text }) : webCopyToClipboard(text),
+  createBackup: () => call<string>("create_backup"),
   restoreBackup: (path: string, confirmed: boolean) =>
-    invoke<void>("restore_backup", { path, confirmed }),
+    call<void>("restore_backup", { path, confirmed }),
   exportCsv: (path: string, mode: ExportMode, confirmed: boolean) =>
-    invoke<void>("export_csv", { path, mode, confirmed }),
-  readCsvHeaders: (path: string) => invoke<string[]>("read_csv_headers", { path }),
+    call<void>("export_csv", { path, mode, confirmed }),
+  readCsvHeaders: (path: string) => call<string[]>("read_csv_headers", { path }),
   importCsvPreview: (path: string, format: ImportFormat) =>
-    invoke<ImportRecordDto[]>("import_csv_preview", { path, format }),
+    call<ImportRecordDto[]>("import_csv_preview", { path, format }),
   importCsvCommit: (records: ImportRecordDto[]) =>
-    invoke<ImportSummaryDto>("import_csv_commit", { records }),
-  healthReport: () => invoke<HealthReportDto>("health_report"),
-  checkBreach: () => invoke<BreachReportDto>("check_breach"),
-  updateHibpOptIn: (enabled: boolean) => invoke<void>("update_hibp_opt_in", { enabled }),
-  updateOldPasswordDays: (days: number) => invoke<void>("update_old_password_days", { days }),
+    call<ImportSummaryDto>("import_csv_commit", { records }),
+  healthReport: () => call<HealthReportDto>("health_report"),
+  checkBreach: () => call<BreachReportDto>("check_breach"),
+  updateHibpOptIn: (enabled: boolean) => call<void>("update_hibp_opt_in", { enabled }),
+  updateOldPasswordDays: (days: number) => call<void>("update_old_password_days", { days }),
 };

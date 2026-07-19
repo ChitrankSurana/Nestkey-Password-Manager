@@ -1,6 +1,4 @@
 mod commands;
-mod dto;
-mod hibp;
 
 use pwmgr_core::config::Config;
 use pwmgr_core::paths::AppPaths;

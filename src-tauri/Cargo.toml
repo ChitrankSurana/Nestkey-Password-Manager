@@ -23,17 +23,9 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 pwmgr-core = { path = "../core" }
-rusqlite = { version = "0.31", features = ["bundled-sqlcipher-vendored-openssl"] }
 dirs = "5"
 tokio = { version = "1", features = ["time"] }
 zeroize = { version = "1.7", features = ["serde"] }
-zxcvbn = "3"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
-csv = "1"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-sha1 = "0.10"
-
-[dev-dependencies]
-tempfile = "3.10"
 

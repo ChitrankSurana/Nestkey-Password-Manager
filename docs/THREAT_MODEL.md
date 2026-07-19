@@ -1,6 +1,6 @@
 # Threat Model
 
-**Last updated:** 2026-07-01
+**Last updated:** 2026-07-19
 
 ## 1. Assets to Protect
 
@@ -17,8 +17,10 @@
   permission to, cannot read another OS user's home directory.
 - **A3 — Casual file inspection:** someone opens the `.vault` file in a hex editor or plain
   `sqlite3` CLI without the master password.
-- **A4 — Network eavesdropper (future web mode, M6):** someone on the same LAN trying to intercept
-  traffic to the localhost-bound web server.
+- **A4 — Network eavesdropper / cross-site attacker (web mode, M6):** someone on the same LAN trying
+  to intercept traffic to the localhost-bound web server, or a malicious/compromised page open in the
+  same browser trying to issue cross-site requests against it (CSRF) while the user has an active
+  session.
 - **A5 — Tampering at rest:** a file is modified (corrupted or maliciously altered) between writes.
 
 ## 3. Adversaries Explicitly Out of Scope
@@ -39,7 +41,8 @@
 | A1/A3 file theft or inspection | SQLCipher full-DB encryption + per-field AES-256-GCM; Argon2id makes offline brute-force expensive; master password never on disk so there's nothing to steal but ciphertext |
 | A1 weak master password | Real-time strength/entropy feedback at registration nudges toward strong passwords (cannot be enforced without also being annoying — a minimum-entropy warning is shown, not a hard block, to avoid locking the user out of their own choice) |
 | A2 shared machine | Per-user vault files with OS-level file permissions; one user's vault is unreadable without both filesystem access AND their master password |
-| A4 web mode eavesdropping | Server binds to `127.0.0.1` only (never `0.0.0.0`), so LAN traffic never occurs for this feature; session token required per request |
+| A4 web mode eavesdropping | Server binds to `127.0.0.1` only (never `0.0.0.0`, hard-coded, not configurable), so LAN traffic never occurs for this feature; session token is a 256-bit CSPRNG value required per request |
+| A4 web mode CSRF | Session cookie is `HttpOnly; SameSite=Strict; Path=/` (a cross-site request never carries it in the first place under any modern browser); every mutating (non-`GET`) request is additionally required to carry a custom `x-pwmgr-csrf` header, which a cross-site `<form>`/`<img>`/simple-`fetch` submission cannot set without CORS — a second, independent layer behind the cookie attribute |
 | A5 tampering | AES-GCM is authenticated — any bit-flip in ciphertext or nonce causes decryption to fail loudly rather than returning corrupted plaintext |
 | Backup file theft | Backups are encrypted with the same scheme as the live vault, never plaintext |
 | Plaintext CSV export | Gated behind an explicit typed confirmation (not just a checkbox) warning the file will be unencrypted; export path is logged in-app (locally) so the user has a record they did it |
@@ -57,6 +60,15 @@
 - The read-only viewer and web mode both reuse the same crypto core, so a vulnerability found in
   `crypto`/`vault` affects all surfaces equally — isolation limits blast radius of *other* modules'
   bugs, not this one.
+- Web mode's session store gives each logged-in browser session its own full in-process state (its
+  own vault connection, its own registry connection to the shared `registry.db`), so N concurrent
+  browser sessions hold N vault + N registry connections open for as long as each session lives —
+  accepted at household scale (a handful of family members/tabs), not load-tested beyond that.
+- The session store is in-memory only, by design (nothing about "who is logged in right now" is
+  persisted to disk). A server crash or restart silently logs out every active browser session — the
+  next request just gets a 401 and the user re-authenticates. This is intentional (nothing sensitive
+  survives a crash that wasn't already durable in the vault/registry files) but is a real availability
+  property worth knowing before relying on a long-lived session.
 
 ## 6. Verification of This Model
 
