@@ -1,10 +1,11 @@
-# Resume Notes — Password Manager — M1-M5 merged to `main`; M6 web-mode half COMPLETE, not yet pushed
+# Resume Notes — Password Manager — M1-M5 merged to `main`; M6 web-mode half COMPLETE, PR #3 open
 
 **Written:** 2026-07-19. **M1-M5 are merged to `main`.** M6 ("Localhost-bound web mode, responsive
 layout," per `docs/PRD.md` §7) has two halves per its own design spec — **the web-mode half is now
-fully implemented, reviewed, and complete** on the `m6-web-mode-responsive` worktree/branch, sitting
-on top of `main` at `a9ce553`. **Nothing has been pushed or opened as a PR yet — that decision is next.**
-The responsive-CSS half of M6 has not been started. **Read this first before doing anything else.**
+fully implemented, reviewed, and complete** on the `m6-web-mode-responsive` branch, pushed to origin,
+**PR #3 open** (`https://github.com/ChitrankSurana/Password_Manager_Local/pull/3`, `m6-web-mode-
+responsive` → `main`) — not yet merged. The responsive-CSS half of M6 has not been started.
+**Read this first before doing anything else.**
 
 ## Where everything stands
 
@@ -67,12 +68,19 @@ The responsive-CSS half of M6 has not been started. **Read this first before doi
 
 ## What to do next
 
-1. **Push/PR decision is next — not yet done, needs your go-ahead.** The branch `m6-web-mode-responsive`
-   is complete, reviewed, and all tests pass, but nothing has been pushed to `origin` or opened as a PR.
-   Per this project's standing convention, confirm scope with you before the first push of a milestone.
-2. **Fast-follow items from the code-quality review** (bundle into one small follow-up, not urgent):
-   `AppState::open(paths)` shared constructor, a decision on `SessionStore::remove`/logout wiring, and
-   a two-session HTTP integration test.
+1. **PR #3 is open, awaiting merge.** `https://github.com/ChitrankSurana/Password_Manager_Local/pull/3`
+   — user chose "push branch + open PR now." Not yet merged; check its status before starting new work.
+2. **Fast-follow items, explicitly deferred to "the end"** (user's words) — meaning after BOTH halves
+   of M6 are done, not now. Bundle into one small follow-up pass at that point (also recorded in memory
+   as `project_m6_webmode_followups.md`):
+   - Add a shared `AppState::open(paths: &AppPaths) -> Result<Self, ...>` production constructor in
+     `pwmgr-core` — collapses 3 duplicated hand-built struct literals (`src-tauri/src/lib.rs`,
+     `web-src-tauri/src/handlers.rs::build_locked_state`, `viewer-src-tauri/src/lib.rs`).
+   - `SessionStore::remove` has zero production callers today (no logout route exists; only the 24h
+     sweep removes entries) — decide whether to wire a logout endpoint or drop the method.
+   - Add a `web-src-tauri/tests/http_integration.rs` test with two independent `reqwest::Client`
+     instances (two cookie jars) proving session isolation over a real HTTP connection, not just
+     in-process.
 3. **Manual UI walkthrough stays deferred** until BOTH halves of M6 are complete (standing decision,
    repeated in every milestone's resume notes) — this includes actually launching `cargo run -p
    pwmgr-web`, browsing `http://127.0.0.1:7373`, logging in, exercising the full command set, and
