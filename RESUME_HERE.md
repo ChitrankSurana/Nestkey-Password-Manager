@@ -1,18 +1,20 @@
-# Resume Notes — Password Manager — M1-M5 merged to `main`; M6 web-mode half COMPLETE, PR #3 open
+# Resume Notes — Password Manager — M1-M5 + M6 web-mode half all merged to `main`
 
-**Written:** 2026-07-19. **M1-M5 are merged to `main`.** M6 ("Localhost-bound web mode, responsive
-layout," per `docs/PRD.md` §7) has two halves per its own design spec — **the web-mode half is now
-fully implemented, reviewed, and complete** on the `m6-web-mode-responsive` branch, pushed to origin,
-**PR #3 open** (`https://github.com/ChitrankSurana/Password_Manager_Local/pull/3`, `m6-web-mode-
-responsive` → `main`) — not yet merged. The responsive-CSS half of M6 has not been started.
-**Read this first before doing anything else.**
+**Written:** 2026-07-19. **M1-M5 and M6's web-mode half are all merged to `main`.** PR #3
+(`m6-web-mode-responsive` → `main`) merged via `0457df8`, local `main` fast-forwarded to match, the
+`m6-web-mode-responsive` worktree and its local + remote branches have been cleaned up (fully merged,
+removed per this project's standing worktree-per-milestone pattern). M6 ("Localhost-bound web mode,
+responsive layout," per `docs/PRD.md` §7) has two halves — **the web-mode half is done; the
+responsive-CSS half has NOT been started yet.** **Read this first before doing anything else.**
 
 ## Where everything stands
 
-- **Project root:** `E:\Coding_Projects-CS\Account_1\Password_Manager` — `main` branch has M1-M5.
-- **Worktree:** `.worktrees\m6-web-mode-responsive`, branch `m6-web-mode-responsive`, based on `main`
-  at `a9ce553`.
-- **The design spec:** `docs/superpowers/specs/2026-07-18-m6-web-mode-design.md` — approved, committed.
+- **Project root:** `E:\Coding_Projects-CS\Account_1\Password_Manager` — `main` branch, all of M1-M5
+  plus M6's web-mode half merged in. No open worktrees or feature branches right now (cleaned up after
+  the PR #3 merge — `m4-health-nav-theming` and `m5-readonly-viewer` were already gone; the last one,
+  `m6-web-mode-responsive`, was removed this session, local and remote both).
+- **The design spec:** `docs/superpowers/specs/2026-07-18-m6-web-mode-design.md` — approved, committed
+  (covers the web-mode half only; the responsive-CSS half has no spec yet).
 - **The plan:** `docs/superpowers/plans/2026-07-18-m6-web-mode.md` — 20 tasks (0-19) across 3 slices,
   **all done**:
   - **Slice 1** (Tasks 1-10): finished the `pwmgr-core` promotion started in M5 — moved the remaining
@@ -68,10 +70,15 @@ responsive` → `main`) — not yet merged. The responsive-CSS half of M6 has no
 
 ## What to do next
 
-1. **PR #3 is open, awaiting merge.** `https://github.com/ChitrankSurana/Password_Manager_Local/pull/3`
-   — user chose "push branch + open PR now." Not yet merged; check its status before starting new work.
+1. **M6's web-mode half is merged. Next: the responsive-layout half** (the other piece of M6 per
+   `docs/PRD.md` §7) — **not started yet.** Per this project's standing spec-first convention (used for
+   M4/M5/M6-part-1), it goes through: new isolated worktree → `superpowers:brainstorming` to explore
+   the design space with the user → a written design spec at
+   `docs/superpowers/specs/<date>-m6-responsive-layout-design.md` for approval → **only after that** an
+   implementation plan gets written. Nothing has been done on this yet — don't assume any design
+   decisions, start fresh.
 2. **Fast-follow items, explicitly deferred to "the end"** (user's words) — meaning after BOTH halves
-   of M6 are done, not now. Bundle into one small follow-up pass at that point (also recorded in memory
+   of M6 are done, so still not now. Bundle into one small follow-up pass then (also recorded in memory
    as `project_m6_webmode_followups.md`):
    - Add a shared `AppState::open(paths: &AppPaths) -> Result<Self, ...>` production constructor in
      `pwmgr-core` — collapses 3 duplicated hand-built struct literals (`src-tauri/src/lib.rs`,
@@ -85,14 +92,11 @@ responsive` → `main`) — not yet merged. The responsive-CSS half of M6 has no
    repeated in every milestone's resume notes) — this includes actually launching `cargo run -p
    pwmgr-web`, browsing `http://127.0.0.1:7373`, logging in, exercising the full command set, and
    multi-tab/multi-session behavior. Not done yet.
-4. **The responsive-layout half of M6 has not been started.** Per the design spec, it's a separate
-   piece (a responsive-CSS pass) — no design work has begun on it. Follows the same spec-first process
-   once the web-mode half is merged.
-5. **Remember the deferred decision from M4:** once all of M6 is complete, remind the user about the
+4. **Remember the deferred decision from M4:** once all of M6 is complete, remind the user about the
    Health Dashboard's "Weak" classification always using zxcvbn regardless of the Settings algorithm
    toggle (user-approved spec deviation "for now") — ask if they want it changed. See
    `project_m4_weak_scoring_followup.md` in the memory system. Still not addressed.
-6. **Remaining roadmap after M6:** **Later** (Android companion + sync design, macOS/Linux builds) —
+5. **Remaining roadmap after M6:** **Later** (Android companion + sync design, macOS/Linux builds) —
    not started.
 
 ## Toolchain (already installed, but NOT on PATH for fresh shells)
