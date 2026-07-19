@@ -1,5 +1,5 @@
 use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, ConfigDto, CredentialDto, ExportMode, GenerateRequest, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::session::SystemClock;
@@ -484,6 +484,138 @@ pub fn do_import_csv_commit(
 
     let summary = crate::vault::import_credentials(conn, key, &core_records)?;
     Ok(ImportSummaryDto::from(summary))
+}
+
+// Module-level (not nested) so do_check_breach can reuse it - same shape build_csv_rows uses.
+struct HealthRow {
+    credential_id: i64,
+    site_id: i64,
+    site_name: String,
+    username: Option<String>,
+    secret: String,
+}
+
+fn build_health_rows(
+    conn: &rusqlite::Connection,
+    key: &crate::crypto::VaultKey,
+) -> Result<Vec<HealthRow>, CommandError> {
+    let sites = crate::vault::list_sites(conn)?;
+    let mut rows = Vec::new();
+    for site in &sites {
+        for c in crate::vault::list_credentials_for_site(conn, key, site.id)? {
+            rows.push(HealthRow {
+                credential_id: c.id,
+                site_id: site.id,
+                site_name: site.name.clone(),
+                username: c.username,
+                secret: c.secret,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+pub fn do_health_report(state: &AppState) -> Result<HealthReportDto, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let rows = build_health_rows(conn, key)?;
+    // Drop session before locking state.config below - do_update_auto_lock_minutes locks config then
+    // session, so holding both here in the opposite order would be a lock-order inversion.
+    drop(session);
+
+    let weak: Vec<HealthEntryDto> = rows
+        .iter()
+        .filter(|r| do_analyze_strength(&r.secret).score <= 1)
+        .map(|r| HealthEntryDto {
+            credential_id: r.credential_id,
+            site_id: r.site_id,
+            site_name: r.site_name.clone(),
+            username: r.username.clone(),
+        })
+        .collect();
+
+    let reuse_inputs: Vec<crate::health::ReuseInput> = rows
+        .iter()
+        .map(|r| crate::health::ReuseInput { credential_id: r.credential_id, secret: r.secret.clone() })
+        .collect();
+    let reused: Vec<ReusedGroupDto> = crate::health::classify_reused(&reuse_inputs)
+        .into_iter()
+        .map(|group| ReusedGroupDto {
+            entries: group
+                .credential_ids
+                .into_iter()
+                .filter_map(|id| rows.iter().find(|r| r.credential_id == id))
+                .map(|r| HealthEntryDto {
+                    credential_id: r.credential_id,
+                    site_id: r.site_id,
+                    site_name: r.site_name.clone(),
+                    username: r.username.clone(),
+                })
+                .collect(),
+        })
+        .collect();
+
+    let old_days = state.config.lock().unwrap().old_password_days;
+    let old: Vec<HealthEntryDto> = crate::vault::list_old_credentials(conn, old_days)?
+        .into_iter()
+        .map(|o| HealthEntryDto {
+            credential_id: o.credential_id,
+            site_id: o.site_id,
+            site_name: o.site_name,
+            username: o.username,
+        })
+        .collect();
+
+    Ok(HealthReportDto { weak, reused, old })
+}
+
+pub fn do_check_breach(state: &AppState, hibp_base_url: &str) -> Result<BreachReportDto, CommandError> {
+    // Server-side opt-in gate: rejects regardless of what the frontend sends. The temporary guard
+    // drops at the end of the statement, so config is never held while vault/session are acquired.
+    if !state.config.lock().unwrap().hibp_opt_in {
+        return Err(crate::error::invalid_input_error(
+            "Breach checking is not enabled. Turn it on in Settings first.",
+        ));
+    }
+
+    // vault_guard and session are scoped to this block and dropped as soon as rows is built - this
+    // function then blocks on network I/O per distinct secret, so neither lock is held across it.
+    let rows = {
+        let vault_guard = state.vault.lock().unwrap();
+        let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+        let session = state.session.lock().unwrap();
+        let key = session.key().ok_or_else(crate::error::locked_error)?;
+        build_health_rows(conn, key)?
+    };
+
+    // One HTTP call per distinct secret, not per credential. Grouped by hand (not via
+    // classify_reused, which only returns groups of 2+) so a password used exactly once is still
+    // checked.
+    let mut by_secret: std::collections::HashMap<&str, Vec<&HealthRow>> = std::collections::HashMap::new();
+    for r in &rows {
+        by_secret.entry(r.secret.as_str()).or_default().push(r);
+    }
+
+    let client = reqwest::blocking::Client::new();
+    let mut breached = Vec::new();
+    for (secret, members) in &by_secret {
+        let hit = crate::hibp::check_password(&client, hibp_base_url, secret);
+        if matches!(hit, Ok(Some(_))) {
+            for r in members {
+                breached.push(HealthEntryDto {
+                    credential_id: r.credential_id,
+                    site_id: r.site_id,
+                    site_name: r.site_name.clone(),
+                    username: r.username.clone(),
+                });
+            }
+        }
+        // A single failed HIBP request doesn't fail the whole batch - best-effort.
+    }
+
+    Ok(BreachReportDto { breached })
 }
 
 #[cfg(test)]
@@ -1318,5 +1450,107 @@ mod tests {
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let result = do_import_csv_commit(&state, vec![import_record_dto("", "bob", "s3cret")]);
         assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn health_report_flags_a_weak_password() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "password", None).unwrap(); // weak
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.weak.len(), 1);
+        assert_eq!(report.weak[0].site_name, "example.com");
+    }
+
+    #[test]
+    fn health_report_does_not_flag_a_strong_password_as_weak() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+
+        assert!(do_health_report(&state).unwrap().weak.is_empty());
+    }
+
+    #[test]
+    fn health_report_groups_reused_passwords() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        do_add_credential(&state, site_id, Some("bob"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.reused.len(), 1);
+        assert_eq!(report.reused[0].entries.len(), 2);
+    }
+
+    #[test]
+    fn health_report_flags_an_old_password() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        {
+            let vault_guard = state.vault.lock().unwrap();
+            let (conn, _) = vault_guard.as_ref().unwrap();
+            conn.execute(
+                "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
+                rusqlite::params![cred_id],
+            ).unwrap();
+        }
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.old.len(), 1);
+        assert_eq!(report.old[0].credential_id, cred_id);
+    }
+
+    #[test]
+    fn health_report_when_locked_returns_locked_error() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_health_report(&state).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn check_breach_rejects_when_hibp_opt_in_is_false() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let result = do_check_breach(&state, "http://127.0.0.1:1"); // unreachable - must reject first
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn check_breach_when_locked_returns_locked_error() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_hibp_opt_in(&state, &paths, true).unwrap();
+
+        let result = do_check_breach(&state, "http://127.0.0.1:1");
+
+        assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn check_breach_finds_a_breached_credential_via_a_mock_server() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_hibp_opt_in(&state, &paths, true).unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "password", None).unwrap();
+
+        let full_hash = crate::hibp::sha1_hex_upper("password");
+        let suffix = &full_hash[5..];
+        let body = format!("{}:999\r\n", suffix);
+        let base_url = crate::hibp::mock_hibp_server(body);
+
+        let report = do_check_breach(&state, &base_url).unwrap();
+
+        assert_eq!(report.breached.len(), 1);
     }
 }
