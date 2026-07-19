@@ -1,10 +1,10 @@
+use crate::error_map::ApiError;
 use crate::session_store::{SessionStore, Token};
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, Method, Request, StatusCode};
+use axum::http::{header, Method, Request};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use pwmgr_core::session::SystemClock;
 
 /// Custom header a cross-site `<form>`/`<img>` cannot set. Its presence (any value) is required on
@@ -41,10 +41,7 @@ pub async fn auth_middleware(
 /// cross-origin GET's response is unreadable without CORS, which this server never sends).
 pub async fn csrf_middleware(req: Request<Body>, next: Next) -> Response {
     if req.method() != Method::GET && req.headers().get(CSRF_HEADER).is_none() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "code": "forbidden", "message": "Missing CSRF header." })),
-        )
+        return ApiError::from(pwmgr_core::error::forbidden_error("Missing CSRF header."))
             .into_response();
     }
     next.run(req).await
@@ -59,8 +56,9 @@ fn parse_session_cookie(cookie_header: &str) -> Option<Token> {
 
 fn unauthorized() -> Response {
     // Reuse pwmgr-core's sanitized "locked" error as the body - the same {code,message} the frontend
-    // already branches on, and consistent with a genuine idle auto-lock 401.
-    (StatusCode::UNAUTHORIZED, Json(pwmgr_core::error::locked_error())).into_response()
+    // already branches on, and consistent with a genuine idle auto-lock 401. Routed through ApiError
+    // (Task 13) so the status derives from status_for("locked") rather than a second hardcoded 401.
+    ApiError::from(pwmgr_core::error::locked_error()).into_response()
 }
 
 #[cfg(test)]

@@ -22,6 +22,7 @@ pub fn status_for(code: &str) -> StatusCode {
         "invalid_input" => StatusCode::BAD_REQUEST,
         "not_found" => StatusCode::NOT_FOUND,
         "username_taken" | "confirm_required" => StatusCode::CONFLICT,
+        "forbidden" => StatusCode::FORBIDDEN,
         "internal_error" => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
@@ -46,6 +47,7 @@ mod tests {
         assert_eq!(status_for("not_found"), StatusCode::NOT_FOUND);
         assert_eq!(status_for("username_taken"), StatusCode::CONFLICT);
         assert_eq!(status_for("confirm_required"), StatusCode::CONFLICT);
+        assert_eq!(status_for("forbidden"), StatusCode::FORBIDDEN);
         assert_eq!(status_for("internal_error"), StatusCode::INTERNAL_SERVER_ERROR);
     }
 

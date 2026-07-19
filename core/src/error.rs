@@ -105,6 +105,14 @@ pub fn confirm_required_error(message: &str) -> CommandError {
     CommandError::new("confirm_required", message)
 }
 
+/// Not backed by an auth/session failure - a well-formed, authenticated request rejected purely
+/// on a request-shape ground (e.g. pwmgr-web's CSRF header check). Distinct from `locked_error`
+/// so the frontend/caller can tell "please log in again" apart from "this specific request was
+/// malformed."
+pub fn forbidden_error(message: &str) -> CommandError {
+    CommandError::new("forbidden", message)
+}
+
 impl CommandError {
     // `code`/`message` are deliberately private (see the doc comment on the struct) so no call
     // site can construct a CommandError by hand - but callers outside this module still need
