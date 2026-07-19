@@ -4,7 +4,9 @@ import { SiteEditor } from "./SiteEditor";
 import { SiteDetail } from "./SiteDetail";
 import { Trash } from "./Trash";
 import { Settings } from "./Settings";
-import { NavRail } from "./NavRail";
+import { NavRail, NavDestination } from "./NavRail";
+import { BottomTabBar } from "./BottomTabBar";
+import { NavDrawer } from "./NavDrawer";
 import { Data } from "./Data";
 import { HealthDashboard } from "./HealthDashboard";
 import { Generator } from "./Generator";
@@ -22,6 +24,8 @@ export function Vault({ username }: { username: string }) {
   const [showHealth, setShowHealth] = useState(false);
   const [showGenerator, setShowGenerator] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavStyle, setMobileNavStyle] = useState<string>("icon-rail");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function refreshSites() {
@@ -53,7 +57,13 @@ export function Vault({ username }: { username: string }) {
   }, []);
 
   useEffect(() => {
-    api.getConfig().then((c) => setCollapsed(c.navCollapsed)).catch(() => {});
+    api
+      .getConfig()
+      .then((c) => {
+        setCollapsed(c.navCollapsed);
+        setMobileNavStyle(c.mobileNavStyle);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -119,32 +129,77 @@ export function Vault({ username }: { username: string }) {
     );
   }
 
+  async function handleLock() {
+    try {
+      setError(null);
+      await api.lock();
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    }
+  }
+
+  const destinations: NavDestination[] = [
+    { key: "vault", label: "Vault", icon: "🏠", tooltip: "Your sites and credentials", onClick: () => {} },
+    { key: "health", label: "Health", icon: "❤️", tooltip: "Password health dashboard", onClick: () => setShowHealth(true) },
+    { key: "generator", label: "Generator", icon: "🎲", tooltip: "Generate a password", onClick: () => setShowGenerator(true) },
+    { key: "trash", label: "Trash", icon: "🗑️", tooltip: "View trash", onClick: () => setShowTrash(true) },
+    { key: "data", label: "Data", icon: "📦", tooltip: "Backup, export, and import", onClick: () => setShowData(true) },
+    { key: "settings", label: "Settings", icon: "⚙️", tooltip: "Open settings", onClick: () => setShowSettings(true) },
+  ];
+
   return (
     <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 flex">
-      <NavRail
-        collapsed={collapsed}
-        onToggleCollapsed={toggleCollapsed}
-        activeKey="vault"
-        onLock={async () => {
-          try {
-            setError(null);
-            await api.lock();
-          } catch (err) {
-            setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
-          }
-        }}
-        destinations={[
-          { key: "vault", label: "Vault", icon: "🏠", tooltip: "Your sites and credentials", onClick: () => {} },
-          { key: "health", label: "Health", icon: "❤️", tooltip: "Password health dashboard", onClick: () => setShowHealth(true) },
-          { key: "generator", label: "Generator", icon: "🎲", tooltip: "Generate a password", onClick: () => setShowGenerator(true) },
-          { key: "trash", label: "Trash", icon: "🗑️", tooltip: "View trash", onClick: () => setShowTrash(true) },
-          { key: "data", label: "Data", icon: "📦", tooltip: "Backup, export, and import", onClick: () => setShowData(true) },
-          { key: "settings", label: "Settings", icon: "⚙️", tooltip: "Open settings", onClick: () => setShowSettings(true) },
-        ]}
-      />
-      <div className="flex-1 p-4">
+      <div className="hidden sm:flex">
+        <NavRail
+          collapsed={collapsed}
+          onToggleCollapsed={toggleCollapsed}
+          activeKey="vault"
+          onLock={handleLock}
+          destinations={destinations}
+        />
+      </div>
+
+      {mobileNavStyle === "icon-rail" && (
+        <div className="sm:hidden">
+          <NavRail
+            collapsed={true}
+            onToggleCollapsed={() => {}}
+            activeKey="vault"
+            onLock={handleLock}
+            destinations={destinations}
+            showToggle={false}
+          />
+        </div>
+      )}
+
+      {mobileNavStyle === "bottom-tabs" && (
+        <BottomTabBar destinations={destinations} activeKey="vault" onLock={handleLock} />
+      )}
+
+      {mobileNavStyle === "drawer" && (
+        <NavDrawer
+          destinations={destinations}
+          activeKey="vault"
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          onLock={handleLock}
+        />
+      )}
+
+      <div className={`flex-1 p-4 ${mobileNavStyle === "bottom-tabs" ? "pb-20 sm:pb-4" : ""}`}>
         <div className="flex justify-between items-center mb-4">
-          <h1 className="text-xl font-semibold">Vault — {username}</h1>
+          <div className="flex items-center gap-2">
+            {mobileNavStyle === "drawer" && (
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="sm:hidden rounded px-2 py-1 dark:hover:bg-slate-800"
+                aria-label="Open menu"
+              >
+                ☰
+              </button>
+            )}
+            <h1 className="text-xl font-semibold">Vault — {username}</h1>
+          </div>
           <Tooltip text="Add a new site">
             <button onClick={() => setAddingSite(true)} className="rounded bg-[var(--accent)] px-3 py-1">
               Add site
