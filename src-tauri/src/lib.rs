@@ -72,6 +72,7 @@ pub fn run() {
             commands::update_old_password_days,
             commands::update_hibp_opt_in,
             commands::update_nav_collapsed,
+            commands::update_mobile_nav_style,
             commands::generate_password,
             commands::analyze_strength,
             commands::copy_to_clipboard,

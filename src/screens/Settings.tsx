@@ -14,6 +14,11 @@ const ACCENT_OPTIONS = [
   { value: "purple", label: "Purple" },
   { value: "pink", label: "Pink" },
 ] as const;
+const MOBILE_NAV_STYLE_OPTIONS = [
+  { value: "icon-rail", label: "Icon rail (always visible)" },
+  { value: "bottom-tabs", label: "Bottom tab bar" },
+  { value: "drawer", label: "Hamburger menu" },
+] as const;
 const OLD_PASSWORD_DAYS_OPTIONS = [90, 180, 365] as const;
 
 export function Settings({ onBack }: { onBack: () => void }) {
@@ -23,6 +28,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
   const [accentColor, setAccentColor] = useState<string | null>(null);
   const [oldPasswordDays, setOldPasswordDays] = useState<number | null>(null);
   const [hibpOptIn, setHibpOptIn] = useState<boolean | null>(null);
+  const [mobileNavStyle, setMobileNavStyle] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const editedRef = useRef(false);
@@ -38,6 +44,7 @@ export function Settings({ onBack }: { onBack: () => void }) {
           setAccentColor(c.accentColor);
           setOldPasswordDays(c.oldPasswordDays);
           setHibpOptIn(c.hibpOptIn);
+          setMobileNavStyle(c.mobileNavStyle);
         }
       })
       .catch((err) => {
@@ -124,6 +131,20 @@ export function Settings({ onBack }: { onBack: () => void }) {
       setError(null);
       await api.updateHibpOptIn(value);
       setHibpOptIn(value);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleMobileNavStyleChange(value: string) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateMobileNavStyle(value);
+      setMobileNavStyle(value);
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -239,6 +260,24 @@ export function Settings({ onBack }: { onBack: () => void }) {
           />
         </Tooltip>
         <span className="text-sm">Enable breach check (HIBP) on the Health Dashboard</span>
+      </label>
+
+      <label className="block max-w-xs mt-4">
+        <span className="text-sm">Mobile navigation style</span>
+        <Tooltip text="How the sidebar is replaced on narrow screens/windows below 640px" className="w-full">
+          <select
+            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600 disabled:opacity-50"
+            value={mobileNavStyle ?? ""}
+            onChange={(e) => handleMobileNavStyleChange(e.target.value)}
+            disabled={submitting}
+          >
+            {MOBILE_NAV_STYLE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </Tooltip>
       </label>
     </div>
   );

@@ -110,6 +110,7 @@ pub struct ConfigDto {
     pub old_password_days: u32,
     pub hibp_opt_in: bool,
     pub nav_collapsed: bool,
+    pub mobile_nav_style: String,
 }
 
 // No secret field here at all (matches `list_trash`'s core signature - nothing to redact).

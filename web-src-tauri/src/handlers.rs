@@ -114,6 +114,11 @@ struct CollapsedRequest {
 }
 
 #[derive(Deserialize)]
+struct MobileNavStyleRequest {
+    style: String,
+}
+
+#[derive(Deserialize)]
 struct GeneratePasswordRequest {
     request: GenerateRequest,
 }
@@ -344,6 +349,15 @@ async fn update_nav_collapsed(
     Ok(StatusCode::OK)
 }
 
+async fn update_mobile_nav_style(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<MobileNavStyleRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_update_mobile_nav_style(&s.app_state, &ctx.paths, &b.style)?;
+    Ok(StatusCode::OK)
+}
+
 async fn generate_password(
     Extension(_s): Extension<Arc<UserSession>>,
     Json(b): Json<GeneratePasswordRequest>,
@@ -450,6 +464,7 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/update_old_password_days", post(update_old_password_days))
         .route("/api/update_hibp_opt_in", post(update_hibp_opt_in))
         .route("/api/update_nav_collapsed", post(update_nav_collapsed))
+        .route("/api/update_mobile_nav_style", post(update_mobile_nav_style))
         .route("/api/generate_password", post(generate_password))
         .route("/api/analyze_strength", post(analyze_strength))
         .route("/api/create_backup", post(create_backup))
