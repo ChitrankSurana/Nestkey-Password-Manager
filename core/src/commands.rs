@@ -1,4 +1,4 @@
-use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
+use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
 use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
@@ -72,6 +72,7 @@ pub fn do_get_config(state: &AppState) -> ConfigDto {
         old_password_days: config.old_password_days,
         hibp_opt_in: config.hibp_opt_in,
         nav_collapsed: config.nav_collapsed,
+        mobile_nav_style: config.mobile_nav_style.clone(),
     }
 }
 
@@ -242,6 +243,18 @@ pub fn do_update_nav_collapsed(state: &AppState, paths: &AppPaths, collapsed: bo
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.nav_collapsed = collapsed;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_mobile_nav_style(state: &AppState, paths: &AppPaths, style: &str) -> Result<(), CommandError> {
+    if !VALID_MOBILE_NAV_STYLES.contains(&style) {
+        return Err(crate::error::invalid_input_error("Unknown mobile nav style."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.mobile_nav_style = style.to_string();
     updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
     *config = updated;
     Ok(())
@@ -1043,6 +1056,30 @@ mod tests {
         do_update_accent_color(&state, &paths, "sky").unwrap();
         assert_eq!(do_get_config(&state).accent_color, "sky");
         assert_eq!(do_update_accent_color(&state, &paths, "chartreuse").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_mobile_nav_style_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_mobile_nav_style(&state, &paths, "drawer").unwrap();
+        assert_eq!(do_get_config(&state).mobile_nav_style, "drawer");
+        assert_eq!(do_update_mobile_nav_style(&state, &paths, "sidebar-carousel").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn get_config_includes_mobile_nav_style_default() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_get_config(&state).mobile_nav_style, "icon-rail");
+    }
+
+    #[test]
+    fn update_mobile_nav_style_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+        let before = do_get_config(&state).mobile_nav_style;
+        let result = do_update_mobile_nav_style(&state, &bad_paths, "drawer");
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).mobile_nav_style, before, "state.config must not change when the save fails");
     }
 
     #[test]

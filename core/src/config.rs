@@ -6,6 +6,7 @@ pub const VALID_AUTO_LOCK_MINUTES: [u32; 3] = [1, 5, 15];
 pub const VALID_STRENGTH_ALGORITHMS: [&str; 2] = ["simple", "zxcvbn"];
 pub const VALID_ACCENT_COLORS: [&str; 5] = ["indigo", "sky", "teal", "purple", "pink"];
 pub const VALID_OLD_PASSWORD_DAYS: [u32; 3] = [90, 180, 365];
+pub const VALID_MOBILE_NAV_STYLES: [&str; 3] = ["icon-rail", "bottom-tabs", "drawer"];
 
 fn default_theme() -> String {
     "dark".to_string()
@@ -35,6 +36,10 @@ fn default_nav_collapsed() -> bool {
     false
 }
 
+fn default_mobile_nav_style() -> String {
+    "icon-rail".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default = "default_theme")]
@@ -51,6 +56,8 @@ pub struct Config {
     pub hibp_opt_in: bool,
     #[serde(default = "default_nav_collapsed")]
     pub nav_collapsed: bool,
+    #[serde(default = "default_mobile_nav_style")]
+    pub mobile_nav_style: String,
 }
 
 impl Default for Config {
@@ -63,6 +70,7 @@ impl Default for Config {
             old_password_days: default_old_password_days(),
             hibp_opt_in: default_hibp_opt_in(),
             nav_collapsed: default_nav_collapsed(),
+            mobile_nav_style: default_mobile_nav_style(),
         }
     }
 }
@@ -110,6 +118,11 @@ impl Config {
         } else {
             parsed
         };
+        let parsed = if !VALID_MOBILE_NAV_STYLES.contains(&parsed.mobile_nav_style.as_str()) {
+            Config { mobile_nav_style: default_mobile_nav_style(), ..parsed }
+        } else {
+            parsed
+        };
         Ok(parsed)
     }
 
@@ -147,6 +160,7 @@ mod tests {
             old_password_days: default_old_password_days(),
             hibp_opt_in: default_hibp_opt_in(),
             nav_collapsed: default_nav_collapsed(),
+            mobile_nav_style: default_mobile_nav_style(),
         };
 
         config.save(&path).unwrap();
@@ -233,6 +247,7 @@ mod tests {
             old_password_days: 90,
             hibp_opt_in: true,
             nav_collapsed: true,
+            mobile_nav_style: default_mobile_nav_style(),
         };
 
         config.save(&path).unwrap();
@@ -261,6 +276,33 @@ mod tests {
         let path = dir.path().join("config.json");
         std::fs::write(&path, r#"{"accent_color":"bogus"}"#).unwrap();
         assert_eq!(Config::load(&path).unwrap().accent_color, "indigo");
+    }
+
+    #[test]
+    fn load_defaults_mobile_nav_style_to_icon_rail() {
+        let dir = tempdir().unwrap();
+        let config = Config::load(&dir.path().join("config.json")).unwrap();
+        assert_eq!(config.mobile_nav_style, "icon-rail");
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_mobile_nav_style() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let config = Config { mobile_nav_style: "bottom-tabs".to_string(), ..Config::default() };
+
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+
+        assert_eq!(loaded.mobile_nav_style, "bottom-tabs");
+    }
+
+    #[test]
+    fn load_rejects_invalid_mobile_nav_style_by_falling_back_to_default() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"mobile_nav_style":"sidebar-carousel"}"#).unwrap();
+        assert_eq!(Config::load(&path).unwrap().mobile_nav_style, "icon-rail");
     }
 
     #[test]
