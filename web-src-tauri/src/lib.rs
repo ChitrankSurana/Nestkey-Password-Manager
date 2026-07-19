@@ -3,3 +3,5 @@
 
 /// Fixed listen port. Chosen to avoid the Vite dev server (1420) and common dev ports.
 pub const PORT: u16 = 7373;
+
+pub mod session_store;
