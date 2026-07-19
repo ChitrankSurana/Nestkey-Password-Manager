@@ -15,26 +15,32 @@ export function NavRail({
   collapsed,
   onToggleCollapsed,
   onLock,
+  showToggle = true,
 }: {
   destinations: NavDestination[];
   activeKey: string | null;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onLock: () => void;
+  showToggle?: boolean;
 }) {
   const widthClass = collapsed ? "w-12" : "w-40";
 
   return (
     <div className={`flex flex-col ${widthClass} shrink-0 gap-1 border-r dark:border-slate-700 p-2`}>
-      <Tooltip text={collapsed ? "Expand" : "Collapse"}>
-        <button
-          onClick={onToggleCollapsed}
-          className="rounded px-2 py-1 text-left dark:hover:bg-slate-800"
-        >
-          {collapsed ? "»" : "« Collapse"}
-        </button>
-      </Tooltip>
-      <div className="h-2" />
+      {showToggle && (
+        <>
+          <Tooltip text={collapsed ? "Expand" : "Collapse"}>
+            <button
+              onClick={onToggleCollapsed}
+              className="rounded px-2 py-1 text-left dark:hover:bg-slate-800"
+            >
+              {collapsed ? "»" : "« Collapse"}
+            </button>
+          </Tooltip>
+          <div className="h-2" />
+        </>
+      )}
       {destinations.map((d) => (
         <Tooltip key={d.key} text={d.tooltip}>
           <button
