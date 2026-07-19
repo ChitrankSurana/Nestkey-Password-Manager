@@ -3138,14 +3138,11 @@ dependencies = [
 name = "pwmgr-app"
 version = "0.1.0"
 dependencies = [
- "csv",
  "dirs 5.0.1",
  "pwmgr-core",
- "reqwest 0.12.28",
  "rusqlite",
  "serde",
  "serde_json",
- "sha1",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -3154,7 +3151,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "zeroize",
- "zxcvbn",
 ]
 
 [[package]]
