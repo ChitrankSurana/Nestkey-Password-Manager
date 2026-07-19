@@ -3140,7 +3140,6 @@ version = "0.1.0"
 dependencies = [
  "dirs 5.0.1",
  "pwmgr-core",
- "rusqlite",
  "serde",
  "serde_json",
  "tauri",
@@ -3148,7 +3147,6 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
- "tempfile",
  "tokio",
  "zeroize",
 ]
