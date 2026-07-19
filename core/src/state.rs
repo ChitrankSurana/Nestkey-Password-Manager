@@ -1,4 +1,6 @@
 use crate::config::Config;
+use crate::paths::AppPaths;
+use crate::registry::{self, RegistryError};
 use crate::session::Session;
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -22,8 +24,27 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Test-only convenience constructor using an in-memory registry connection. The real
-    /// constructor used by main.rs (Task 9) opens the on-disk registry via AppPaths instead.
+    /// The one production constructor, shared by all three binaries (`src-tauri`,
+    /// `viewer-src-tauri`, `web-src-tauri`) - previously duplicated inline at each call site.
+    /// Loads `config.json` (defaulting with a stderr warning if it's missing/unreadable) and opens
+    /// the on-disk registry connection at `paths.registry_db_path()`; the only failure mode a
+    /// caller needs to handle is the registry open itself.
+    pub fn open(paths: &AppPaths) -> Result<Self, RegistryError> {
+        let config = Config::load(&paths.config_path()).unwrap_or_else(|e| {
+            eprintln!("warning: failed to load config.json ({e}), using defaults");
+            Config::default()
+        });
+        let timeout = Duration::from_secs(config.auto_lock_minutes as u64 * 60);
+        let registry = registry::open_registry(&paths.registry_db_path())?;
+        Ok(AppState {
+            registry: Mutex::new(registry),
+            vault: Mutex::new(None),
+            session: Mutex::new(Session::new(timeout)),
+            config: Mutex::new(config),
+        })
+    }
+
+    /// Test-only convenience constructor using an in-memory registry connection.
     #[cfg(test)]
     pub(crate) fn new(config: Config, timeout: Duration) -> Self {
         AppState {
@@ -58,6 +79,31 @@ mod tests {
 
         assert!(state.vault.lock().unwrap().is_none());
         assert!(state.session.lock().unwrap().is_locked());
+    }
+
+    #[test]
+    fn open_creates_a_locked_state_with_a_working_registry_connection() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::new(dir.path().to_path_buf());
+        paths.ensure_app_dirs().unwrap();
+
+        let state = AppState::open(&paths).unwrap();
+
+        assert!(state.vault.lock().unwrap().is_none());
+        assert!(state.session.lock().unwrap().is_locked());
+        // Registry connection actually works (opened the real on-disk db, not a stand-in).
+        state.registry.lock().unwrap().execute_batch("SELECT 1;").unwrap();
+    }
+
+    #[test]
+    fn open_defaults_config_when_config_json_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::new(dir.path().to_path_buf());
+        paths.ensure_app_dirs().unwrap();
+
+        let state = AppState::open(&paths).unwrap();
+
+        assert_eq!(state.config.lock().unwrap().auto_lock_minutes, Config::default().auto_lock_minutes);
     }
 
     #[test]

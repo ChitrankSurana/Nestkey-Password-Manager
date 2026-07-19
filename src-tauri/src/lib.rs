@@ -1,10 +1,7 @@
 mod commands;
 
-use pwmgr_core::config::Config;
 use pwmgr_core::paths::AppPaths;
 use pwmgr_core::state::AppState;
-use std::sync::Mutex;
-use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 pub fn run() {
@@ -12,21 +9,7 @@ pub fn run() {
     let app_paths = AppPaths::new(home.join(".pwmgr"));
     app_paths.ensure_app_dirs().expect("failed to create ~/.pwmgr directories");
 
-    let config = Config::load(&app_paths.config_path()).unwrap_or_else(|e| {
-        eprintln!("warning: failed to load config.json ({e}), using defaults");
-        Config::default()
-    });
-    let timeout = Duration::from_secs(config.auto_lock_minutes as u64 * 60);
-
-    let registry_conn = pwmgr_core::registry::open_registry(&app_paths.registry_db_path())
-        .expect("failed to open registry database");
-
-    let app_state = AppState {
-        registry: Mutex::new(registry_conn),
-        vault: Mutex::new(None),
-        session: Mutex::new(pwmgr_core::session::Session::new(timeout)),
-        config: Mutex::new(config),
-    };
+    let app_state = AppState::open(&app_paths).expect("failed to open registry database");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
