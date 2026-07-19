@@ -47,7 +47,9 @@ pub async fn csrf_middleware(req: Request<Body>, next: Next) -> Response {
     next.run(req).await
 }
 
-fn parse_session_cookie(cookie_header: &str) -> Option<Token> {
+/// Shared with `handlers::logout`, which needs to resolve the same cookie outside the
+/// `auth_middleware` gate (logout must work even for an already-locked or unknown session).
+pub(crate) fn parse_session_cookie(cookie_header: &str) -> Option<Token> {
     cookie_header
         .split(';')
         .map(str::trim)

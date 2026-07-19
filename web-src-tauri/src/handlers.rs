@@ -6,18 +6,16 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Extension, Json, Router};
 use pwmgr_core::commands::*;
-use pwmgr_core::config::Config;
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
     HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     StrengthDto, TrashedCredentialDto,
 };
 use pwmgr_core::paths::AppPaths;
-use pwmgr_core::session::Session;
 use pwmgr_core::state::AppState;
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tower_http::services::{ServeDir, ServeFile};
 use zeroize::Zeroizing;
 
@@ -161,18 +159,10 @@ struct ImportCsvCommitRequest {
 }
 
 /// Builds a fresh, locked `AppState` (own registry connection to the shared registry.db, config
-/// loaded from disk) — the per-session state each login/register unlocks.
+/// loaded from disk) — the per-session state each login/register unlocks. Thin wrapper over the
+/// shared `AppState::open` constructor, just mapping its error onto this crate's `ApiError`.
 fn build_locked_state(paths: &AppPaths) -> Result<AppState, ApiError> {
-    let config = Config::load(&paths.config_path()).unwrap_or_default();
-    let timeout = Duration::from_secs(config.auto_lock_minutes as u64 * 60);
-    let registry = pwmgr_core::registry::open_registry(&paths.registry_db_path())
-        .map_err(|_| pwmgr_core::error::internal_error())?;
-    Ok(AppState {
-        registry: Mutex::new(registry),
-        vault: Mutex::new(None),
-        session: Mutex::new(Session::new(timeout)),
-        config: Mutex::new(config),
-    })
+    AppState::open(paths).map_err(|_| pwmgr_core::error::internal_error().into())
 }
 
 fn issue_session(ctx: &AppContext, body: &AuthRequest, register: bool) -> Result<Response, ApiError> {
@@ -200,6 +190,29 @@ async fn login(State(ctx): State<AppContext>, Json(body): Json<AuthRequest>) -> 
 
 async fn register(State(ctx): State<AppContext>, Json(body): Json<AuthRequest>) -> Result<Response, ApiError> {
     issue_session(&ctx, &body, true)
+}
+
+/// Fully terminates this browser's session (unlike `lock`, which just re-locks the vault and keeps
+/// the entry in the store): removes it from `SessionStore` outright, freeing its vault/registry
+/// connections, and clears the cookie client-side. Deliberately NOT behind `auth_middleware` — that
+/// gate 401s an already-locked session, but logging out must work from any state (locked, stale, or
+/// even an unrecognized/expired cookie), so the token is resolved independently here, same as
+/// `login`/`register`.
+async fn logout(State(ctx): State<AppContext>, req: axum::http::Request<axum::body::Body>) -> Response {
+    let token = req
+        .headers()
+        .get(header::COOKIE)
+        .and_then(|h| h.to_str().ok())
+        .and_then(crate::middleware::parse_session_cookie);
+    if let Some(token) = token {
+        ctx.store.remove(&token);
+    }
+    let mut res = StatusCode::OK.into_response();
+    res.headers_mut().insert(
+        header::SET_COOKIE,
+        "session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0".parse().unwrap(),
+    );
+    res
 }
 
 async fn unlock_status(Extension(s): Extension<Arc<UserSession>>) -> Json<bool> {
@@ -482,7 +495,8 @@ pub fn build_router(ctx: AppContext) -> Router {
 
     let public = Router::new()
         .route("/api/login", post(login))
-        .route("/api/register_user", post(register));
+        .route("/api/register_user", post(register))
+        .route("/api/logout", post(logout));
 
     Router::new()
         .merge(public)
