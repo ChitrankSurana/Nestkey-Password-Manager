@@ -1,0 +1,29 @@
+[package]
+name = "pwmgr-web"
+version = "0.1.0"
+description = "Password Manager - Localhost Web Mode"
+edition = "2021"
+
+[lib]
+name = "pwmgr_web"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pwmgr-web"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.7"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs"] }
+tokio = { version = "1", features = ["full"] }
+pwmgr-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = { version = "1.7", features = ["serde"] }
+rand = "0.8"
+dirs = "5"
+
+[dev-dependencies]
+tempfile = "3.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies"] }
