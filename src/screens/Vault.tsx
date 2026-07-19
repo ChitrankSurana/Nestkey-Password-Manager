@@ -159,7 +159,7 @@ export function Vault({ username }: { username: string }) {
         />
       </div>
 
-      {mobileNavStyle === "icon-rail" && (
+      {mobileNavStyle !== "bottom-tabs" && mobileNavStyle !== "drawer" && (
         <div className="sm:hidden">
           <NavRail
             collapsed={true}

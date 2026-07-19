@@ -24,7 +24,7 @@ export function SiteEditor({ onClose, onSaved }: { onClose: () => void; onSaved:
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center">
       <form onSubmit={handleSubmit} className="w-80 space-y-3 rounded bg-slate-800 p-4">
         <h2 className="text-lg font-semibold">Add site</h2>
         <label className="block">
