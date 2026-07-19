@@ -5,4 +5,5 @@
 pub const PORT: u16 = 7373;
 
 pub mod error_map;
+pub mod middleware;
 pub mod session_store;
