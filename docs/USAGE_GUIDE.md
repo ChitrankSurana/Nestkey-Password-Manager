@@ -1,19 +1,14 @@
 # Usage Guide
 
-**Status:** placeholder — filled in as each milestone ships real, runnable functionality.
+All shipped features now have detailed, per-app usage guides — this file just points to them rather
+than duplicating their content:
 
-This guide will document, per shipped feature:
-- How to install/run (installer vs. portable).
-- Registering your first user and choosing a strong master password.
-- Adding, editing, searching, and trashing/restoring entries.
-- Using the password generator's four methods.
-- Reading the health dashboard and (optionally) enabling the HIBP breach check.
-- Backing up and restoring your vault.
-- Exporting to CSV (encrypted vs. plaintext-with-confirmation) and importing from Chrome/Edge,
-  Firefox, or a custom CSV via the generic mapper.
-- Opening a vault in the read-only viewer app.
-- Switching themes and accent colors.
-- Enabling and using web mode on `localhost`.
+- [`HOW_TO_USE_MAIN_APP.md`](HOW_TO_USE_MAIN_APP.md) — the full read/write desktop app: installing,
+  registering, vault CRUD, the four generator methods, Health Dashboard, Settings, Trash, backup/
+  restore, CSV import/export.
+- [`HOW_TO_USE_VIEWER_APP.md`](HOW_TO_USE_VIEWER_APP.md) — the read-only emergency-access app.
+- [`HOW_TO_USE_WEB_PORTAL.md`](HOW_TO_USE_WEB_PORTAL.md) — browser access on `localhost`.
 
-Sections will be added milestone-by-milestone (see `ARCHITECTURE.md` and the approved plan for the
-M1–M6 roadmap) rather than written speculatively ahead of the actual UI.
+For known gaps and deferred items across all three, see
+[`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md). For step-by-step manual QA procedures, see
+[`testing/`](testing/).
