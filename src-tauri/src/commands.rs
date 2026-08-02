@@ -1,14 +1,14 @@
 use pwmgr_core::commands::{
-    do_add_credential, do_add_site, do_analyze_strength, do_check_breach, do_create_backup,
-    do_export_csv, do_generate_password, do_get_config, do_health_report, do_import_csv_commit,
-    do_import_csv_preview, do_list_credentials_for_site, do_list_sites, do_list_trash, do_lock,
-    do_login, do_purge_trash, do_read_csv_headers, do_register, do_restore_backup,
-    do_clear_totp_secret, do_restore_credential, do_search, do_set_totp_secret,
-    do_soft_delete_credential, do_soft_delete_site, do_totp_code, do_touch, do_unlock_status,
-    do_update_accent_color, do_update_auto_lock_minutes, do_update_credential,
-    do_update_hibp_opt_in, do_update_mobile_nav_style, do_update_nav_collapsed,
-    do_update_old_password_days, do_update_site, do_update_strength_algorithm, do_update_theme,
-    do_verify_master_password,
+    do_add_credential, do_add_site, do_analyze_strength, do_check_breach, do_clear_pin,
+    do_clear_totp_secret, do_create_backup, do_export_csv, do_generate_password, do_get_config,
+    do_has_pin, do_health_report, do_import_csv_commit, do_import_csv_preview,
+    do_list_credentials_for_site, do_list_sites, do_list_trash, do_lock, do_login,
+    do_purge_trash, do_read_csv_headers, do_register, do_restore_backup, do_restore_credential,
+    do_search, do_set_pin, do_set_totp_secret, do_soft_delete_credential, do_soft_delete_site,
+    do_totp_code, do_touch, do_unlock_status, do_unlock_with_pin, do_update_accent_color,
+    do_update_auto_lock_minutes, do_update_credential, do_update_hibp_opt_in,
+    do_update_mobile_nav_style, do_update_nav_collapsed, do_update_old_password_days,
+    do_update_site, do_update_strength_algorithm, do_update_theme, do_verify_master_password,
 };
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
@@ -47,6 +47,31 @@ pub fn login(
     master_password: String,
 ) -> Result<AuthSuccess, CommandError> {
     do_login(&state, &paths, &username, &master_password)
+}
+
+#[tauri::command]
+pub fn has_pin(state: State<AppState>, username: String) -> Result<bool, CommandError> {
+    do_has_pin(&state, &username)
+}
+
+#[tauri::command]
+pub fn unlock_with_pin(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    username: String,
+    pin: String,
+) -> Result<AuthSuccess, CommandError> {
+    do_unlock_with_pin(&state, &paths, &username, &pin)
+}
+
+#[tauri::command]
+pub fn set_pin(state: State<AppState>, pin: String) -> Result<(), CommandError> {
+    do_set_pin(&state, &pin)
+}
+
+#[tauri::command]
+pub fn clear_pin(state: State<AppState>) -> Result<(), CommandError> {
+    do_clear_pin(&state)
 }
 
 #[tauri::command]

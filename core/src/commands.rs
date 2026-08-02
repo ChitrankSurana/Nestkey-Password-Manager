@@ -47,6 +47,54 @@ pub fn do_verify_master_password(state: &AppState, master_password: &str) -> Res
     Ok(crate::auth::verify_master_password(&registry, &username, master_password)?)
 }
 
+/// Whether `username` has PIN unlock configured - callable while locked (the login screen needs
+/// this before offering a "Unlock with PIN" option), so it only touches the registry, never
+/// `state.session`/`state.vault`.
+pub fn do_has_pin(state: &AppState, username: &str) -> Result<bool, CommandError> {
+    let registry = state.registry.lock().unwrap();
+    Ok(crate::auth::has_pin(&registry, username)?)
+}
+
+// Holds `session` while acquiring `registry` (needs the live vault key to seal, and the registry
+// connection to persist the result, at the same time) - the one place in this file that nests
+// those two locks. Safe: every other function touching both locks them sequentially (one dropped
+// before the other is acquired, see do_login/do_verify_master_password/do_clear_pin), so no path
+// exists that holds `registry` first and then waits on `session`, which is what would be needed
+// for this order to deadlock against it.
+pub fn do_set_pin(state: &AppState, pin: &str) -> Result<(), CommandError> {
+    let session = state.session.lock().unwrap();
+    let username = session.username().ok_or_else(crate::error::locked_error)?;
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let registry = state.registry.lock().unwrap();
+    Ok(crate::auth::set_pin(&registry, username, pin, key)?)
+}
+
+pub fn do_clear_pin(state: &AppState) -> Result<(), CommandError> {
+    let username = {
+        let session = state.session.lock().unwrap();
+        session.username().ok_or_else(crate::error::locked_error)?.to_string()
+    };
+    let registry = state.registry.lock().unwrap();
+    Ok(crate::auth::clear_pin(&registry, &username)?)
+}
+
+pub fn do_unlock_with_pin(
+    state: &AppState,
+    paths: &AppPaths,
+    username: &str,
+    pin: &str,
+) -> Result<AuthSuccess, CommandError> {
+    let vault_path = paths.vault_path(username);
+    let key = {
+        let registry = state.registry.lock().unwrap();
+        crate::auth::unlock_with_pin(&registry, username, pin)?
+    };
+    let conn = crate::vault::open_vault(&vault_path, &key)?;
+    state.session.lock().unwrap().unlock(key, username, &SystemClock);
+    state.set_vault(conn, vault_path);
+    Ok(AuthSuccess { username: username.to_string() })
+}
+
 pub fn do_list_sites(state: &AppState) -> Result<Vec<SiteDto>, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
@@ -1755,6 +1803,64 @@ mod tests {
         let (state, _paths, _dir) = test_state_and_paths();
         assert_eq!(do_set_totp_secret(&state, 1, "JBSWY3DPEHPK3PXP").unwrap_err().code(), "locked");
         assert_eq!(do_totp_code(&state, 1).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn has_pin_is_false_then_true_after_set_pin() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        assert_eq!(do_has_pin(&state, "alice").unwrap(), false);
+
+        do_set_pin(&state, "1234").unwrap();
+
+        assert_eq!(do_has_pin(&state, "alice").unwrap(), true);
+    }
+
+    #[test]
+    fn unlock_with_pin_logs_in_without_the_master_password() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_set_pin(&state, "1234").unwrap();
+        do_lock(&state);
+
+        let result = do_unlock_with_pin(&state, &paths, "alice", "1234");
+
+        assert!(result.is_ok());
+        assert!(do_unlock_status(&state));
+    }
+
+    #[test]
+    fn unlock_with_pin_rejects_a_wrong_pin_and_leaves_session_locked() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_set_pin(&state, "1234").unwrap();
+        do_lock(&state);
+
+        let result = do_unlock_with_pin(&state, &paths, "alice", "0000");
+
+        assert_eq!(result.unwrap_err().code(), "invalid_credentials");
+        assert!(state.session.lock().unwrap().is_locked());
+    }
+
+    #[test]
+    fn clear_pin_then_unlock_with_pin_fails() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_set_pin(&state, "1234").unwrap();
+        do_clear_pin(&state).unwrap();
+        do_lock(&state);
+
+        let result = do_unlock_with_pin(&state, &paths, "alice", "1234");
+
+        assert_eq!(result.unwrap_err().code(), "invalid_credentials");
+    }
+
+    #[test]
+    fn set_pin_and_clear_pin_require_an_unlocked_session() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_set_pin(&state, "1234").unwrap_err().code(), "locked");
+        assert_eq!(do_clear_pin(&state).unwrap_err().code(), "locked");
     }
 
     #[test]

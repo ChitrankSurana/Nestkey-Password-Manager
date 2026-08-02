@@ -154,6 +154,11 @@ export const api = {
     call<AuthSuccess>("register_user", { username, masterPassword }),
   login: (username: string, masterPassword: string) =>
     call<AuthSuccess>("login", { username, masterPassword }),
+  hasPin: (username: string) => call<boolean>("has_pin", { username }),
+  unlockWithPin: (username: string, pin: string) =>
+    call<AuthSuccess>("unlock_with_pin", { username, pin }),
+  setPin: (pin: string) => call<void>("set_pin", { pin }),
+  clearPin: () => call<void>("clear_pin"),
   lock: () => call<void>("lock"),
   touch: () => call<void>("touch"),
   verifyMasterPassword: (masterPassword: string) =>

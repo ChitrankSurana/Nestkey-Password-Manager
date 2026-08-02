@@ -135,7 +135,7 @@ export function AppShell({ username }: { username: string }) {
         {screen === "generator" && <Generator onBack={goVault} />}
         {screen === "trash" && <Trash onBack={goVault} />}
         {screen === "data" && <Data onBack={goVault} />}
-        {screen === "settings" && <Settings onBack={goVault} />}
+        {screen === "settings" && <Settings onBack={goVault} username={username} />}
       </div>
 
       {selectedSiteId !== null && (

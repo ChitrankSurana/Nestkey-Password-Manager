@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, FormEvent } from "react";
 import { api, isCommandError } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
@@ -22,7 +22,7 @@ const MOBILE_NAV_STYLE_OPTIONS = [
 ] as const;
 const OLD_PASSWORD_DAYS_OPTIONS = [90, 180, 365] as const;
 
-export function Settings({ onBack }: { onBack: () => void }) {
+export function Settings({ onBack, username }: { onBack: () => void; username: string }) {
   const [autoLockMinutes, setAutoLockMinutes] = useState<number | null>(null);
   const [strengthAlgorithm, setStrengthAlgorithm] = useState<string | null>(null);
   const [theme, setTheme] = useState<string | null>(null);
@@ -30,6 +30,8 @@ export function Settings({ onBack }: { onBack: () => void }) {
   const [oldPasswordDays, setOldPasswordDays] = useState<number | null>(null);
   const [hibpOptIn, setHibpOptIn] = useState<boolean | null>(null);
   const [mobileNavStyle, setMobileNavStyle] = useState<string | null>(null);
+  const [pinSet, setPinSet] = useState<boolean | null>(null);
+  const [pinInput, setPinInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const editedRef = useRef(false);
@@ -51,7 +53,36 @@ export function Settings({ onBack }: { onBack: () => void }) {
       .catch((err) => {
         setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
       });
-  }, []);
+    api.hasPin(username).then(setPinSet).catch(() => setPinSet(false));
+  }, [username]);
+
+  async function handleSetPin(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.setPin(pinInput);
+      setPinInput("");
+      setPinSet(true);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleClearPin() {
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.clearPin();
+      setPinSet(false);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function handleChange(minutes: number) {
     editedRef.current = true;
@@ -218,6 +249,44 @@ export function Settings({ onBack }: { onBack: () => void }) {
             </Tooltip>
             <span className="text-sm">Enable breach check (HIBP) on the Health Dashboard</span>
           </label>
+
+          <div>
+            <span className="text-sm">PIN unlock</span>
+            {pinSet === null ? null : pinSet ? (
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-sm opacity-70">A PIN is set up for quick unlock.</span>
+                <Tooltip text="Remove PIN unlock; only the master password will unlock the vault">
+                  <button
+                    type="button"
+                    onClick={handleClearPin}
+                    disabled={submitting}
+                    className="rounded border px-2 py-0.5 text-sm border-[var(--border)] disabled:opacity-50"
+                  >
+                    Remove PIN
+                  </button>
+                </Tooltip>
+              </div>
+            ) : (
+              <form onSubmit={handleSetPin} className="mt-1 flex items-center gap-2">
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  className="rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
+                  value={pinInput}
+                  onChange={(e) => setPinInput(e.target.value)}
+                  placeholder="New PIN"
+                  title="A PIN for faster local unlock, instead of typing the master password every time"
+                />
+                <button
+                  type="submit"
+                  disabled={submitting || pinInput.trim() === ""}
+                  className="rounded bg-[var(--accent)] px-3 py-1 text-sm disabled:opacity-50"
+                >
+                  Set PIN
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       </details>
 

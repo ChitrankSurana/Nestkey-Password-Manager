@@ -36,6 +36,25 @@ struct AuthRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct HasPinRequest {
+    username: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockWithPinRequest {
+    username: String,
+    pin: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetPinRequest {
+    pin: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AddSiteRequest {
     name: String,
     url: Option<String>,
@@ -223,6 +242,31 @@ async fn register(State(ctx): State<AppContext>, Json(body): Json<AuthRequest>) 
     issue_session(&ctx, &body, true)
 }
 
+// Public (unauthenticated), like login/register - the login screen needs this before a session
+// exists, to decide whether to offer a "Unlock with PIN" option at all.
+async fn has_pin(State(ctx): State<AppContext>, Json(body): Json<HasPinRequest>) -> Result<Json<bool>, ApiError> {
+    let app_state = build_locked_state(&ctx.paths)?;
+    Ok(Json(do_has_pin(&app_state, &body.username)?))
+}
+
+async fn unlock_with_pin(
+    State(ctx): State<AppContext>,
+    Json(body): Json<UnlockWithPinRequest>,
+) -> Result<Response, ApiError> {
+    let app_state = build_locked_state(&ctx.paths)?;
+    do_unlock_with_pin(&app_state, &ctx.paths, &body.username, &body.pin)?;
+    let session = UserSession {
+        username: body.username.clone(),
+        app_state,
+        last_seen: Mutex::new(Instant::now()),
+    };
+    let token = ctx.store.insert(session);
+    let cookie = format!("session={token}; HttpOnly; SameSite=Strict; Path=/");
+    let mut res = Json(AuthSuccess { username: body.username.clone() }).into_response();
+    res.headers_mut().insert(header::SET_COOKIE, cookie.parse().unwrap());
+    Ok(res)
+}
+
 /// Fully terminates this browser's session (unlike `lock`, which just re-locks the vault and keeps
 /// the entry in the store): removes it from `SessionStore` outright, freeing its vault/registry
 /// connections, and clears the cookie client-side. Deliberately NOT behind `auth_middleware` — that
@@ -265,6 +309,19 @@ async fn verify_master_password(
     Json(b): Json<VerifyMasterPasswordRequest>,
 ) -> Result<Json<bool>, ApiError> {
     Ok(Json(do_verify_master_password(&s.app_state, &b.master_password)?))
+}
+
+async fn set_pin(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetPinRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_pin(&s.app_state, &b.pin)?;
+    Ok(StatusCode::OK)
+}
+
+async fn clear_pin(Extension(s): Extension<Arc<UserSession>>) -> Result<StatusCode, ApiError> {
+    do_clear_pin(&s.app_state)?;
+    Ok(StatusCode::OK)
 }
 
 async fn list_sites(Extension(s): Extension<Arc<UserSession>>) -> Result<Json<Vec<SiteDto>>, ApiError> {
@@ -543,6 +600,8 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/lock", post(lock))
         .route("/api/touch", post(touch))
         .route("/api/verify_master_password", post(verify_master_password))
+        .route("/api/set_pin", post(set_pin))
+        .route("/api/clear_pin", post(clear_pin))
         .route("/api/list_sites", post(list_sites))
         .route("/api/add_site", post(add_site))
         .route("/api/update_site", post(update_site))
@@ -585,6 +644,8 @@ pub fn build_router(ctx: AppContext) -> Router {
     let public = Router::new()
         .route("/api/login", post(login))
         .route("/api/register_user", post(register))
+        .route("/api/has_pin", post(has_pin))
+        .route("/api/unlock_with_pin", post(unlock_with_pin))
         .route("/api/logout", post(logout));
 
     Router::new()
