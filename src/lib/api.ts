@@ -87,6 +87,7 @@ export type ExportMode =
 export type ImportFormat =
   | { format: "chromium" }
   | { format: "firefox" }
+  | { format: "lastPass" }
   | { format: "generic"; mapping: Record<string, string> };
 
 export interface ImportRecordDto {

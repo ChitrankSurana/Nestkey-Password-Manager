@@ -8,7 +8,7 @@ const TARGET_FIELDS = ["site_name", "url", "notes", "username", "secret", "remar
 
 export function CsvImport({ onBack }: { onBack: () => void }) {
   const [path, setPath] = useState<string | null>(null);
-  const [source, setSource] = useState<"chromium" | "firefox" | "generic">("chromium");
+  const [source, setSource] = useState<"chromium" | "firefox" | "lastPass" | "generic">("chromium");
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [records, setRecords] = useState<ImportRecordDto[] | null>(null);
@@ -43,7 +43,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
     }
   }
 
-  async function handleSourceChange(next: "chromium" | "firefox" | "generic") {
+  async function handleSourceChange(next: "chromium" | "firefox" | "lastPass" | "generic") {
     setSource(next);
     setRecords(null);
     setSummary(null);
@@ -58,6 +58,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
   function currentFormat(): ImportFormat {
     if (source === "chromium") return { format: "chromium" };
     if (source === "firefox") return { format: "firefox" };
+    if (source === "lastPass") return { format: "lastPass" };
     return { format: "generic", mapping };
   }
 
@@ -116,6 +117,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
         >
           <option value="chromium">Chrome / Chromium export</option>
           <option value="firefox">Firefox export</option>
+          <option value="lastPass">LastPass export</option>
           <option value="generic">Other (map columns myself)</option>
         </select>
         <Tooltip text="Choose the CSV file to import">

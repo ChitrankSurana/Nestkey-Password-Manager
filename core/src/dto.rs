@@ -229,6 +229,7 @@ impl std::fmt::Debug for ExportMode {
 pub enum ImportFormat {
     Chromium,
     Firefox,
+    LastPass,
     Generic { mapping: HashMap<String, String> },
 }
 

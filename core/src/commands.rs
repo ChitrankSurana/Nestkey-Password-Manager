@@ -607,6 +607,7 @@ pub fn do_import_csv_preview(
     let records = match format {
         ImportFormat::Chromium => crate::portio::parse_chromium_csv(&text)?,
         ImportFormat::Firefox => crate::portio::parse_firefox_csv(&text)?,
+        ImportFormat::LastPass => crate::portio::parse_lastpass_csv(&text)?,
         ImportFormat::Generic { mapping } => crate::portio::parse_generic_csv(&text, mapping)?,
     };
     Ok(records.into_iter().map(ImportRecordDto::from).collect())
@@ -1608,6 +1609,23 @@ mod tests {
 
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].site_name, "example.com");
+        assert_eq!(&*records[0].secret, "s3cret");
+    }
+
+    #[test]
+    fn import_csv_preview_parses_a_lastpass_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lastpass.csv");
+        std::fs::write(
+            &path,
+            "url,username,password,totp,extra,name,grouping,fav\nhttps://example.com,alice,s3cret,,,My Login,,0\n",
+        )
+        .unwrap();
+
+        let records = do_import_csv_preview(path.to_str().unwrap(), &ImportFormat::LastPass).unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].site_name, "My Login");
         assert_eq!(&*records[0].secret, "s3cret");
     }
 
