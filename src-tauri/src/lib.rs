@@ -39,6 +39,8 @@ pub fn run() {
             commands::touch,
             commands::list_sites,
             commands::add_site,
+            commands::update_site,
+            commands::soft_delete_site,
             commands::add_credential,
             commands::update_credential,
             commands::list_credentials_for_site,

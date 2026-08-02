@@ -111,6 +111,35 @@ pub fn list_sites(conn: &Connection) -> Result<Vec<Site>, VaultError> {
     Ok(out)
 }
 
+pub fn update_site(
+    conn: &Connection,
+    site_id: i64,
+    name: &str,
+    url: Option<&str>,
+    notes: Option<&str>,
+) -> Result<(), VaultError> {
+    let updated = conn.execute(
+        "UPDATE sites SET name = ?1, url = ?2, notes = ?3, updated_at = datetime('now')
+         WHERE id = ?4 AND deleted_at IS NULL",
+        rusqlite::params![name, url, notes, site_id],
+    )?;
+    if updated == 0 {
+        return Err(VaultError::NotFound);
+    }
+    Ok(())
+}
+
+// Cheap existence check for the "refuse to delete a non-empty site" business rule at the command
+// layer - deliberately not a decrypt (unlike list_credentials_for_site), since this only needs a
+// count, not the secrets.
+pub fn count_live_credentials_for_site(conn: &Connection, site_id: i64) -> Result<i64, VaultError> {
+    Ok(conn.query_row(
+        "SELECT count(*) FROM credentials WHERE site_id = ?1 AND deleted_at IS NULL",
+        rusqlite::params![site_id],
+        |row| row.get(0),
+    )?)
+}
+
 pub fn soft_delete_site(conn: &Connection, site_id: i64) -> Result<(), VaultError> {
     let updated = conn.execute(
         "UPDATE sites SET deleted_at = datetime('now') WHERE id = ?1 AND deleted_at IS NULL",
@@ -570,6 +599,46 @@ mod tests {
         assert_eq!(sites.len(), 1);
         assert_eq!(sites[0].id, id);
         assert_eq!(sites[0].name, "example.com");
+    }
+
+    #[test]
+    fn update_site_changes_name_url_and_notes() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[30u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let id = add_site(&conn, "old.com", None, None).unwrap();
+
+        update_site(&conn, id, "new.com", Some("https://new.com"), Some("note")).unwrap();
+
+        let sites = list_sites(&conn).unwrap();
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].name, "new.com");
+        assert_eq!(sites[0].url.as_deref(), Some("https://new.com"));
+        assert_eq!(sites[0].notes.as_deref(), Some("note"));
+    }
+
+    #[test]
+    fn update_site_on_unknown_id_returns_not_found() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[31u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let err = update_site(&conn, 999, "x", None, None).unwrap_err();
+        assert!(matches!(err, VaultError::NotFound));
+    }
+
+    #[test]
+    fn count_live_credentials_for_site_ignores_soft_deleted() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[32u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret", None).unwrap();
+
+        assert_eq!(count_live_credentials_for_site(&conn, site_id).unwrap(), 1);
+
+        soft_delete_credential(&conn, cred_id).unwrap();
+        assert_eq!(count_live_credentials_for_site(&conn, site_id).unwrap(), 0);
     }
 
     #[test]

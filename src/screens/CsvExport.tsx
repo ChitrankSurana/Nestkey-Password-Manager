@@ -2,6 +2,7 @@ import { useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { api, isCommandError, ExportMode } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
+import { Icon } from "../components/Icon";
 
 const CONFIRM_PHRASE = "EXPORT PLAINTEXT";
 
@@ -41,9 +42,9 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-4">
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] p-4">
       <Tooltip text="Back to vault">
-        <button onClick={onBack} className="mb-4 underline text-sm">← Back</button>
+        <button onClick={onBack} className="mb-4 underline text-sm"><Icon name="arrow-left" /> Back</button>
       </Tooltip>
       <h1 className="text-xl font-semibold mb-4">Export to CSV</h1>
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
@@ -73,14 +74,14 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
           <input
             type="password"
             placeholder="Export password"
-            className="w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
+            className="w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
           <input
             type="password"
             placeholder="Confirm export password"
-            className="w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
+            className="w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
           />
@@ -97,7 +98,7 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
             Type <code>{CONFIRM_PHRASE}</code> to confirm:
           </label>
           <input
-            className="w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
+            className="w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
             value={typedConfirm}
             onChange={(e) => setTypedConfirm(e.target.value)}
           />
@@ -110,7 +111,7 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
           disabled={!canExport}
           className="mt-4 rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50"
         >
-          Export
+          <Icon name="download" /> Export
         </button>
       </Tooltip>
     </div>

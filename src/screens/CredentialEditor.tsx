@@ -1,6 +1,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import { api, isCommandError, CredentialDto } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
+import { Icon } from "../components/Icon";
 import { PasswordGeneratorPanel } from "../components/PasswordGeneratorPanel";
 
 export function CredentialEditor({
@@ -46,12 +47,12 @@ export function CredentialEditor({
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-80 space-y-3 rounded bg-slate-800 p-4">
+      <form onSubmit={handleSubmit} className="w-full max-w-80 space-y-3 rounded bg-[var(--surface)] p-4 text-[var(--fg)]">
         <h2 className="text-lg font-semibold">{existing ? "Edit credential" : "Add credential"}</h2>
         <label className="block">
           <span className="text-sm">Username (optional)</span>
           <input
-            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-900 dark:border-slate-600"
+            className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoFocus
@@ -61,7 +62,7 @@ export function CredentialEditor({
         <label className="block">
           <span className="text-sm">Password</span>
           <input
-            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-900 dark:border-slate-600"
+            className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
             title="The password to store, encrypted"
@@ -73,7 +74,7 @@ export function CredentialEditor({
         <label className="block">
           <span className="text-sm">Remarks (optional)</span>
           <input
-            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-900 dark:border-slate-600"
+            className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
             title="Any notes about this login"
@@ -83,7 +84,7 @@ export function CredentialEditor({
         <div className="flex justify-end space-x-2">
           <Tooltip text="Cancel">
             <button type="button" onClick={onClose} className="px-3 py-1">
-              Cancel
+              <Icon name="x" /> Cancel
             </button>
           </Tooltip>
           <Tooltip text="Save this credential">
@@ -92,7 +93,7 @@ export function CredentialEditor({
               disabled={submitting || secret.trim() === ""}
               className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50"
             >
-              Save
+              <Icon name="check-lg" /> Save
             </button>
           </Tooltip>
         </div>

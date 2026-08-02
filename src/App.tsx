@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Login } from "./screens/Login";
 import { Register } from "./screens/Register";
-import { Vault } from "./screens/Vault";
+import { AppShell } from "./screens/AppShell";
+import { ToastHost } from "./components/ToastHost";
 import { useActivityWatcher } from "./hooks/useActivityWatcher";
 import { api } from "./lib/api";
 import "./App.css";
@@ -40,8 +41,9 @@ function App() {
     };
   }, []);
 
+  let content;
   if (screen === "login") {
-    return (
+    content = (
       <Login
         onSuccess={(u) => {
           setUsername(u);
@@ -50,10 +52,8 @@ function App() {
         onSwitchToRegister={() => setScreen("register")}
       />
     );
-  }
-
-  if (screen === "register") {
-    return (
+  } else if (screen === "register") {
+    content = (
       <Register
         onSuccess={(u) => {
           setUsername(u);
@@ -62,9 +62,16 @@ function App() {
         onSwitchToLogin={() => setScreen("login")}
       />
     );
+  } else {
+    content = <AppShell username={username!} />;
   }
 
-  return <Vault username={username!} />;
+  return (
+    <>
+      {content}
+      <ToastHost />
+    </>
+  );
 }
 
 export default App;

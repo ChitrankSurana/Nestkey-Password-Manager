@@ -3,10 +3,10 @@ use pwmgr_core::commands::{
     do_export_csv, do_generate_password, do_get_config, do_health_report, do_import_csv_commit,
     do_import_csv_preview, do_list_credentials_for_site, do_list_sites, do_list_trash, do_lock,
     do_login, do_purge_trash, do_read_csv_headers, do_register, do_restore_backup,
-    do_restore_credential, do_search, do_soft_delete_credential, do_touch, do_unlock_status,
-    do_update_accent_color, do_update_auto_lock_minutes, do_update_credential, do_update_hibp_opt_in,
-    do_update_mobile_nav_style, do_update_nav_collapsed, do_update_old_password_days,
-    do_update_strength_algorithm, do_update_theme,
+    do_restore_credential, do_search, do_soft_delete_credential, do_soft_delete_site, do_touch,
+    do_unlock_status, do_update_accent_color, do_update_auto_lock_minutes, do_update_credential,
+    do_update_hibp_opt_in, do_update_mobile_nav_style, do_update_nav_collapsed,
+    do_update_old_password_days, do_update_site, do_update_strength_algorithm, do_update_theme,
 };
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
@@ -72,6 +72,22 @@ pub fn add_site(
     notes: Option<String>,
 ) -> Result<i64, CommandError> {
     do_add_site(&state, &name, url.as_deref(), notes.as_deref())
+}
+
+#[tauri::command]
+pub fn update_site(
+    state: State<AppState>,
+    site_id: i64,
+    name: String,
+    url: Option<String>,
+    notes: Option<String>,
+) -> Result<(), CommandError> {
+    do_update_site(&state, site_id, &name, url.as_deref(), notes.as_deref())
+}
+
+#[tauri::command]
+pub fn soft_delete_site(state: State<AppState>, site_id: i64) -> Result<(), CommandError> {
+    do_soft_delete_site(&state, site_id)
 }
 
 #[tauri::command]

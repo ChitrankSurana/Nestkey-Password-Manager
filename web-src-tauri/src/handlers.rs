@@ -43,6 +43,15 @@ struct AddSiteRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateSiteRequest {
+    site_id: i64,
+    name: String,
+    url: Option<String>,
+    notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AddCredentialRequest {
     site_id: i64,
     username: Option<String>,
@@ -238,6 +247,22 @@ async fn add_site(
     Json(b): Json<AddSiteRequest>,
 ) -> Result<Json<i64>, ApiError> {
     Ok(Json(do_add_site(&s.app_state, &b.name, b.url.as_deref(), b.notes.as_deref())?))
+}
+
+async fn update_site(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<UpdateSiteRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_update_site(&s.app_state, b.site_id, &b.name, b.url.as_deref(), b.notes.as_deref())?;
+    Ok(StatusCode::OK)
+}
+
+async fn soft_delete_site(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SiteIdRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_soft_delete_site(&s.app_state, b.site_id)?;
+    Ok(StatusCode::OK)
 }
 
 async fn add_credential(
@@ -461,6 +486,8 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/touch", post(touch))
         .route("/api/list_sites", post(list_sites))
         .route("/api/add_site", post(add_site))
+        .route("/api/update_site", post(update_site))
+        .route("/api/soft_delete_site", post(soft_delete_site))
         .route("/api/add_credential", post(add_credential))
         .route("/api/update_credential", post(update_credential))
         .route("/api/list_credentials_for_site", post(list_credentials_for_site))

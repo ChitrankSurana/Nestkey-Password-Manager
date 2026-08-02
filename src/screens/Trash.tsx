@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, isCommandError, TrashedCredentialDto } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
+import { Icon } from "../components/Icon";
 
 export function Trash({ onBack }: { onBack: () => void }) {
   const [items, setItems] = useState<TrashedCredentialDto[]>([]);
@@ -20,10 +21,10 @@ export function Trash({ onBack }: { onBack: () => void }) {
   }, []);
 
   return (
-    <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-4">
+    <div className="flex-1 bg-[var(--bg)] text-[var(--fg)] p-4">
       <Tooltip text="Back to vault">
         <button onClick={onBack} className="mb-4 underline text-sm">
-          ← Back
+          <Icon name="arrow-left" /> Back
         </button>
       </Tooltip>
       <div className="flex justify-between items-center mb-4">
@@ -42,10 +43,10 @@ export function Trash({ onBack }: { onBack: () => void }) {
                 setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
               }
             }}
-            className="rounded bg-red-700 px-3 py-1"
+            className="rounded bg-[var(--danger)] hover:bg-[var(--danger-hover)] px-3 py-1"
             disabled={items.length === 0}
           >
-            Empty Trash
+            <Icon name="trash" /> Empty Trash
           </button>
         </Tooltip>
       </div>
@@ -54,7 +55,7 @@ export function Trash({ onBack }: { onBack: () => void }) {
 
       <ul className="space-y-2">
         {items.map((t) => (
-          <li key={t.credentialId} className="rounded border px-2 py-1 dark:border-slate-700 flex justify-between">
+          <li key={t.credentialId} className="rounded border px-2 py-1 border-[var(--border)] flex justify-between">
             <span>
               {t.siteName} — {t.username ?? "(no username)"}
             </span>
@@ -71,7 +72,7 @@ export function Trash({ onBack }: { onBack: () => void }) {
                 }}
                 className="underline text-sm"
               >
-                Restore
+                <Icon name="arrow-counterclockwise" /> Restore
               </button>
             </Tooltip>
           </li>

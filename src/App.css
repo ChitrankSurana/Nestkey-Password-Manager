@@ -1,3 +1,8 @@
+/* Real icon font (bwi-* equivalent) - ships .bi-* classes + a woff2 glyph font. Must be a plain
+   @import at the top of the file, alongside the Tailwind import below (CSS requires all @import
+   rules to precede any other statement). */
+@import "bootstrap-icons/font/bootstrap-icons.css";
+
 /* Tailwind v4 auto-detects content sources across the whole repo by default,
    which would also pick up Tailwind-looking class names from planning docs
    under docs/. Disable auto-detection and declare explicit sources instead,
@@ -23,3 +28,92 @@
 [data-accent="teal"]   { --accent: #14b8a6; --accent-hover: #0d9488; }
 [data-accent="purple"] { --accent: #a855f7; --accent-hover: #9333ea; }
 [data-accent="pink"]   { --accent: #ec4899; --accent-hover: #db2777; }
+
+/* Full 050-950 ramp per accent hue - not hand-rolled, Tailwind v4 already ships the entire
+   default palette as --color-<hue>-<step> custom properties (see node_modules/tailwindcss/
+   theme.css). This just aliases the active hue's ramp to a hue-agnostic --accent-<step> name, so
+   a component can reference --accent-100.._950 without caring which of the 5 hues is selected -
+   same indirection --accent/--accent-hover above already uses, just the full ramp instead of 2 steps. */
+[data-accent="indigo"] {
+  --accent-50: var(--color-indigo-50); --accent-100: var(--color-indigo-100);
+  --accent-200: var(--color-indigo-200); --accent-300: var(--color-indigo-300);
+  --accent-400: var(--color-indigo-400); --accent-500: var(--color-indigo-500);
+  --accent-600: var(--color-indigo-600); --accent-700: var(--color-indigo-700);
+  --accent-800: var(--color-indigo-800); --accent-900: var(--color-indigo-900);
+  --accent-950: var(--color-indigo-950);
+}
+[data-accent="sky"] {
+  --accent-50: var(--color-sky-50); --accent-100: var(--color-sky-100);
+  --accent-200: var(--color-sky-200); --accent-300: var(--color-sky-300);
+  --accent-400: var(--color-sky-400); --accent-500: var(--color-sky-500);
+  --accent-600: var(--color-sky-600); --accent-700: var(--color-sky-700);
+  --accent-800: var(--color-sky-800); --accent-900: var(--color-sky-900);
+  --accent-950: var(--color-sky-950);
+}
+[data-accent="teal"] {
+  --accent-50: var(--color-teal-50); --accent-100: var(--color-teal-100);
+  --accent-200: var(--color-teal-200); --accent-300: var(--color-teal-300);
+  --accent-400: var(--color-teal-400); --accent-500: var(--color-teal-500);
+  --accent-600: var(--color-teal-600); --accent-700: var(--color-teal-700);
+  --accent-800: var(--color-teal-800); --accent-900: var(--color-teal-900);
+  --accent-950: var(--color-teal-950);
+}
+[data-accent="purple"] {
+  --accent-50: var(--color-purple-50); --accent-100: var(--color-purple-100);
+  --accent-200: var(--color-purple-200); --accent-300: var(--color-purple-300);
+  --accent-400: var(--color-purple-400); --accent-500: var(--color-purple-500);
+  --accent-600: var(--color-purple-600); --accent-700: var(--color-purple-700);
+  --accent-800: var(--color-purple-800); --accent-900: var(--color-purple-900);
+  --accent-950: var(--color-purple-950);
+}
+[data-accent="pink"] {
+  --accent-50: var(--color-pink-50); --accent-100: var(--color-pink-100);
+  --accent-200: var(--color-pink-200); --accent-300: var(--color-pink-300);
+  --accent-400: var(--color-pink-400); --accent-500: var(--color-pink-500);
+  --accent-600: var(--color-pink-600); --accent-700: var(--color-pink-700);
+  --accent-800: var(--color-pink-800); --accent-900: var(--color-pink-900);
+  --accent-950: var(--color-pink-950);
+}
+
+/* Semantic tokens (Phase 4 of the UI plan): 2-3 shades each is enough for a single-user app with
+   one active theme at a time - not Bitwarden's full 050-950 ramp. `:root` is the light-mode
+   default (unprefixed, so it also covers any element rendered before the `dark` class lands);
+   `.dark` overrides it, matching how the `dark:` variant is already scoped in this file. */
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --fg: #0f172a;
+  --border: #cbd5e1;
+
+  /* Status/severity tokens - aliased from Tailwind's red/amber/orange/blue ramps, not from the
+     user's chosen accent hue: severity coloring must stay legible/consistent regardless of theme
+     preference (a "danger" delete button shouldn't turn pink just because the user likes pink). */
+  --danger: var(--color-red-600);
+  --danger-hover: var(--color-red-700);
+  --warning: var(--color-amber-600);
+
+  /* Tinted (not solid-fill) accent background+text pair, for surfaces like the active nav item -
+     built from the ramp above instead of a flat --accent fill. */
+  --accent-subtle-bg: var(--accent-100);
+  --accent-subtle-fg: var(--accent-700);
+
+  /* Colorized password reveal (item 3) - digits/symbols get a distinct hue, letters inherit. */
+  --pw-digit: var(--color-orange-600);
+  --pw-symbol: var(--color-blue-600);
+}
+.dark {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --fg: #f1f5f9;
+  --border: #334155;
+
+  --danger: var(--color-red-500);
+  --danger-hover: var(--color-red-400);
+  --warning: var(--color-amber-500);
+
+  --accent-subtle-bg: var(--accent-900);
+  --accent-subtle-fg: var(--accent-100);
+
+  --pw-digit: var(--color-orange-400);
+  --pw-symbol: var(--color-blue-400);
+}

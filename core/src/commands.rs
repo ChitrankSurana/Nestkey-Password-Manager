@@ -104,6 +104,35 @@ pub fn do_add_site(
     Ok(crate::vault::add_site(conn, name, url, notes)?)
 }
 
+pub fn do_update_site(
+    state: &AppState,
+    site_id: i64,
+    name: &str,
+    url: Option<&str>,
+    notes: Option<&str>,
+) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::update_site(conn, site_id, name, url, notes)?)
+}
+
+pub fn do_soft_delete_site(state: &AppState, site_id: i64) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    // Business rule enforced here, not in vault::soft_delete_site itself: that lower-level
+    // function is also used to cascade-delete a site's credentials from every read path, and
+    // several existing tests rely on it doing so unconditionally. The command layer is the right
+    // place to refuse the destructive action instead - there's no restore-site UI, so an orphaned
+    // site's credentials would otherwise become permanently unreachable.
+    let live = crate::vault::count_live_credentials_for_site(conn, site_id)?;
+    if live > 0 {
+        return Err(crate::error::invalid_input_error(
+            "This site still has credentials. Delete them first, then delete the site.",
+        ));
+    }
+    Ok(crate::vault::soft_delete_site(conn, site_id)?)
+}
+
 pub fn do_add_credential(
     state: &AppState,
     site_id: i64,
@@ -900,6 +929,44 @@ mod tests {
         assert_eq!(sites.len(), 1);
         assert_eq!(sites[0].id, site_id);
         assert_eq!(sites[0].name, "example.com");
+    }
+
+    #[test]
+    fn update_site_then_list_sites_reflects_the_update() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+
+        do_update_site(&state, site_id, "new-name.com", Some("https://new-name.com"), None).unwrap();
+        let sites = do_list_sites(&state).unwrap();
+
+        assert_eq!(sites[0].name, "new-name.com");
+    }
+
+    #[test]
+    fn soft_delete_site_refuses_when_site_still_has_a_live_credential() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("bob"), "s3cret", None).unwrap();
+
+        let err = do_soft_delete_site(&state, site_id).unwrap_err();
+
+        assert_eq!(err.code(), "invalid_input");
+        assert_eq!(do_list_sites(&state).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn soft_delete_site_succeeds_once_its_credential_is_gone() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None).unwrap();
+        do_soft_delete_credential(&state, cred_id).unwrap();
+
+        do_soft_delete_site(&state, site_id).unwrap();
+
+        assert!(do_list_sites(&state).unwrap().is_empty());
     }
 
     #[test]

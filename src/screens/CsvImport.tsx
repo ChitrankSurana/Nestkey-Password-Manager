@@ -2,6 +2,7 @@ import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, isCommandError, ImportFormat, ImportRecordDto, ImportSummaryDto } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
+import { Icon } from "../components/Icon";
 
 const TARGET_FIELDS = ["site_name", "url", "notes", "username", "secret", "remarks"] as const;
 
@@ -94,9 +95,9 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-4">
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] p-4">
       <Tooltip text="Back to vault">
-        <button onClick={onBack} className="mb-4 underline text-sm">← Back</button>
+        <button onClick={onBack} className="mb-4 underline text-sm"><Icon name="arrow-left" /> Back</button>
       </Tooltip>
       <h1 className="text-xl font-semibold mb-4">Import from CSV</h1>
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
@@ -108,7 +109,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
 
       <div className="flex gap-2 items-center mb-2">
         <select
-          className="rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
+          className="rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
           value={source}
           disabled={busy}
           onChange={(e) => handleSourceChange(e.target.value as typeof source)}
@@ -118,8 +119,8 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
           <option value="generic">Other (map columns myself)</option>
         </select>
         <Tooltip text="Choose the CSV file to import">
-          <button onClick={handlePickFile} disabled={busy} className="rounded bg-slate-700 px-3 py-1 disabled:opacity-50">
-            Choose File…
+          <button onClick={handlePickFile} disabled={busy} className="rounded bg-[var(--surface)] border border-[var(--border)] px-3 py-1 disabled:opacity-50">
+            <Icon name="folder2-open" /> Choose File…
           </button>
         </Tooltip>
         {path && <span className="text-xs opacity-70">{path}</span>}
@@ -132,7 +133,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
             <label key={h} className="flex items-center gap-2 text-sm">
               <span className="w-40 truncate">{h}</span>
               <select
-                className="rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
+                className="rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
                 value={mapping[h] ?? ""}
                 onChange={(e) =>
                   setMapping((m) => ({ ...m, [h]: e.target.value }))
@@ -150,7 +151,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
 
       <Tooltip text="Parse the file without saving anything yet">
         <button onClick={handlePreview} disabled={!path || busy} className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
-          Preview
+          <Icon name="eye-fill" /> Preview
         </button>
       </Tooltip>
 
@@ -160,7 +161,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
             <thead>
               <tr>
                 {["Site", "URL", "Username", "Secret", "Remarks"].map((h) => (
-                  <th key={h} className="text-left border-b px-2 py-1 dark:border-slate-700">{h}</th>
+                  <th key={h} className="text-left border-b px-2 py-1 border-[var(--border)]">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -178,7 +179,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
           </table>
           <Tooltip text="Insert these records into your vault">
             <button onClick={handleCommit} disabled={busy} className="mt-3 rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
-              Commit Import
+              <Icon name="upload" /> Commit Import
             </button>
           </Tooltip>
         </div>

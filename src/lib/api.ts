@@ -143,6 +143,9 @@ export const api = {
   listSites: () => call<SiteDto[]>("list_sites"),
   addSite: (name: string, url: string | null, notes: string | null) =>
     call<number>("add_site", { name, url, notes }),
+  updateSite: (siteId: number, name: string, url: string | null, notes: string | null) =>
+    call<void>("update_site", { siteId, name, url, notes }),
+  softDeleteSite: (siteId: number) => call<void>("soft_delete_site", { siteId }),
   addCredential: (siteId: number, username: string | null, secret: string, remarks: string | null) =>
     call<number>("add_credential", { siteId, username, secret, remarks }),
   updateCredential: (credentialId: number, username: string | null, secret: string, remarks: string | null) =>
