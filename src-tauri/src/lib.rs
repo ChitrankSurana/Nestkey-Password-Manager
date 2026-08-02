@@ -37,6 +37,7 @@ pub fn run() {
             commands::login,
             commands::lock,
             commands::touch,
+            commands::verify_master_password,
             commands::list_sites,
             commands::add_site,
             commands::update_site,

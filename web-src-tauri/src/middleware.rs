@@ -93,7 +93,7 @@ mod tests {
         };
         if unlocked {
             let key = pwmgr_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
-            app_state.session.lock().unwrap().unlock(key, &SystemClock);
+            app_state.session.lock().unwrap().unlock(key, "alice", &SystemClock);
         }
         let token = store.insert(UserSession {
             username: "alice".into(),

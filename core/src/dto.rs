@@ -1,4 +1,4 @@
-use crate::vault::{Credential, SearchResult, Site, TrashedCredential};
+use crate::vault::{Credential, CustomField, SearchResult, Site, TrashedCredential};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use zeroize::Zeroizing;
@@ -70,6 +70,8 @@ pub struct CredentialDto {
     pub username: Option<String>,
     pub secret: Zeroizing<String>,
     pub remarks: Option<String>,
+    pub custom_fields: Vec<CustomField>,
+    pub reprompt: bool,
 }
 
 // If you add a field to CredentialDto, add it here too - a manual Debug impl gets no compiler
@@ -82,6 +84,9 @@ impl std::fmt::Debug for CredentialDto {
             .field("username", &self.username)
             .field("secret", &"<redacted>")
             .field("remarks", &self.remarks)
+            // A Hidden-type custom field value is exactly as sensitive as `secret` - count only.
+            .field("custom_fields", &format!("<{} field(s)>", self.custom_fields.len()))
+            .field("reprompt", &self.reprompt)
             .finish()
     }
 }
@@ -94,6 +99,8 @@ impl From<Credential> for CredentialDto {
             username: c.username,
             secret: Zeroizing::new(c.secret),
             remarks: c.remarks,
+            custom_fields: c.custom_fields,
+            reprompt: c.reprompt,
         }
     }
 }
@@ -309,7 +316,7 @@ mod tests {
             site_id: 1,
             username: Some("alice".into()),
             secret: "extremely-unique-secret-xyz".into(),
-            remarks: None,
+            remarks: None, custom_fields: Vec::new(), reprompt: false,
         };
         let dto = CredentialDto::from(cred);
         let debug_output = format!("{:?}", dto);
@@ -324,7 +331,7 @@ mod tests {
             site_id: 1,
             username: Some("alice".into()),
             secret: "s3cret".into(),
-            remarks: None,
+            remarks: None, custom_fields: Vec::new(), reprompt: false,
         };
         let dto = CredentialDto::from(cred);
         // Zeroizing<String> derefs to &str, so equality/usage is transparent to callers - this test

@@ -22,7 +22,7 @@ pub fn do_login(
         crate::auth::login(&registry, &vault_path, username, master_password)?
     };
     let conn = crate::vault::open_vault(&vault_path, &key)?;
-    state.session.lock().unwrap().unlock(key, &SystemClock);
+    state.session.lock().unwrap().unlock(key, username, &SystemClock);
     state.set_vault(conn, vault_path);
     Ok(AuthSuccess { username: username.to_string() })
 }
@@ -34,6 +34,17 @@ pub fn do_lock(state: &AppState) {
 
 pub fn do_touch(state: &AppState) {
     state.session.lock().unwrap().touch(&SystemClock);
+}
+
+/// Re-auth gate for a per-item "require master password" (reprompt) field - the vault stays
+/// unlocked either way, this just answers "did they type the right master password right now."
+pub fn do_verify_master_password(state: &AppState, master_password: &str) -> Result<bool, CommandError> {
+    let username = {
+        let session = state.session.lock().unwrap();
+        session.username().ok_or_else(crate::error::locked_error)?.to_string()
+    };
+    let registry = state.registry.lock().unwrap();
+    Ok(crate::auth::verify_master_password(&registry, &username, master_password)?)
 }
 
 pub fn do_list_sites(state: &AppState) -> Result<Vec<SiteDto>, CommandError> {
@@ -88,7 +99,7 @@ pub fn do_register(
         crate::auth::register_user(&registry, &vault_path, username, master_password)?
     };
     let conn = crate::vault::open_vault(&vault_path, &key)?;
-    state.session.lock().unwrap().unlock(key, &SystemClock);
+    state.session.lock().unwrap().unlock(key, username, &SystemClock);
     state.set_vault(conn, vault_path);
     Ok(AuthSuccess { username: username.to_string() })
 }
@@ -139,12 +150,14 @@ pub fn do_add_credential(
     username: Option<&str>,
     secret: &str,
     remarks: Option<&str>,
+    custom_fields: &[crate::vault::CustomField],
+    reprompt: bool,
 ) -> Result<i64, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
-    Ok(crate::vault::add_credential(conn, key, site_id, username, secret, remarks)?)
+    Ok(crate::vault::add_credential(conn, key, site_id, username, secret, remarks, custom_fields, reprompt)?)
 }
 
 pub fn do_update_credential(
@@ -153,12 +166,14 @@ pub fn do_update_credential(
     username: Option<&str>,
     secret: &str,
     remarks: Option<&str>,
+    custom_fields: &[crate::vault::CustomField],
+    reprompt: bool,
 ) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
-    Ok(crate::vault::update_credential(conn, key, credential_id, username, secret, remarks)?)
+    Ok(crate::vault::update_credential(conn, key, credential_id, username, secret, remarks, custom_fields, reprompt)?)
 }
 
 pub fn do_soft_delete_credential(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
@@ -783,7 +798,7 @@ mod tests {
             let session = state.session.lock().unwrap();
             let key = session.key().unwrap();
             let site_id = crate::vault::add_site(conn, "example.com", None, None).unwrap();
-            crate::vault::add_credential(conn, key, site_id, Some("alice"), "s3cret", None).unwrap();
+            crate::vault::add_credential(conn, key, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
             site_id
         };
         let sites = do_list_sites(&state).unwrap();
@@ -812,7 +827,7 @@ mod tests {
             let session = state.session.lock().unwrap();
             let key = session.key().unwrap();
             let site_id = crate::vault::add_site(conn, "example.com", None, None).unwrap();
-            crate::vault::add_credential(conn, key, site_id, Some("alice"), "secret", None).unwrap();
+            crate::vault::add_credential(conn, key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
         }
         let results = do_search(&state, "example").unwrap();
         assert_eq!(results.len(), 1);
@@ -961,7 +976,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("bob"), "s3cret", None).unwrap();
+        do_add_credential(&state, site_id, Some("bob"), "s3cret", None, &[], false).unwrap();
 
         let err = do_soft_delete_site(&state, site_id).unwrap_err();
 
@@ -974,7 +989,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None, &[], false).unwrap();
         do_soft_delete_credential(&state, cred_id).unwrap();
 
         do_soft_delete_site(&state, site_id).unwrap();
@@ -988,8 +1003,8 @@ mod tests {
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
 
-        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None).unwrap();
-        do_update_credential(&state, cred_id, Some("bob2"), "new-secret", Some("updated")).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None, &[], false).unwrap();
+        do_update_credential(&state, cred_id, Some("bob2"), "new-secret", Some("updated"), &[], false).unwrap();
         let creds = do_list_credentials_for_site(&state, site_id).unwrap();
 
         assert_eq!(creds.len(), 1);
@@ -1002,7 +1017,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "GitHub", None, None).unwrap();
-        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
 
         assert_eq!(do_search(&state, "github").unwrap().len(), 1);
 
@@ -1016,7 +1031,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None, &[], false).unwrap();
 
         do_soft_delete_credential(&state, cred_id).unwrap();
         let trash = do_list_trash(&state).unwrap();
@@ -1365,7 +1380,7 @@ mod tests {
         let (state, paths, dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("alice"), "s3cret!", None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "s3cret!", None, &[], false).unwrap();
         (state, paths, dir)
     }
 
@@ -1574,7 +1589,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("alice"), "password", None).unwrap(); // weak
+        do_add_credential(&state, site_id, Some("alice"), "password", None, &[], false).unwrap(); // weak
 
         let report = do_health_report(&state).unwrap();
 
@@ -1587,7 +1602,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
 
         assert!(do_health_report(&state).unwrap().weak.is_empty());
     }
@@ -1597,8 +1612,8 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
-        do_add_credential(&state, site_id, Some("bob"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
+        do_add_credential(&state, site_id, Some("bob"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
 
         let report = do_health_report(&state).unwrap();
 
@@ -1612,8 +1627,8 @@ mod tests {
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let http_site = do_add_site(&state, "insecure.example", Some("http://insecure.example"), None).unwrap();
         let https_site = do_add_site(&state, "secure.example", Some("https://secure.example"), None).unwrap();
-        do_add_credential(&state, http_site, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
-        do_add_credential(&state, https_site, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        do_add_credential(&state, http_site, Some("alice"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
+        do_add_credential(&state, https_site, Some("alice"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
 
         let report = do_health_report(&state).unwrap();
 
@@ -1626,7 +1641,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        let cred_id = do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
         {
             let vault_guard = state.vault.lock().unwrap();
             let (conn, _) = vault_guard.as_ref().unwrap();
@@ -1674,7 +1689,7 @@ mod tests {
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         do_update_hibp_opt_in(&state, &paths, true).unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("alice"), "password", None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "password", None, &[], false).unwrap();
 
         let full_hash = crate::hibp::sha1_hex_upper("password");
         let suffix = &full_hash[5..];

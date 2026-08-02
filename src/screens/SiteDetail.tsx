@@ -68,30 +68,48 @@ export function SiteDetail({ siteId, onBack }: { siteId: number; onBack: () => v
 
         <ul className="space-y-2">
           {credentials.map((c) => (
-            <li key={c.id} className="rounded border px-2 py-1 border-[var(--border)] flex items-center gap-2">
-              <span className="w-32 truncate">{c.username ?? "(no username)"}</span>
-              <SecretField secret={c.secret} />
-              <Tooltip text="Edit this credential">
-                <button onClick={() => setEditing(c)} className="underline text-sm">
-                  <Icon name="pencil-fill" /> Edit
-                </button>
-              </Tooltip>
-              <Tooltip text="Move this credential to Trash">
-                <button
-                  onClick={async () => {
-                    try {
-                      setError(null);
-                      await api.softDeleteCredential(c.id);
-                      refresh();
-                    } catch (err) {
-                      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
-                    }
-                  }}
-                  className="underline text-sm text-[var(--danger)]"
-                >
-                  <Icon name="trash" /> Delete
-                </button>
-              </Tooltip>
+            <li key={c.id} className="rounded border px-2 py-1 border-[var(--border)] space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-32 truncate">{c.username ?? "(no username)"}</span>
+                <SecretField secret={c.secret} reprompt={c.reprompt} />
+                <Tooltip text="Edit this credential">
+                  <button onClick={() => setEditing(c)} className="underline text-sm">
+                    <Icon name="pencil-fill" /> Edit
+                  </button>
+                </Tooltip>
+                <Tooltip text="Move this credential to Trash">
+                  <button
+                    onClick={async () => {
+                      try {
+                        setError(null);
+                        await api.softDeleteCredential(c.id);
+                        refresh();
+                      } catch (err) {
+                        setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+                      }
+                    }}
+                    className="underline text-sm text-[var(--danger)]"
+                  >
+                    <Icon name="trash" /> Delete
+                  </button>
+                </Tooltip>
+              </div>
+              {c.customFields.length > 0 && (
+                <div className="pl-2 space-y-1">
+                  {c.customFields.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      <span className="w-32 truncate opacity-70">{f.label}</span>
+                      {f.fieldType === "hidden" ? (
+                        <SecretField secret={f.value} reprompt={c.reprompt} />
+                      ) : f.fieldType === "boolean" ? (
+                        <span>{f.value === "true" ? "Yes" : "No"}</span>
+                      ) : (
+                        <span className="flex-1 font-mono">{f.value}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </li>
           ))}
           {credentials.length === 0 && <li className="text-sm opacity-70">No credentials yet.</li>}

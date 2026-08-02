@@ -21,12 +21,22 @@ export interface SiteDto {
   notes: string | null;
 }
 
+export type CustomFieldType = "text" | "hidden" | "boolean";
+
+export interface CustomField {
+  label: string;
+  value: string;
+  fieldType: CustomFieldType;
+}
+
 export interface CredentialDto {
   id: number;
   siteId: number;
   username: string | null;
   secret: string;
   remarks: string | null;
+  customFields: CustomField[];
+  reprompt: boolean;
 }
 
 export interface SearchResultDto {
@@ -140,6 +150,8 @@ export const api = {
     call<AuthSuccess>("login", { username, masterPassword }),
   lock: () => call<void>("lock"),
   touch: () => call<void>("touch"),
+  verifyMasterPassword: (masterPassword: string) =>
+    call<boolean>("verify_master_password", { masterPassword }),
   unlockStatus: () => call<boolean>("unlock_status"),
   listSites: () => call<SiteDto[]>("list_sites"),
   addSite: (name: string, url: string | null, notes: string | null) =>
@@ -147,10 +159,22 @@ export const api = {
   updateSite: (siteId: number, name: string, url: string | null, notes: string | null) =>
     call<void>("update_site", { siteId, name, url, notes }),
   softDeleteSite: (siteId: number) => call<void>("soft_delete_site", { siteId }),
-  addCredential: (siteId: number, username: string | null, secret: string, remarks: string | null) =>
-    call<number>("add_credential", { siteId, username, secret, remarks }),
-  updateCredential: (credentialId: number, username: string | null, secret: string, remarks: string | null) =>
-    call<void>("update_credential", { credentialId, username, secret, remarks }),
+  addCredential: (
+    siteId: number,
+    username: string | null,
+    secret: string,
+    remarks: string | null,
+    customFields: CustomField[] = [],
+    reprompt: boolean = false,
+  ) => call<number>("add_credential", { siteId, username, secret, remarks, customFields, reprompt }),
+  updateCredential: (
+    credentialId: number,
+    username: string | null,
+    secret: string,
+    remarks: string | null,
+    customFields: CustomField[] = [],
+    reprompt: boolean = false,
+  ) => call<void>("update_credential", { credentialId, username, secret, remarks, customFields, reprompt }),
   listCredentialsForSite: (siteId: number) =>
     call<CredentialDto[]>("list_credentials_for_site", { siteId }),
   search: (query: string) => call<SearchResultDto[]>("search", { query }),

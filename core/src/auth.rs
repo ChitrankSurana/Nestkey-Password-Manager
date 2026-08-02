@@ -67,6 +67,27 @@ pub fn register_user(
     Ok(vault_key)
 }
 
+/// Cheap re-auth check for an already-unlocked session (the master-password re-prompt gate on a
+/// sensitive field): only the verifier_salt/verifier_hash comparison `login` also does, without
+/// re-deriving the vault key or reopening the vault file - the vault is already open, this just
+/// needs a yes/no "did they type the right master password."
+pub fn verify_master_password(
+    registry_conn: &Connection,
+    username: &str,
+    master_password: &str,
+) -> Result<bool, AuthError> {
+    let rec = match registry::find_user(registry_conn, username) {
+        Ok(rec) => rec,
+        Err(_) => {
+            let _ = crypto::derive_key(master_password, &DECOY_SALT);
+            return Ok(false);
+        }
+    };
+    let verifier_key =
+        crypto::derive_key(master_password, &rec.verifier_salt).map_err(|_| AuthError::InvalidCredentials)?;
+    Ok(crypto::verifier_matches(&verifier_key, &rec.verifier_hash))
+}
+
 pub fn login(
     registry_conn: &Connection,
     vault_path: &Path,
@@ -141,6 +162,40 @@ mod tests {
         let result = register_user(&registry_conn, &dir.path().join("alice2.vault"), "alice", "password two");
 
         assert!(matches!(result, Err(AuthError::UsernameTaken)));
+    }
+
+    #[test]
+    fn verify_master_password_accepts_the_correct_password() {
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+        let vault_path = dir.path().join("alice.vault");
+        register_user(&registry_conn, &vault_path, "alice", "correct horse battery staple").unwrap();
+
+        let ok = verify_master_password(&registry_conn, "alice", "correct horse battery staple").unwrap();
+
+        assert!(ok);
+    }
+
+    #[test]
+    fn verify_master_password_rejects_a_wrong_password() {
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+        let vault_path = dir.path().join("alice.vault");
+        register_user(&registry_conn, &vault_path, "alice", "correct horse battery staple").unwrap();
+
+        let ok = verify_master_password(&registry_conn, "alice", "wrong password").unwrap();
+
+        assert!(!ok);
+    }
+
+    #[test]
+    fn verify_master_password_rejects_an_unknown_username() {
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+
+        let ok = verify_master_password(&registry_conn, "nobody", "anything").unwrap();
+
+        assert!(!ok);
     }
 
     #[test]

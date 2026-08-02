@@ -13,6 +13,7 @@ use pwmgr_core::dto::{
 };
 use pwmgr_core::paths::AppPaths;
 use pwmgr_core::state::AppState;
+use pwmgr_core::vault::CustomField;
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -57,6 +58,10 @@ struct AddCredentialRequest {
     username: Option<String>,
     secret: String,
     remarks: Option<String>,
+    #[serde(default)]
+    custom_fields: Vec<CustomField>,
+    #[serde(default)]
+    reprompt: bool,
 }
 
 #[derive(Deserialize)]
@@ -66,6 +71,10 @@ struct UpdateCredentialRequest {
     username: Option<String>,
     secret: String,
     remarks: Option<String>,
+    #[serde(default)]
+    custom_fields: Vec<CustomField>,
+    #[serde(default)]
+    reprompt: bool,
 }
 
 #[derive(Deserialize)]
@@ -77,6 +86,12 @@ struct SiteIdRequest {
 #[derive(Deserialize)]
 struct SearchRequest {
     query: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VerifyMasterPasswordRequest {
+    master_password: String,
 }
 
 #[derive(Deserialize)]
@@ -238,6 +253,13 @@ async fn touch(Extension(s): Extension<Arc<UserSession>>) -> StatusCode {
     StatusCode::OK
 }
 
+async fn verify_master_password(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<VerifyMasterPasswordRequest>,
+) -> Result<Json<bool>, ApiError> {
+    Ok(Json(do_verify_master_password(&s.app_state, &b.master_password)?))
+}
+
 async fn list_sites(Extension(s): Extension<Arc<UserSession>>) -> Result<Json<Vec<SiteDto>>, ApiError> {
     Ok(Json(do_list_sites(&s.app_state)?))
 }
@@ -269,14 +291,20 @@ async fn add_credential(
     Extension(s): Extension<Arc<UserSession>>,
     Json(b): Json<AddCredentialRequest>,
 ) -> Result<Json<i64>, ApiError> {
-    Ok(Json(do_add_credential(&s.app_state, b.site_id, b.username.as_deref(), &b.secret, b.remarks.as_deref())?))
+    Ok(Json(do_add_credential(
+        &s.app_state, b.site_id, b.username.as_deref(), &b.secret, b.remarks.as_deref(),
+        &b.custom_fields, b.reprompt,
+    )?))
 }
 
 async fn update_credential(
     Extension(s): Extension<Arc<UserSession>>,
     Json(b): Json<UpdateCredentialRequest>,
 ) -> Result<StatusCode, ApiError> {
-    do_update_credential(&s.app_state, b.credential_id, b.username.as_deref(), &b.secret, b.remarks.as_deref())?;
+    do_update_credential(
+        &s.app_state, b.credential_id, b.username.as_deref(), &b.secret, b.remarks.as_deref(),
+        &b.custom_fields, b.reprompt,
+    )?;
     Ok(StatusCode::OK)
 }
 
@@ -484,6 +512,7 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/unlock_status", post(unlock_status))
         .route("/api/lock", post(lock))
         .route("/api/touch", post(touch))
+        .route("/api/verify_master_password", post(verify_master_password))
         .route("/api/list_sites", post(list_sites))
         .route("/api/add_site", post(add_site))
         .route("/api/update_site", post(update_site))

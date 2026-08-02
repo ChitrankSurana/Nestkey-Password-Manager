@@ -15,17 +15,19 @@ impl Clock for SystemClock {
 
 pub struct Session {
     key: Option<VaultKey>,
+    username: Option<String>,
     last_activity: Option<Instant>,
     timeout: Duration,
 }
 
 impl Session {
     pub fn new(timeout: Duration) -> Self {
-        Session { key: None, last_activity: None, timeout }
+        Session { key: None, username: None, last_activity: None, timeout }
     }
 
-    pub fn unlock(&mut self, key: VaultKey, clock: &dyn Clock) {
+    pub fn unlock(&mut self, key: VaultKey, username: &str, clock: &dyn Clock) {
         self.key = Some(key);
+        self.username = Some(username.to_string());
         self.last_activity = Some(clock.now());
     }
 
@@ -37,6 +39,7 @@ impl Session {
 
     pub fn lock(&mut self) {
         self.key = None; // VaultKey is ZeroizeOnDrop — dropping it here zeroizes the bytes.
+        self.username = None;
         self.last_activity = None;
     }
 
@@ -58,6 +61,10 @@ impl Session {
 
     pub fn key(&self) -> Option<&VaultKey> {
         self.key.as_ref()
+    }
+
+    pub fn username(&self) -> Option<&str> {
+        self.username.as_deref()
     }
 }
 
@@ -94,29 +101,31 @@ mod tests {
         let mut session = Session::new(Duration::from_secs(300));
         let key = derive_key("pw", &[1u8; 16]).unwrap();
 
-        session.unlock(key, &clock);
+        session.unlock(key, "alice", &clock);
 
         assert!(!session.is_locked());
         assert!(session.key().is_some());
+        assert_eq!(session.username(), Some("alice"));
     }
 
     #[test]
-    fn lock_clears_the_key() {
+    fn lock_clears_the_key_and_username() {
         let clock = FakeClock::new();
         let mut session = Session::new(Duration::from_secs(300));
-        session.unlock(derive_key("pw", &[1u8; 16]).unwrap(), &clock);
+        session.unlock(derive_key("pw", &[1u8; 16]).unwrap(), "alice", &clock);
 
         session.lock();
 
         assert!(session.is_locked());
         assert!(session.key().is_none());
+        assert!(session.username().is_none());
     }
 
     #[test]
     fn check_expiry_locks_after_timeout_elapses_with_no_activity() {
         let clock = FakeClock::new();
         let mut session = Session::new(Duration::from_secs(300));
-        session.unlock(derive_key("pw", &[1u8; 16]).unwrap(), &clock);
+        session.unlock(derive_key("pw", &[1u8; 16]).unwrap(), "alice", &clock);
 
         clock.advance(Duration::from_secs(301));
         session.check_expiry(&clock);
@@ -128,7 +137,7 @@ mod tests {
     fn touch_resets_the_idle_timer_preventing_expiry() {
         let clock = FakeClock::new();
         let mut session = Session::new(Duration::from_secs(300));
-        session.unlock(derive_key("pw", &[1u8; 16]).unwrap(), &clock);
+        session.unlock(derive_key("pw", &[1u8; 16]).unwrap(), "alice", &clock);
 
         clock.advance(Duration::from_secs(200));
         session.touch(&clock);
@@ -150,7 +159,7 @@ mod tests {
     fn set_timeout_changes_the_idle_timeout_on_a_live_session() {
         let clock = FakeClock::new();
         let mut session = Session::new(Duration::from_secs(300));
-        session.unlock(derive_key("pw", &[1u8; 16]).unwrap(), &clock);
+        session.unlock(derive_key("pw", &[1u8; 16]).unwrap(), "alice", &clock);
 
         session.set_timeout(Duration::from_secs(60));
         clock.advance(Duration::from_secs(61));

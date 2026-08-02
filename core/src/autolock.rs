@@ -71,7 +71,7 @@ mod tests {
         let (state, _dir) = test_state(Duration::from_secs(300));
         let clock = FakeClock::new();
         let key = crate::crypto::derive_key("pw", &[1u8; 16]).unwrap();
-        state.session.lock().unwrap().unlock(key, &clock);
+        state.session.lock().unwrap().unlock(key, "alice", &clock);
 
         clock.advance(Duration::from_secs(100));
         assert!(!tick(&state, &clock));
@@ -83,7 +83,7 @@ mod tests {
         let (state, _dir) = test_state(Duration::from_secs(300));
         let clock = FakeClock::new();
         let key = crate::crypto::derive_key("pw", &[1u8; 16]).unwrap();
-        state.session.lock().unwrap().unlock(key, &clock);
+        state.session.lock().unwrap().unlock(key, "alice", &clock);
         state.set_vault(Connection::open_in_memory().unwrap(), PathBuf::from("dummy.vault"));
 
         clock.advance(Duration::from_secs(301));

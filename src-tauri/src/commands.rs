@@ -7,6 +7,7 @@ use pwmgr_core::commands::{
     do_unlock_status, do_update_accent_color, do_update_auto_lock_minutes, do_update_credential,
     do_update_hibp_opt_in, do_update_mobile_nav_style, do_update_nav_collapsed,
     do_update_old_password_days, do_update_site, do_update_strength_algorithm, do_update_theme,
+    do_verify_master_password,
 };
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
@@ -16,6 +17,7 @@ use pwmgr_core::dto::{
 use pwmgr_core::error::CommandError;
 use pwmgr_core::paths::AppPaths;
 use pwmgr_core::state::AppState;
+use pwmgr_core::vault::CustomField;
 use std::time::Duration;
 use tauri::{Emitter, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -60,6 +62,11 @@ pub fn touch(state: State<AppState>) {
 }
 
 #[tauri::command]
+pub fn verify_master_password(state: State<AppState>, master_password: String) -> Result<bool, CommandError> {
+    do_verify_master_password(&state, &master_password)
+}
+
+#[tauri::command]
 pub fn list_sites(state: State<AppState>) -> Result<Vec<SiteDto>, CommandError> {
     do_list_sites(&state)
 }
@@ -97,8 +104,10 @@ pub fn add_credential(
     username: Option<String>,
     secret: String,
     remarks: Option<String>,
+    custom_fields: Vec<CustomField>,
+    reprompt: bool,
 ) -> Result<i64, CommandError> {
-    do_add_credential(&state, site_id, username.as_deref(), &secret, remarks.as_deref())
+    do_add_credential(&state, site_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt)
 }
 
 #[tauri::command]
@@ -108,8 +117,10 @@ pub fn update_credential(
     username: Option<String>,
     secret: String,
     remarks: Option<String>,
+    custom_fields: Vec<CustomField>,
+    reprompt: bool,
 ) -> Result<(), CommandError> {
-    do_update_credential(&state, credential_id, username.as_deref(), &secret, remarks.as_deref())
+    do_update_credential(&state, credential_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt)
 }
 
 #[tauri::command]
