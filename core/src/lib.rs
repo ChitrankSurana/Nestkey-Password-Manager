@@ -14,6 +14,8 @@ pub mod health;
 pub mod hibp;
 pub mod totp;
 pub mod biometric;
+pub mod ssh_agent;
+pub mod ssh_keys;
 pub mod paths;
 pub mod config;
 pub mod state;

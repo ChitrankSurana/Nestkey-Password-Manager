@@ -212,6 +212,7 @@ pub fn do_get_config(state: &AppState) -> ConfigDto {
         nav_collapsed: config.nav_collapsed,
         mobile_nav_style: config.mobile_nav_style.clone(),
         biometric_enabled: config.biometric_enabled,
+        ssh_agent_enabled: config.ssh_agent_enabled,
     }
 }
 
@@ -455,6 +456,46 @@ pub fn do_update_biometric_enabled(state: &AppState, paths: &AppPaths, enabled: 
     updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
     *config = updated;
     Ok(())
+}
+
+pub fn do_update_ssh_agent_enabled(state: &AppState, paths: &AppPaths, enabled: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.ssh_agent_enabled = enabled;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_add_ssh_key(state: &AppState, label: &str, private_key_openssh: &str) -> Result<i64, CommandError> {
+    // Fail fast on an unparsable/encrypted key before ever persisting it.
+    crate::ssh_agent::public_key_line(private_key_openssh)?;
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::ssh_keys::add_ssh_key(conn, key, label, private_key_openssh)?)
+}
+
+pub fn do_list_ssh_keys(state: &AppState) -> Result<Vec<crate::dto::SshKeyDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let entries = crate::ssh_keys::list_ssh_keys(conn, key)?;
+    entries
+        .into_iter()
+        .map(|e| {
+            let public_key = crate::ssh_agent::public_key_line(&e.private_key_openssh)?;
+            Ok(crate::dto::SshKeyDto { id: e.id, label: e.label, public_key })
+        })
+        .collect()
+}
+
+pub fn do_delete_ssh_key(state: &AppState, id: i64) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::ssh_keys::delete_ssh_key(conn, id)?)
 }
 
 pub fn do_update_nav_collapsed(state: &AppState, paths: &AppPaths, collapsed: bool) -> Result<(), CommandError> {
@@ -2115,5 +2156,62 @@ mod tests {
         let report = do_check_breach(&state, &base_url).unwrap();
 
         assert_eq!(report.breached.len(), 1);
+    }
+
+    fn sample_ed25519_openssh_key() -> String {
+        use ssh_key::{Algorithm, PrivateKey};
+        let key = PrivateKey::random(&mut rand::rngs::OsRng, Algorithm::Ed25519).unwrap();
+        key.to_openssh(ssh_key::LineEnding::LF).unwrap().to_string()
+    }
+
+    #[test]
+    fn add_ssh_key_then_list_ssh_keys_exposes_label_and_public_key_but_never_the_private_key() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let openssh = sample_ed25519_openssh_key();
+
+        do_add_ssh_key(&state, "laptop key", &openssh).unwrap();
+
+        let keys = do_list_ssh_keys(&state).unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].label, "laptop key");
+        assert!(keys[0].public_key.starts_with("ssh-ed25519 "));
+    }
+
+    #[test]
+    fn add_ssh_key_rejects_a_key_that_does_not_parse() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let result = do_add_ssh_key(&state, "bad", "not an ssh key");
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn delete_ssh_key_removes_it_from_the_list() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let id = do_add_ssh_key(&state, "temp", &sample_ed25519_openssh_key()).unwrap();
+
+        do_delete_ssh_key(&state, id).unwrap();
+
+        assert!(do_list_ssh_keys(&state).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ssh_key_commands_require_an_unlocked_session() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_add_ssh_key(&state, "x", &sample_ed25519_openssh_key()).unwrap_err().code(), "locked");
+        assert_eq!(do_list_ssh_keys(&state).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn update_ssh_agent_enabled_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_ssh_agent_enabled(&state, &paths, true).unwrap();
+        assert_eq!(do_get_config(&state).ssh_agent_enabled, true);
+        let reloaded = Config::load(&paths.config_path()).unwrap();
+        assert_eq!(reloaded.ssh_agent_enabled, true);
     }
 }

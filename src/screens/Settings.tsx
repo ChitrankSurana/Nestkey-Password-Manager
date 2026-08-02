@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, FormEvent } from "react";
-import { api, isCommandError, isTauri } from "../lib/api";
+import { api, isCommandError, isTauri, SshKeyDto } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
@@ -34,9 +34,19 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   const [pinInput, setPinInput] = useState("");
   const [biometricEnabled, setBiometricEnabled] = useState<boolean | null>(null);
   const [biometricSet, setBiometricSet] = useState<boolean | null>(null);
+  const [sshAgentEnabled, setSshAgentEnabled] = useState<boolean | null>(null);
+  const [sshKeys, setSshKeys] = useState<SshKeyDto[] | null>(null);
+  const [sshLabelInput, setSshLabelInput] = useState("");
+  const [sshKeyInput, setSshKeyInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const editedRef = useRef(false);
+
+  function refreshSshKeys() {
+    if (isTauri) {
+      api.listSshKeys().then(setSshKeys).catch(() => setSshKeys([]));
+    }
+  }
 
   useEffect(() => {
     api
@@ -51,6 +61,7 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
           setHibpOptIn(c.hibpOptIn);
           setMobileNavStyle(c.mobileNavStyle);
           setBiometricEnabled(c.biometricEnabled);
+          setSshAgentEnabled(c.sshAgentEnabled);
         }
       })
       .catch((err) => {
@@ -60,6 +71,8 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
     if (isTauri) {
       api.hasBiometric(username).then(setBiometricSet).catch(() => setBiometricSet(false));
     }
+    refreshSshKeys();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
   async function handleSetPin(e: FormEvent) {
@@ -124,6 +137,49 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
       setError(null);
       await api.clearBiometric();
       setBiometricSet(false);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSshAgentEnabledChange(enabled: boolean) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateSshAgentEnabled(enabled);
+      setSshAgentEnabled(enabled);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleAddSshKey(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.addSshKey(sshLabelInput, sshKeyInput);
+      setSshLabelInput("");
+      setSshKeyInput("");
+      refreshSshKeys();
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDeleteSshKey(id: number) {
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.deleteSshKey(id);
+      refreshSshKeys();
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -382,6 +438,73 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
           )}
         </div>
       </details>
+
+      {isTauri && (
+        <details className="max-w-xs mt-4">
+          <summary className="cursor-pointer font-medium mb-2">SSH Agent</summary>
+          <div className="space-y-3 pl-1">
+            <label className="flex items-center gap-2">
+              <Tooltip text="Master on/off switch for the SSH agent (Windows named pipe). New native OS integration, untested against a real SSH client - turn off if it misbehaves.">
+                <input
+                  type="checkbox"
+                  checked={sshAgentEnabled ?? false}
+                  onChange={(e) => handleSshAgentEnabledChange(e.target.checked)}
+                  disabled={submitting}
+                />
+              </Tooltip>
+              <span className="text-sm">Enable SSH agent</span>
+            </label>
+
+            {sshAgentEnabled && (
+              <>
+                <div className="space-y-1">
+                  {(sshKeys ?? []).map((k) => (
+                    <div key={k.id} className="flex items-center gap-2 text-sm">
+                      <span className="w-24 truncate">{k.label}</span>
+                      <span className="flex-1 truncate font-mono text-xs opacity-70" title={k.publicKey}>
+                        {k.publicKey}
+                      </span>
+                      <button
+                        type="button"
+                        title="Delete this key"
+                        onClick={() => handleDeleteSshKey(k.id)}
+                        className="px-1"
+                      >
+                        <Icon name="trash" />
+                      </button>
+                    </div>
+                  ))}
+                  {sshKeys?.length === 0 && <p className="text-sm opacity-60">No SSH keys added.</p>}
+                </div>
+
+                <form onSubmit={handleAddSshKey} className="space-y-2">
+                  <input
+                    className="w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)] text-sm"
+                    placeholder="Label"
+                    value={sshLabelInput}
+                    onChange={(e) => setSshLabelInput(e.target.value)}
+                  />
+                  <textarea
+                    className="w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)] text-sm font-mono"
+                    rows={4}
+                    placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
+                    value={sshKeyInput}
+                    onChange={(e) => setSshKeyInput(e.target.value)}
+                    title="Unencrypted OpenSSH private key (no passphrase)"
+                  />
+                  <button
+                    type="submit"
+                    disabled={submitting || sshLabelInput.trim() === "" || sshKeyInput.trim() === ""}
+                    className="rounded bg-[var(--accent)] px-3 py-1 text-sm disabled:opacity-50"
+                  >
+                    Add key
+                  </button>
+                </form>
+              </>
+            )}
+          </div>
+        </details>
+      )}
 
       <details open className="max-w-xs mt-4">
         <summary className="cursor-pointer font-medium mb-2">Appearance</summary>

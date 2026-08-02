@@ -71,6 +71,13 @@ fn init_schema(conn: &Connection) -> Result<(), VaultError> {
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             deleted_at TEXT
         );
+        CREATE TABLE IF NOT EXISTS ssh_keys (
+            id INTEGER PRIMARY KEY,
+            label TEXT NOT NULL,
+            private_key_enc BLOB NOT NULL,
+            private_key_nonce BLOB NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         CREATE INDEX IF NOT EXISTS idx_sites_name ON sites(name);
         CREATE INDEX IF NOT EXISTS idx_credentials_site ON credentials(site_id);",
     )?;

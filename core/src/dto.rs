@@ -129,6 +129,18 @@ pub struct ConfigDto {
     pub nav_collapsed: bool,
     pub mobile_nav_style: String,
     pub biometric_enabled: bool,
+    pub ssh_agent_enabled: bool,
+}
+
+// #[derive(Debug)] is safe here - the private key never leaves the backend at all (unlike
+// CredentialDto's secret, which round-trips for editing); this DTO only ever carries the label
+// and the derived, non-secret public-key line.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SshKeyDto {
+    pub id: i64,
+    pub label: String,
+    pub public_key: String,
 }
 
 // No secret field here at all (matches `list_trash`'s core signature - nothing to redact).

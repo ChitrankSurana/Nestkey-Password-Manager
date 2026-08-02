@@ -44,6 +44,10 @@ fn default_biometric_enabled() -> bool {
     false
 }
 
+fn default_ssh_agent_enabled() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default = "default_theme")]
@@ -68,6 +72,11 @@ pub struct Config {
     // way to verify Windows Hello + DPAPI integration against real hardware.
     #[serde(default = "default_biometric_enabled")]
     pub biometric_enabled: bool,
+    // Same rationale as biometric_enabled: new native OS integration (a Windows named-pipe
+    // ssh-agent server) this project can't verify against a real SSH client, defaulted off with
+    // an explicit opt-in switch.
+    #[serde(default = "default_ssh_agent_enabled")]
+    pub ssh_agent_enabled: bool,
 }
 
 impl Default for Config {
@@ -82,6 +91,7 @@ impl Default for Config {
             nav_collapsed: default_nav_collapsed(),
             mobile_nav_style: default_mobile_nav_style(),
             biometric_enabled: default_biometric_enabled(),
+            ssh_agent_enabled: default_ssh_agent_enabled(),
         }
     }
 }
@@ -173,6 +183,7 @@ mod tests {
             nav_collapsed: default_nav_collapsed(),
             mobile_nav_style: default_mobile_nav_style(),
             biometric_enabled: default_biometric_enabled(),
+            ssh_agent_enabled: default_ssh_agent_enabled(),
         };
 
         config.save(&path).unwrap();
@@ -261,6 +272,7 @@ mod tests {
             nav_collapsed: true,
             mobile_nav_style: default_mobile_nav_style(),
             biometric_enabled: default_biometric_enabled(),
+            ssh_agent_enabled: default_ssh_agent_enabled(),
         };
 
         config.save(&path).unwrap();

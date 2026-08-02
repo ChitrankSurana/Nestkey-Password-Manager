@@ -84,6 +84,13 @@ impl From<crate::totp::TotpError> for CommandError {
     }
 }
 
+impl From<crate::ssh_agent::SshAgentError> for CommandError {
+    fn from(e: crate::ssh_agent::SshAgentError) -> Self {
+        // Every variant's Display text is already safe, user-facing validation text.
+        invalid_input_error(&e.to_string())
+    }
+}
+
 impl From<crate::biometric::BiometricError> for CommandError {
     fn from(e: crate::biometric::BiometricError) -> Self {
         use crate::biometric::BiometricError;

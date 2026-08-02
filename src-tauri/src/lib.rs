@@ -1,5 +1,6 @@
 mod biometric_provider;
 mod commands;
+mod ssh_agent_service;
 
 use pwmgr_core::paths::AppPaths;
 use pwmgr_core::state::AppState;
@@ -11,13 +12,18 @@ pub fn run() {
     app_paths.ensure_app_dirs().expect("failed to create ~/.pwmgr directories");
 
     let app_state = AppState::open(&app_paths).expect("failed to open registry database");
+    let ssh_agent_enabled_at_startup = app_state.config.lock().unwrap().ssh_agent_enabled;
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .manage(app_paths)
-        .setup(|app| {
+        .manage(ssh_agent_service::SshAgentHandle::default())
+        .setup(move |app| {
+            if ssh_agent_enabled_at_startup {
+                ssh_agent_service::start(&app.handle().clone());
+            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let tick_interval = std::time::Duration::from_secs(2);
@@ -61,6 +67,10 @@ pub fn run() {
             commands::set_biometric,
             commands::clear_biometric,
             commands::update_biometric_enabled,
+            commands::add_ssh_key,
+            commands::list_ssh_keys,
+            commands::delete_ssh_key,
+            commands::update_ssh_agent_enabled,
             commands::lock,
             commands::touch,
             commands::verify_master_password,

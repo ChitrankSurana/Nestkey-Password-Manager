@@ -70,6 +70,13 @@ export interface ConfigDto {
   navCollapsed: boolean;
   mobileNavStyle: string;
   biometricEnabled: boolean;
+  sshAgentEnabled: boolean;
+}
+
+export interface SshKeyDto {
+  id: number;
+  label: string;
+  publicKey: string;
 }
 
 export type GenerateRequest =
@@ -167,6 +174,10 @@ export const api = {
     call<AuthSuccess>("unlock_with_biometric", { username }),
   setBiometric: () => call<void>("set_biometric"),
   clearBiometric: () => call<void>("clear_biometric"),
+  addSshKey: (label: string, privateKey: string) =>
+    call<number>("add_ssh_key", { label, privateKey }),
+  listSshKeys: () => call<SshKeyDto[]>("list_ssh_keys"),
+  deleteSshKey: (id: number) => call<void>("delete_ssh_key", { id }),
   lock: () => call<void>("lock"),
   touch: () => call<void>("touch"),
   verifyMasterPassword: (masterPassword: string) =>
@@ -233,5 +244,6 @@ export const api = {
   checkBreach: () => call<BreachReportDto>("check_breach"),
   updateHibpOptIn: (enabled: boolean) => call<void>("update_hibp_opt_in", { enabled }),
   updateBiometricEnabled: (enabled: boolean) => call<void>("update_biometric_enabled", { enabled }),
+  updateSshAgentEnabled: (enabled: boolean) => call<void>("update_ssh_agent_enabled", { enabled }),
   updateOldPasswordDays: (days: number) => call<void>("update_old_password_days", { days }),
 };

@@ -1,22 +1,23 @@
 use crate::biometric_provider::WindowsHelloProvider;
 use pwmgr_core::commands::{
-    do_add_credential, do_add_site, do_analyze_strength, do_check_breach, do_clear_biometric,
-    do_clear_pin, do_clear_totp_secret, do_create_backup, do_export_csv, do_generate_password,
-    do_get_config, do_has_biometric, do_has_pin, do_health_report, do_import_csv_commit,
-    do_import_csv_preview, do_list_credentials_for_site, do_list_sites, do_list_trash, do_lock,
-    do_login, do_purge_trash, do_read_csv_headers, do_register, do_restore_backup,
-    do_restore_credential, do_search, do_set_biometric, do_set_pin, do_set_totp_secret,
-    do_soft_delete_credential, do_soft_delete_site, do_totp_code, do_touch, do_unlock_status,
-    do_unlock_with_biometric, do_unlock_with_pin, do_update_accent_color,
-    do_update_auto_lock_minutes, do_update_biometric_enabled, do_update_credential,
-    do_update_hibp_opt_in, do_update_mobile_nav_style, do_update_nav_collapsed,
-    do_update_old_password_days, do_update_site, do_update_strength_algorithm, do_update_theme,
+    do_add_credential, do_add_site, do_add_ssh_key, do_analyze_strength, do_check_breach,
+    do_clear_biometric, do_clear_pin, do_clear_totp_secret, do_create_backup, do_delete_ssh_key,
+    do_export_csv, do_generate_password, do_get_config, do_has_biometric, do_has_pin,
+    do_health_report, do_import_csv_commit, do_import_csv_preview, do_list_credentials_for_site,
+    do_list_sites, do_list_ssh_keys, do_list_trash, do_lock, do_login, do_purge_trash,
+    do_read_csv_headers, do_register, do_restore_backup, do_restore_credential, do_search,
+    do_set_biometric, do_set_pin, do_set_totp_secret, do_soft_delete_credential,
+    do_soft_delete_site, do_totp_code, do_touch, do_unlock_status, do_unlock_with_biometric,
+    do_unlock_with_pin, do_update_accent_color, do_update_auto_lock_minutes,
+    do_update_biometric_enabled, do_update_credential, do_update_hibp_opt_in,
+    do_update_mobile_nav_style, do_update_nav_collapsed, do_update_old_password_days,
+    do_update_site, do_update_ssh_agent_enabled, do_update_strength_algorithm, do_update_theme,
     do_verify_master_password,
 };
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
     HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
-    StrengthDto, TotpCodeDto, TrashedCredentialDto,
+    SshKeyDto, StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
 use pwmgr_core::error::CommandError;
 use pwmgr_core::paths::AppPaths;
@@ -108,6 +109,37 @@ pub fn update_biometric_enabled(
     enabled: bool,
 ) -> Result<(), CommandError> {
     do_update_biometric_enabled(&state, &paths, enabled)
+}
+
+#[tauri::command]
+pub fn add_ssh_key(state: State<AppState>, label: String, private_key: String) -> Result<i64, CommandError> {
+    do_add_ssh_key(&state, &label, &private_key)
+}
+
+#[tauri::command]
+pub fn list_ssh_keys(state: State<AppState>) -> Result<Vec<SshKeyDto>, CommandError> {
+    do_list_ssh_keys(&state)
+}
+
+#[tauri::command]
+pub fn delete_ssh_key(state: State<AppState>, id: i64) -> Result<(), CommandError> {
+    do_delete_ssh_key(&state, id)
+}
+
+#[tauri::command]
+pub fn update_ssh_agent_enabled(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> Result<(), CommandError> {
+    do_update_ssh_agent_enabled(&state, &paths, enabled)?;
+    if enabled {
+        crate::ssh_agent_service::start(&app);
+    } else {
+        crate::ssh_agent_service::stop(&app);
+    }
+    Ok(())
 }
 
 #[tauri::command]
