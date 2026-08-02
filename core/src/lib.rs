@@ -13,6 +13,7 @@ pub mod portio;
 pub mod health;
 pub mod hibp;
 pub mod totp;
+pub mod biometric;
 pub mod paths;
 pub mod config;
 pub mod state;

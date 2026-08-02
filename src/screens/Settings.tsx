@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, FormEvent } from "react";
-import { api, isCommandError } from "../lib/api";
+import { api, isCommandError, isTauri } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
@@ -32,6 +32,8 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   const [mobileNavStyle, setMobileNavStyle] = useState<string | null>(null);
   const [pinSet, setPinSet] = useState<boolean | null>(null);
   const [pinInput, setPinInput] = useState("");
+  const [biometricEnabled, setBiometricEnabled] = useState<boolean | null>(null);
+  const [biometricSet, setBiometricSet] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const editedRef = useRef(false);
@@ -48,12 +50,16 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
           setOldPasswordDays(c.oldPasswordDays);
           setHibpOptIn(c.hibpOptIn);
           setMobileNavStyle(c.mobileNavStyle);
+          setBiometricEnabled(c.biometricEnabled);
         }
       })
       .catch((err) => {
         setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
       });
     api.hasPin(username).then(setPinSet).catch(() => setPinSet(false));
+    if (isTauri) {
+      api.hasBiometric(username).then(setBiometricSet).catch(() => setBiometricSet(false));
+    }
   }, [username]);
 
   async function handleSetPin(e: FormEvent) {
@@ -77,6 +83,47 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
       setError(null);
       await api.clearPin();
       setPinSet(false);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleBiometricEnabledChange(enabled: boolean) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateBiometricEnabled(enabled);
+      setBiometricEnabled(enabled);
+      if (!enabled) setBiometricSet(false);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSetBiometric() {
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.setBiometric();
+      setBiometricSet(true);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleClearBiometric() {
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.clearBiometric();
+      setBiometricSet(false);
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -287,6 +334,52 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
               </form>
             )}
           </div>
+
+          {isTauri && (
+            <div>
+              <label className="flex items-center gap-2">
+                <Tooltip text="Master on/off switch for biometric unlock (Windows Hello). New native OS integration - if it misbehaves on your machine, turn this off.">
+                  <input
+                    type="checkbox"
+                    checked={biometricEnabled ?? false}
+                    onChange={(e) => handleBiometricEnabledChange(e.target.checked)}
+                    disabled={submitting}
+                  />
+                </Tooltip>
+                <span className="text-sm">Enable biometric unlock (Windows Hello)</span>
+              </label>
+              {biometricEnabled && (
+                <div className="mt-1">
+                  {biometricSet === null ? null : biometricSet ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm opacity-70">Biometric unlock is set up.</span>
+                      <Tooltip text="Remove biometric unlock">
+                        <button
+                          type="button"
+                          onClick={handleClearBiometric}
+                          disabled={submitting}
+                          className="rounded border px-2 py-0.5 text-sm border-[var(--border)] disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      </Tooltip>
+                    </div>
+                  ) : (
+                    <Tooltip text="Prompts Windows Hello to confirm, then enables biometric unlock">
+                      <button
+                        type="button"
+                        onClick={handleSetBiometric}
+                        disabled={submitting}
+                        className="rounded bg-[var(--accent)] px-3 py-1 text-sm disabled:opacity-50"
+                      >
+                        Set up biometric unlock
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </details>
 

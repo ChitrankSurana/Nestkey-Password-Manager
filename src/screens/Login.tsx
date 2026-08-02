@@ -1,5 +1,5 @@
 import { useState, FormEvent } from "react";
-import { api, isCommandError } from "../lib/api";
+import { api, isCommandError, isTauri } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 
 export function Login({
@@ -14,15 +14,23 @@ export function Login({
   const [pin, setPin] = useState("");
   const [pinAvailable, setPinAvailable] = useState(false);
   const [usePin, setUsePin] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  async function checkPinAvailable() {
+  async function checkQuickUnlockAvailable() {
     if (username.trim() === "") return;
     try {
       setPinAvailable(await api.hasPin(username));
     } catch {
       setPinAvailable(false);
+    }
+    if (isTauri) {
+      try {
+        setBiometricAvailable(await api.hasBiometric(username));
+      } catch {
+        setBiometricAvailable(false);
+      }
     }
   }
 
@@ -45,6 +53,19 @@ export function Login({
     }
   }
 
+  async function handleBiometricUnlock() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const result = await api.unlockWithBiometric(username);
+      onSuccess(result.username);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] text-[var(--fg)]">
       <form onSubmit={handleSubmit} className="w-80 space-y-4">
@@ -55,7 +76,7 @@ export function Login({
             className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            onBlur={checkPinAvailable}
+            onBlur={checkQuickUnlockAvailable}
             autoFocus
             autoComplete="username"
             title="Your registered username"
@@ -94,6 +115,18 @@ export function Login({
           >
             {usePin ? "Use master password instead" : "Unlock with PIN instead"}
           </button>
+        )}
+        {biometricAvailable && (
+          <Tooltip text="Prompts Windows Hello to unlock" className="w-full">
+            <button
+              type="button"
+              onClick={handleBiometricUnlock}
+              disabled={submitting}
+              className="w-full rounded border py-1.5 border-[var(--border)] disabled:opacity-50"
+            >
+              Unlock with Windows Hello
+            </button>
+          </Tooltip>
         )}
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <Tooltip text="Log in to your vault" className="w-full">

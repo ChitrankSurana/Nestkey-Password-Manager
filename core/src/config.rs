@@ -40,6 +40,10 @@ fn default_mobile_nav_style() -> String {
     "icon-rail".to_string()
 }
 
+fn default_biometric_enabled() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default = "default_theme")]
@@ -58,6 +62,12 @@ pub struct Config {
     pub nav_collapsed: bool,
     #[serde(default = "default_mobile_nav_style")]
     pub mobile_nav_style: String,
+    // Master on/off switch for the whole biometric-unlock feature - a safety valve independent of
+    // whether any particular user has actually set it up (see has_pin/`pin_unlock` for the
+    // per-user analog). Defaults off since it's new, platform-specific, and this project has no
+    // way to verify Windows Hello + DPAPI integration against real hardware.
+    #[serde(default = "default_biometric_enabled")]
+    pub biometric_enabled: bool,
 }
 
 impl Default for Config {
@@ -71,6 +81,7 @@ impl Default for Config {
             hibp_opt_in: default_hibp_opt_in(),
             nav_collapsed: default_nav_collapsed(),
             mobile_nav_style: default_mobile_nav_style(),
+            biometric_enabled: default_biometric_enabled(),
         }
     }
 }
@@ -161,6 +172,7 @@ mod tests {
             hibp_opt_in: default_hibp_opt_in(),
             nav_collapsed: default_nav_collapsed(),
             mobile_nav_style: default_mobile_nav_style(),
+            biometric_enabled: default_biometric_enabled(),
         };
 
         config.save(&path).unwrap();
@@ -248,6 +260,7 @@ mod tests {
             hibp_opt_in: true,
             nav_collapsed: true,
             mobile_nav_style: default_mobile_nav_style(),
+            biometric_enabled: default_biometric_enabled(),
         };
 
         config.save(&path).unwrap();

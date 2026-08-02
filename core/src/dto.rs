@@ -128,6 +128,7 @@ pub struct ConfigDto {
     pub hibp_opt_in: bool,
     pub nav_collapsed: bool,
     pub mobile_nav_style: String,
+    pub biometric_enabled: bool,
 }
 
 // No secret field here at all (matches `list_trash`'s core signature - nothing to redact).

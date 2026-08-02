@@ -69,6 +69,7 @@ export interface ConfigDto {
   hibpOptIn: boolean;
   navCollapsed: boolean;
   mobileNavStyle: string;
+  biometricEnabled: boolean;
 }
 
 export type GenerateRequest =
@@ -121,8 +122,9 @@ export interface BreachReportDto { breached: HealthEntryDto[]; }
 
 // Tauri v2 always injects window.__TAURI_INTERNALS__ (that is how `invoke` reaches the backend);
 // withGlobalTauri is off in this app, so window.__TAURI__ is NOT present - detect via the internals
-// marker (see the plan's Finding 2).
-const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+// marker (see the plan's Finding 2). Exported so screens can gate desktop-only features (e.g.
+// biometric unlock, which has no web-mode route - Windows Hello can't run server-side).
+export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 async function httpPost<T>(command: string, args: Record<string, unknown>): Promise<T> {
   const res = await fetch(`/api/${command}`, {
@@ -160,6 +162,11 @@ export const api = {
     call<AuthSuccess>("unlock_with_pin", { username, pin }),
   setPin: (pin: string) => call<void>("set_pin", { pin }),
   clearPin: () => call<void>("clear_pin"),
+  hasBiometric: (username: string) => call<boolean>("has_biometric", { username }),
+  unlockWithBiometric: (username: string) =>
+    call<AuthSuccess>("unlock_with_biometric", { username }),
+  setBiometric: () => call<void>("set_biometric"),
+  clearBiometric: () => call<void>("clear_biometric"),
   lock: () => call<void>("lock"),
   touch: () => call<void>("touch"),
   verifyMasterPassword: (masterPassword: string) =>
@@ -225,5 +232,6 @@ export const api = {
   healthReport: () => call<HealthReportDto>("health_report"),
   checkBreach: () => call<BreachReportDto>("check_breach"),
   updateHibpOptIn: (enabled: boolean) => call<void>("update_hibp_opt_in", { enabled }),
+  updateBiometricEnabled: (enabled: boolean) => call<void>("update_biometric_enabled", { enabled }),
   updateOldPasswordDays: (days: number) => call<void>("update_old_password_days", { days }),
 };

@@ -1,3 +1,4 @@
+mod biometric_provider;
 mod commands;
 
 use pwmgr_core::paths::AppPaths;
@@ -55,6 +56,11 @@ pub fn run() {
             commands::unlock_with_pin,
             commands::set_pin,
             commands::clear_pin,
+            commands::has_biometric,
+            commands::unlock_with_biometric,
+            commands::set_biometric,
+            commands::clear_biometric,
+            commands::update_biometric_enabled,
             commands::lock,
             commands::touch,
             commands::verify_master_password,

@@ -95,6 +95,85 @@ pub fn do_unlock_with_pin(
     Ok(AuthSuccess { username: username.to_string() })
 }
 
+/// Whether `username` has biometric unlock configured - callable while locked (the login screen
+/// needs this before offering the option), and gated on the config toggle: a disabled feature
+/// never reports as available even if a record happens to still exist from before it was turned
+/// off.
+pub fn do_has_biometric(state: &AppState, username: &str, provider: &dyn crate::biometric::BiometricProvider) -> bool {
+    if !state.config.lock().unwrap().biometric_enabled || !provider.is_supported() {
+        return false;
+    }
+    let registry = state.registry.lock().unwrap();
+    crate::registry::find_biometric(&registry, username).ok().flatten().is_some()
+}
+
+pub fn do_set_biometric(
+    state: &AppState,
+    provider: &dyn crate::biometric::BiometricProvider,
+) -> Result<(), CommandError> {
+    if !state.config.lock().unwrap().biometric_enabled {
+        return Err(crate::error::invalid_input_error("Enable biometric unlock in Settings first."));
+    }
+    let session = state.session.lock().unwrap();
+    let username = session.username().ok_or_else(crate::error::locked_error)?;
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    if !provider.verify()? {
+        return Err(crate::biometric::BiometricError::VerificationFailed.into());
+    }
+    let wrapped_key = provider.protect(key.as_bytes())?;
+    let registry = state.registry.lock().unwrap();
+    crate::registry::set_biometric(&registry, &crate::registry::BiometricRecord {
+        username: username.to_string(),
+        wrapped_key,
+    })?;
+    Ok(())
+}
+
+pub fn do_clear_biometric(state: &AppState) -> Result<(), CommandError> {
+    let username = {
+        let session = state.session.lock().unwrap();
+        session.username().ok_or_else(crate::error::locked_error)?.to_string()
+    };
+    let registry = state.registry.lock().unwrap();
+    Ok(crate::registry::clear_biometric(&registry, &username)?)
+}
+
+pub fn do_unlock_with_biometric(
+    state: &AppState,
+    paths: &AppPaths,
+    username: &str,
+    provider: &dyn crate::biometric::BiometricProvider,
+) -> Result<AuthSuccess, CommandError> {
+    if !state.config.lock().unwrap().biometric_enabled {
+        return Err(crate::error::invalid_input_error("Biometric unlock is disabled in Settings."));
+    }
+    if !provider.is_supported() {
+        return Err(crate::biometric::BiometricError::Unsupported.into());
+    }
+    let wrapped_key = {
+        let registry = state.registry.lock().unwrap();
+        crate::registry::find_biometric(&registry, username)?
+            .ok_or(crate::biometric::BiometricError::VerificationFailed)?
+            .wrapped_key
+    };
+    if !provider.verify()? {
+        return Err(crate::biometric::BiometricError::VerificationFailed.into());
+    }
+    let raw = zeroize::Zeroizing::new(provider.unprotect(&wrapped_key)?);
+    if raw.len() != 32 {
+        return Err(crate::biometric::BiometricError::StorageFailed.into());
+    }
+    let mut key_bytes = [0u8; 32];
+    key_bytes.copy_from_slice(&raw);
+    let key = crate::crypto::VaultKey::from_bytes(key_bytes);
+
+    let vault_path = paths.vault_path(username);
+    let conn = crate::vault::open_vault(&vault_path, &key)?;
+    state.session.lock().unwrap().unlock(key, username, &SystemClock);
+    state.set_vault(conn, vault_path);
+    Ok(AuthSuccess { username: username.to_string() })
+}
+
 pub fn do_list_sites(state: &AppState) -> Result<Vec<SiteDto>, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
@@ -132,6 +211,7 @@ pub fn do_get_config(state: &AppState) -> ConfigDto {
         hibp_opt_in: config.hibp_opt_in,
         nav_collapsed: config.nav_collapsed,
         mobile_nav_style: config.mobile_nav_style.clone(),
+        biometric_enabled: config.biometric_enabled,
     }
 }
 
@@ -363,6 +443,15 @@ pub fn do_update_hibp_opt_in(state: &AppState, paths: &AppPaths, enabled: bool) 
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.hibp_opt_in = enabled;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_biometric_enabled(state: &AppState, paths: &AppPaths, enabled: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.biometric_enabled = enabled;
     updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
     *config = updated;
     Ok(())
@@ -1281,6 +1370,15 @@ mod tests {
     }
 
     #[test]
+    fn update_biometric_enabled_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        assert_eq!(do_get_config(&state).biometric_enabled, true);
+        let reloaded = Config::load(&paths.config_path()).unwrap();
+        assert_eq!(reloaded.biometric_enabled, true);
+    }
+
+    #[test]
     fn update_nav_collapsed_persists() {
         let (state, paths, _dir) = test_state_and_paths();
         do_update_nav_collapsed(&state, &paths, true).unwrap();
@@ -1879,6 +1977,106 @@ mod tests {
         let (state, _paths, _dir) = test_state_and_paths();
         assert_eq!(do_set_pin(&state, "1234").unwrap_err().code(), "locked");
         assert_eq!(do_clear_pin(&state).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn has_biometric_is_false_when_the_feature_is_disabled_even_if_a_record_exists() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        let provider = FakeProvider::new(true, true);
+        do_set_biometric(&state, &provider).unwrap();
+
+        do_update_biometric_enabled(&state, &paths, false).unwrap();
+
+        assert_eq!(do_has_biometric(&state, "alice", &provider), false);
+    }
+
+    #[test]
+    fn set_biometric_requires_the_feature_enabled_and_a_successful_verify() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        // Feature not yet enabled in Settings.
+        let provider = FakeProvider::new(true, true);
+        assert_eq!(do_set_biometric(&state, &provider).unwrap_err().code(), "invalid_input");
+
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+
+        // User cancels/fails the OS prompt.
+        let cancelling_provider = FakeProvider::new(true, false);
+        assert_eq!(
+            do_set_biometric(&state, &cancelling_provider).unwrap_err().code(),
+            "invalid_credentials"
+        );
+
+        do_set_biometric(&state, &provider).unwrap();
+        assert!(do_has_biometric(&state, "alice", &provider));
+    }
+
+    #[test]
+    fn unlock_with_biometric_recovers_the_session_without_the_master_password() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        let provider = FakeProvider::new(true, true);
+        do_set_biometric(&state, &provider).unwrap();
+        do_lock(&state);
+
+        let result = do_unlock_with_biometric(&state, &paths, "alice", &provider);
+
+        assert!(result.is_ok());
+        assert!(do_unlock_status(&state));
+    }
+
+    #[test]
+    fn unlock_with_biometric_fails_when_verification_is_cancelled() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        let setup_provider = FakeProvider::new(true, true);
+        do_set_biometric(&state, &setup_provider).unwrap();
+        do_lock(&state);
+
+        let cancelling_provider = FakeProvider::new(true, false);
+        let result = do_unlock_with_biometric(&state, &paths, "alice", &cancelling_provider);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_credentials");
+        assert!(state.session.lock().unwrap().is_locked());
+    }
+
+    #[test]
+    fn unlock_with_biometric_rejects_when_no_record_is_configured() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        do_lock(&state);
+
+        let provider = FakeProvider::new(true, true);
+        let result = do_unlock_with_biometric(&state, &paths, "alice", &provider);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_credentials");
+    }
+
+    #[test]
+    fn clear_biometric_then_unlock_with_biometric_fails() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        let provider = FakeProvider::new(true, true);
+        do_set_biometric(&state, &provider).unwrap();
+
+        do_clear_biometric(&state).unwrap();
+        do_lock(&state);
+
+        let result = do_unlock_with_biometric(&state, &paths, "alice", &provider);
+        assert_eq!(result.unwrap_err().code(), "invalid_credentials");
     }
 
     #[test]

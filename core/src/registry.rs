@@ -43,6 +43,13 @@ pub fn open_registry(path: &Path) -> Result<Connection, RegistryError> {
             pin_salt BLOB NOT NULL,
             wrapped_key_enc BLOB NOT NULL,
             wrapped_key_nonce BLOB NOT NULL
+        );
+        -- Same rationale as pin_unlock: a DPAPI-wrapped blob is tied to this specific Windows user
+        -- profile/machine and would never decrypt anywhere else anyway, so it's excluded from
+        -- backup/restore for free by living in its own table rather than on `users`.
+        CREATE TABLE IF NOT EXISTS biometric_unlock (
+            username TEXT PRIMARY KEY REFERENCES users(username),
+            wrapped_key BLOB NOT NULL
         );",
     )?;
     Ok(conn)
@@ -172,6 +179,37 @@ pub fn find_pin(conn: &Connection, username: &str) -> Result<Option<PinRecord>, 
 
 pub fn clear_pin(conn: &Connection, username: &str) -> Result<(), RegistryError> {
     conn.execute("DELETE FROM pin_unlock WHERE username = ?1", params![username])?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct BiometricRecord {
+    pub username: String,
+    pub wrapped_key: Vec<u8>,
+}
+
+pub fn set_biometric(conn: &Connection, rec: &BiometricRecord) -> Result<(), RegistryError> {
+    conn.execute(
+        "INSERT INTO biometric_unlock (username, wrapped_key)
+         VALUES (?1, ?2)
+         ON CONFLICT(username) DO UPDATE SET wrapped_key = excluded.wrapped_key",
+        params![rec.username, rec.wrapped_key],
+    )?;
+    Ok(())
+}
+
+pub fn find_biometric(conn: &Connection, username: &str) -> Result<Option<BiometricRecord>, RegistryError> {
+    conn.query_row(
+        "SELECT username, wrapped_key FROM biometric_unlock WHERE username = ?1",
+        params![username],
+        |row| Ok(BiometricRecord { username: row.get(0)?, wrapped_key: row.get(1)? }),
+    )
+    .optional()
+    .map_err(RegistryError::from)
+}
+
+pub fn clear_biometric(conn: &Connection, username: &str) -> Result<(), RegistryError> {
+    conn.execute("DELETE FROM biometric_unlock WHERE username = ?1", params![username])?;
     Ok(())
 }
 
@@ -316,5 +354,56 @@ mod tests {
         clear_pin(&conn, "alice").unwrap();
 
         assert!(find_pin(&conn, "alice").unwrap().is_none());
+    }
+
+    fn sample_biometric(username: &str) -> BiometricRecord {
+        BiometricRecord { username: username.to_string(), wrapped_key: vec![1, 2, 3, 4] }
+    }
+
+    #[test]
+    fn find_biometric_returns_none_when_none_is_set() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+
+        assert!(find_biometric(&conn, "alice").unwrap().is_none());
+    }
+
+    #[test]
+    fn set_biometric_then_find_biometric_roundtrips() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+
+        set_biometric(&conn, &sample_biometric("alice")).unwrap();
+
+        let found = find_biometric(&conn, "alice").unwrap().unwrap();
+        assert_eq!(found.wrapped_key, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn set_biometric_twice_replaces_rather_than_duplicates() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+        set_biometric(&conn, &sample_biometric("alice")).unwrap();
+
+        let mut replacement = sample_biometric("alice");
+        replacement.wrapped_key = vec![99; 8];
+        set_biometric(&conn, &replacement).unwrap();
+
+        assert_eq!(find_biometric(&conn, "alice").unwrap().unwrap().wrapped_key, vec![99; 8]);
+    }
+
+    #[test]
+    fn clear_biometric_removes_it() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+        set_biometric(&conn, &sample_biometric("alice")).unwrap();
+
+        clear_biometric(&conn, "alice").unwrap();
+
+        assert!(find_biometric(&conn, "alice").unwrap().is_none());
     }
 }
