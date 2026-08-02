@@ -19,10 +19,26 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                let tick_interval = std::time::Duration::from_secs(2);
+                let mut last_tick = std::time::Instant::now();
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    tokio::time::sleep(tick_interval).await;
+                    let now = std::time::Instant::now();
+                    let elapsed = now.duration_since(last_tick);
+                    last_tick = now;
+
                     let state = handle.state::<AppState>();
-                    if pwmgr_core::autolock::tick(&state, &pwmgr_core::session::SystemClock) {
+                    // A suspend/resume gap forces an immediate lock regardless of the configured
+                    // idle timeout - tick() alone only catches ordinary idle expiry, which could
+                    // still be minutes away right after waking from sleep.
+                    let was_unlocked_before_suspend_check =
+                        !state.session.lock().unwrap().is_locked();
+                    let suspended = was_unlocked_before_suspend_check
+                        && pwmgr_core::autolock::suspend_gap_exceeds(elapsed, tick_interval);
+                    if suspended {
+                        pwmgr_core::commands::do_lock(&state);
+                    }
+                    if suspended || pwmgr_core::autolock::tick(&state, &pwmgr_core::session::SystemClock) {
                         if let Err(e) = handle.emit("vault-locked", ()) {
                             eprintln!("warning: failed to emit vault-locked event ({e})");
                         }
