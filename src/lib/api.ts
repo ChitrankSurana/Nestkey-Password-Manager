@@ -97,6 +97,7 @@ export interface HealthReportDto {
   weak: HealthEntryDto[];
   reused: ReusedGroupDto[];
   old: HealthEntryDto[];
+  unsecured: HealthEntryDto[];
 }
 
 export interface BreachReportDto { breached: HealthEntryDto[]; }

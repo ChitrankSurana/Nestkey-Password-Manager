@@ -167,6 +167,7 @@ pub struct HealthReportDto {
     pub weak: Vec<HealthEntryDto>,
     pub reused: Vec<ReusedGroupDto>,
     pub old: Vec<HealthEntryDto>,
+    pub unsecured: Vec<HealthEntryDto>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]

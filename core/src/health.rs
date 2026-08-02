@@ -36,6 +36,12 @@ pub fn hibp_match(full_hash_hex: &str, entries: &[(String, u32)]) -> Option<u32>
         .map(|(_, count)| *count)
 }
 
+/// True when a site URL is unsecured plaintext HTTP - the `http://` scheme, not `https://`. Sites
+/// without a URL, or with any other scheme, are not flagged.
+pub fn is_unsecured_url(url: &str) -> bool {
+    url.to_ascii_lowercase().starts_with("http://")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,5 +111,18 @@ mod tests {
         let entries = vec![(suffix_upper.to_string(), 7u32)];
 
         assert_eq!(hibp_match(full_hash, &entries), Some(7));
+    }
+
+    #[test]
+    fn is_unsecured_url_flags_plain_http() {
+        assert!(is_unsecured_url("http://example.com"));
+        assert!(is_unsecured_url("HTTP://example.com"));
+    }
+
+    #[test]
+    fn is_unsecured_url_does_not_flag_https_or_other_schemes() {
+        assert!(!is_unsecured_url("https://example.com"));
+        assert!(!is_unsecured_url("ftp://example.com"));
+        assert!(!is_unsecured_url(""));
     }
 }

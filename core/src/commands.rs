@@ -533,6 +533,7 @@ struct HealthRow {
     credential_id: i64,
     site_id: i64,
     site_name: String,
+    site_url: Option<String>,
     username: Option<String>,
     secret: String,
 }
@@ -549,6 +550,7 @@ fn build_health_rows(
                 credential_id: c.id,
                 site_id: site.id,
                 site_name: site.name.clone(),
+                site_url: site.url.clone(),
                 username: c.username,
                 secret: c.secret,
             });
@@ -610,7 +612,18 @@ pub fn do_health_report(state: &AppState) -> Result<HealthReportDto, CommandErro
         })
         .collect();
 
-    Ok(HealthReportDto { weak, reused, old })
+    let unsecured: Vec<HealthEntryDto> = rows
+        .iter()
+        .filter(|r| r.site_url.as_deref().is_some_and(crate::health::is_unsecured_url))
+        .map(|r| HealthEntryDto {
+            credential_id: r.credential_id,
+            site_id: r.site_id,
+            site_name: r.site_name.clone(),
+            username: r.username.clone(),
+        })
+        .collect();
+
+    Ok(HealthReportDto { weak, reused, old, unsecured })
 }
 
 pub fn do_check_breach(state: &AppState, hibp_base_url: &str) -> Result<BreachReportDto, CommandError> {
@@ -1591,6 +1604,21 @@ mod tests {
 
         assert_eq!(report.reused.len(), 1);
         assert_eq!(report.reused[0].entries.len(), 2);
+    }
+
+    #[test]
+    fn health_report_flags_an_unsecured_http_site() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let http_site = do_add_site(&state, "insecure.example", Some("http://insecure.example"), None).unwrap();
+        let https_site = do_add_site(&state, "secure.example", Some("https://secure.example"), None).unwrap();
+        do_add_credential(&state, http_site, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        do_add_credential(&state, https_site, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.unsecured.len(), 1);
+        assert_eq!(report.unsecured[0].site_name, "insecure.example");
     }
 
     #[test]

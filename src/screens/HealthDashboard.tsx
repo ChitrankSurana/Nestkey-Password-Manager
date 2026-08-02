@@ -125,6 +125,16 @@ export function HealthDashboard({
               {expanded.has("old") && <EntryList entries={report.old} onNavigateToSite={onNavigateToSite} />}
             </div>
 
+            <div className="rounded border p-3 border-[var(--border)] border-l-4 border-l-[var(--warning)]">
+              <Tooltip text="Show or hide the list">
+                <button onClick={() => toggle("unsecured")} className="flex w-full justify-between items-center">
+                  <span className="font-medium"><Icon name="unlock-fill" className="text-[var(--warning)]" /> Unsecured site (http://)</span>
+                  <span>{report.unsecured.length}</span>
+                </button>
+              </Tooltip>
+              {expanded.has("unsecured") && <EntryList entries={report.unsecured} onNavigateToSite={onNavigateToSite} />}
+            </div>
+
             <div className="rounded border p-3 border-[var(--border)] border-l-4 border-l-[var(--danger)]">
               <div className="flex w-full justify-between items-center">
                 <span className="font-medium"><Icon name="shield-exclamation" className="text-[var(--danger)]" /> Breached</span>
