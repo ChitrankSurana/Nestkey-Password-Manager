@@ -25,6 +25,8 @@ export function CredentialEditor({
   const [fields, setFields] = useState<EditableField[]>(
     () => (existing?.customFields ?? []).map((f) => ({ ...f, key: nextFieldKey++ })),
   );
+  const [totpSecretInput, setTotpSecretInput] = useState("");
+  const [removeTotp, setRemoveTotp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,10 +54,17 @@ export function CredentialEditor({
       const customFields: CustomField[] = fields
         .filter((f) => f.label.trim() !== "")
         .map(({ label, value, fieldType }) => ({ label, value, fieldType }));
+      let credentialId: number;
       if (existing) {
         await api.updateCredential(existing.id, username || null, secret, remarks || null, customFields, reprompt);
+        credentialId = existing.id;
       } else {
-        await api.addCredential(siteId, username || null, secret, remarks || null, customFields, reprompt);
+        credentialId = await api.addCredential(siteId, username || null, secret, remarks || null, customFields, reprompt);
+      }
+      if (totpSecretInput.trim() !== "") {
+        await api.setTotpSecret(credentialId, totpSecretInput.trim());
+      } else if (removeTotp) {
+        await api.clearTotpSecret(credentialId);
       }
       onSaved();
     } catch (err) {
@@ -149,6 +158,35 @@ export function CredentialEditor({
             </div>
           ))}
         </div>
+
+        <label className="block">
+          <span className="text-sm">
+            {existing?.hasTotp ? "Replace authenticator (TOTP) secret" : "Authenticator (TOTP) secret (optional)"}
+          </span>
+          <input
+            className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)] font-mono"
+            value={totpSecretInput}
+            onChange={(e) => {
+              setTotpSecretInput(e.target.value);
+              if (e.target.value !== "") setRemoveTotp(false);
+            }}
+            placeholder={existing?.hasTotp ? "Configured - leave blank to keep" : "e.g. JBSWY3DPEHPK3PXP"}
+            title="Base32 secret from the site's 'set up 2FA' screen"
+          />
+          {existing?.hasTotp && (
+            <label className="mt-1 flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={removeTotp}
+                onChange={(e) => {
+                  setRemoveTotp(e.target.checked);
+                  if (e.target.checked) setTotpSecretInput("");
+                }}
+              />
+              <span className="text-sm">Remove authenticator secret</span>
+            </label>
+          )}
+        </label>
 
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={reprompt} onChange={(e) => setReprompt(e.target.checked)} />

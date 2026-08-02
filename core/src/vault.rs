@@ -94,6 +94,10 @@ fn add_credential_columns_if_missing(conn: &Connection) -> Result<(), VaultError
         conn.execute("ALTER TABLE credentials ADD COLUMN custom_fields_enc BLOB", [])?;
         conn.execute("ALTER TABLE credentials ADD COLUMN custom_fields_nonce BLOB", [])?;
     }
+    if !existing.iter().any(|c| c == "totp_secret_enc") {
+        conn.execute("ALTER TABLE credentials ADD COLUMN totp_secret_enc BLOB", [])?;
+        conn.execute("ALTER TABLE credentials ADD COLUMN totp_secret_nonce BLOB", [])?;
+    }
     Ok(())
 }
 
@@ -228,6 +232,9 @@ pub struct Credential {
     pub remarks: Option<String>,
     pub custom_fields: Vec<CustomField>,
     pub reprompt: bool,
+    // Presence only - the TOTP seed itself is never eagerly decrypted for a listing, only on
+    // demand by `get_totp_secret` (used solely to compute the current code).
+    pub has_totp: bool,
 }
 
 // Manual Debug impl (not derived) so a stray `{:?}`, `dbg!()`, or future log statement can never
@@ -245,6 +252,7 @@ impl std::fmt::Debug for Credential {
             // A Hidden-type value here is exactly as sensitive as `secret` above - count only.
             .field("custom_fields", &format!("<{} field(s)>", self.custom_fields.len()))
             .field("reprompt", &self.reprompt)
+            .field("has_totp", &self.has_totp)
             .finish()
     }
 }
@@ -280,7 +288,7 @@ pub fn list_credentials_for_site(
 ) -> Result<Vec<Credential>, VaultError> {
     let mut stmt = conn.prepare(
         "SELECT c.id, c.site_id, c.username, c.secret_enc, c.secret_nonce, c.remarks,
-                c.custom_fields_enc, c.custom_fields_nonce, c.reprompt
+                c.custom_fields_enc, c.custom_fields_nonce, c.reprompt, (c.totp_secret_enc IS NOT NULL)
          FROM credentials c
          JOIN sites s ON s.id = c.site_id
          WHERE c.site_id = ?1 AND c.deleted_at IS NULL AND s.deleted_at IS NULL
@@ -296,12 +304,13 @@ pub fn list_credentials_for_site(
         let fields_enc: Option<Vec<u8>> = row.get(6)?;
         let fields_nonce: Option<Vec<u8>> = row.get(7)?;
         let reprompt: bool = row.get(8)?;
-        Ok((id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt))
+        let has_totp: bool = row.get(9)?;
+        Ok((id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt, has_totp))
     })?;
 
     let mut out = Vec::new();
     for r in rows {
-        let (id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt) = r?;
+        let (id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt, has_totp) = r?;
         // secret_nonce comes from the DB row - external input relative to this function, not
         // something this code controls. A malformed/corrupted row (bad migration, manual DB
         // surgery, future bug elsewhere) must not be able to crash the whole read path via an
@@ -314,9 +323,70 @@ pub fn list_credentials_for_site(
         let plaintext = crate::crypto::open(key, &secret_enc, &nonce)?;
         let secret = String::from_utf8(plaintext).map_err(|_| VaultError::UnlockFailed)?;
         let custom_fields = open_custom_fields(key, fields_enc, fields_nonce)?;
-        out.push(Credential { id, site_id, username, secret, remarks, custom_fields, reprompt });
+        out.push(Credential { id, site_id, username, secret, remarks, custom_fields, reprompt, has_totp });
     }
     Ok(out)
+}
+
+/// Sets (or replaces) a credential's TOTP seed - a dedicated command rather than a param on
+/// `add_credential`/`update_credential` so those two never risk silently wiping an existing TOTP
+/// seed on an unrelated field edit: their UPDATE statements simply never touch these two columns.
+pub fn set_totp_secret(
+    conn: &Connection,
+    key: &VaultKey,
+    credential_id: i64,
+    secret: &str,
+) -> Result<(), VaultError> {
+    let (enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
+    let updated = conn.execute(
+        "UPDATE credentials SET totp_secret_enc = ?1, totp_secret_nonce = ?2, updated_at = datetime('now')
+         WHERE id = ?3 AND deleted_at IS NULL",
+        rusqlite::params![enc, nonce.to_vec(), credential_id],
+    )?;
+    if updated == 0 {
+        return Err(VaultError::NotFound);
+    }
+    Ok(())
+}
+
+pub fn clear_totp_secret(conn: &Connection, credential_id: i64) -> Result<(), VaultError> {
+    let updated = conn.execute(
+        "UPDATE credentials SET totp_secret_enc = NULL, totp_secret_nonce = NULL, updated_at = datetime('now')
+         WHERE id = ?1 AND deleted_at IS NULL",
+        rusqlite::params![credential_id],
+    )?;
+    if updated == 0 {
+        return Err(VaultError::NotFound);
+    }
+    Ok(())
+}
+
+/// Decrypts a credential's TOTP seed on demand - the only reader is the current-code computation,
+/// polled roughly once a second while a TOTP row is expanded, so this is a targeted single-row
+/// fetch rather than something `list_credentials_for_site` decrypts eagerly for every row.
+pub fn get_totp_secret(
+    conn: &Connection,
+    key: &VaultKey,
+    credential_id: i64,
+) -> Result<Option<String>, VaultError> {
+    let row: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> = conn
+        .query_row(
+            "SELECT totp_secret_enc, totp_secret_nonce FROM credentials WHERE id = ?1 AND deleted_at IS NULL",
+            rusqlite::params![credential_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let (enc, nonce_bytes) = match row.ok_or(VaultError::NotFound)? {
+        (Some(e), Some(n)) => (e, n),
+        _ => return Ok(None),
+    };
+    if nonce_bytes.len() != 12 {
+        return Err(VaultError::UnlockFailed);
+    }
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&nonce_bytes);
+    let plaintext = crate::crypto::open(key, &enc, &nonce)?;
+    Ok(Some(String::from_utf8(plaintext).map_err(|_| VaultError::UnlockFailed)?))
 }
 
 pub fn update_credential(
@@ -815,6 +885,64 @@ mod tests {
         soft_delete_credential(&conn, cred_id).unwrap();
 
         let result = update_credential(&conn, &key, cred_id, Some("alice2"), "new-secret", None, &[], false);
+
+        assert!(matches!(result, Err(VaultError::NotFound)));
+    }
+
+    #[test]
+    fn new_credential_has_no_totp_by_default() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[23u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
+
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+
+        assert!(!creds.iter().find(|c| c.id == cred_id).unwrap().has_totp);
+        assert_eq!(get_totp_secret(&conn, &key, cred_id).unwrap(), None);
+    }
+
+    #[test]
+    fn set_totp_secret_then_get_totp_secret_roundtrips_and_flags_has_totp() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[24u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
+
+        set_totp_secret(&conn, &key, cred_id, "JBSWY3DPEHPK3PXP").unwrap();
+
+        assert_eq!(get_totp_secret(&conn, &key, cred_id).unwrap().as_deref(), Some("JBSWY3DPEHPK3PXP"));
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+        assert!(creds.iter().find(|c| c.id == cred_id).unwrap().has_totp);
+    }
+
+    #[test]
+    fn clear_totp_secret_removes_it_without_touching_the_main_secret() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[25u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
+        set_totp_secret(&conn, &key, cred_id, "JBSWY3DPEHPK3PXP").unwrap();
+
+        clear_totp_secret(&conn, cred_id).unwrap();
+
+        assert_eq!(get_totp_secret(&conn, &key, cred_id).unwrap(), None);
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+        let cred = creds.iter().find(|c| c.id == cred_id).unwrap();
+        assert!(!cred.has_totp);
+        assert_eq!(cred.secret, "secret");
+    }
+
+    #[test]
+    fn set_totp_secret_on_nonexistent_credential_returns_not_found() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[26u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let result = set_totp_secret(&conn, &key, 9999, "JBSWY3DPEHPK3PXP");
 
         assert!(matches!(result, Err(VaultError::NotFound)));
     }

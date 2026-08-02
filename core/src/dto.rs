@@ -72,6 +72,7 @@ pub struct CredentialDto {
     pub remarks: Option<String>,
     pub custom_fields: Vec<CustomField>,
     pub reprompt: bool,
+    pub has_totp: bool,
 }
 
 // If you add a field to CredentialDto, add it here too - a manual Debug impl gets no compiler
@@ -87,6 +88,7 @@ impl std::fmt::Debug for CredentialDto {
             // A Hidden-type custom field value is exactly as sensitive as `secret` - count only.
             .field("custom_fields", &format!("<{} field(s)>", self.custom_fields.len()))
             .field("reprompt", &self.reprompt)
+            .field("has_totp", &self.has_totp)
             .finish()
     }
 }
@@ -101,8 +103,16 @@ impl From<Credential> for CredentialDto {
             remarks: c.remarks,
             custom_fields: c.custom_fields,
             reprompt: c.reprompt,
+            has_totp: c.has_totp,
         }
     }
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TotpCodeDto {
+    pub code: String,
+    pub seconds_remaining: u32,
 }
 
 // #[derive(Debug)] is safe here - neither field is secret (unlike CredentialDto above, which
@@ -316,7 +326,7 @@ mod tests {
             site_id: 1,
             username: Some("alice".into()),
             secret: "extremely-unique-secret-xyz".into(),
-            remarks: None, custom_fields: Vec::new(), reprompt: false,
+            remarks: None, custom_fields: Vec::new(), reprompt: false, has_totp: false,
         };
         let dto = CredentialDto::from(cred);
         let debug_output = format!("{:?}", dto);
@@ -331,7 +341,7 @@ mod tests {
             site_id: 1,
             username: Some("alice".into()),
             secret: "s3cret".into(),
-            remarks: None, custom_fields: Vec::new(), reprompt: false,
+            remarks: None, custom_fields: Vec::new(), reprompt: false, has_totp: false,
         };
         let dto = CredentialDto::from(cred);
         // Zeroizing<String> derefs to &str, so equality/usage is transparent to callers - this test

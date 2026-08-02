@@ -3,8 +3,9 @@ use pwmgr_core::commands::{
     do_export_csv, do_generate_password, do_get_config, do_health_report, do_import_csv_commit,
     do_import_csv_preview, do_list_credentials_for_site, do_list_sites, do_list_trash, do_lock,
     do_login, do_purge_trash, do_read_csv_headers, do_register, do_restore_backup,
-    do_restore_credential, do_search, do_soft_delete_credential, do_soft_delete_site, do_touch,
-    do_unlock_status, do_update_accent_color, do_update_auto_lock_minutes, do_update_credential,
+    do_clear_totp_secret, do_restore_credential, do_search, do_set_totp_secret,
+    do_soft_delete_credential, do_soft_delete_site, do_totp_code, do_touch, do_unlock_status,
+    do_update_accent_color, do_update_auto_lock_minutes, do_update_credential,
     do_update_hibp_opt_in, do_update_mobile_nav_style, do_update_nav_collapsed,
     do_update_old_password_days, do_update_site, do_update_strength_algorithm, do_update_theme,
     do_verify_master_password,
@@ -12,7 +13,7 @@ use pwmgr_core::commands::{
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
     HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
-    StrengthDto, TrashedCredentialDto,
+    StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
 use pwmgr_core::error::CommandError;
 use pwmgr_core::paths::AppPaths;
@@ -139,6 +140,21 @@ pub fn search(state: State<AppState>, query: String) -> Result<Vec<SearchResultD
 #[tauri::command]
 pub fn soft_delete_credential(state: State<AppState>, credential_id: i64) -> Result<(), CommandError> {
     do_soft_delete_credential(&state, credential_id)
+}
+
+#[tauri::command]
+pub fn set_totp_secret(state: State<AppState>, credential_id: i64, secret: String) -> Result<(), CommandError> {
+    do_set_totp_secret(&state, credential_id, &secret)
+}
+
+#[tauri::command]
+pub fn clear_totp_secret(state: State<AppState>, credential_id: i64) -> Result<(), CommandError> {
+    do_clear_totp_secret(&state, credential_id)
+}
+
+#[tauri::command]
+pub fn totp_code(state: State<AppState>, credential_id: i64) -> Result<Option<TotpCodeDto>, CommandError> {
+    do_totp_code(&state, credential_id)
 }
 
 #[tauri::command]

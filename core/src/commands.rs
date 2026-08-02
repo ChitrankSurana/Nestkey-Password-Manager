@@ -1,5 +1,5 @@
 use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::session::SystemClock;
@@ -180,6 +180,43 @@ pub fn do_soft_delete_credential(state: &AppState, credential_id: i64) -> Result
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     Ok(crate::vault::soft_delete_credential(conn, credential_id)?)
+}
+
+pub fn do_set_totp_secret(state: &AppState, credential_id: i64, secret: &str) -> Result<(), CommandError> {
+    // Fail fast on a bad secret before persisting it - generate_code's own base32 decode is the
+    // validation; the timestamp passed here is irrelevant to whether decoding succeeds.
+    crate::totp::generate_code(secret, 0)?;
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::set_totp_secret(conn, key, credential_id, secret)?)
+}
+
+pub fn do_clear_totp_secret(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::clear_totp_secret(conn, credential_id)?)
+}
+
+pub fn do_totp_code(state: &AppState, credential_id: i64) -> Result<Option<TotpCodeDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let secret = crate::vault::get_totp_secret(conn, key, credential_id)?;
+    drop(session);
+    match secret {
+        None => Ok(None),
+        Some(s) => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let code = crate::totp::generate_code(&s, now)?;
+            Ok(Some(TotpCodeDto { code, seconds_remaining: crate::totp::seconds_remaining(now) }))
+        }
+    }
 }
 
 pub fn do_list_trash(state: &AppState) -> Result<Vec<TrashedCredentialDto>, CommandError> {
@@ -1661,6 +1698,63 @@ mod tests {
     fn health_report_when_locked_returns_locked_error() {
         let (state, _paths, _dir) = test_state_and_paths();
         assert_eq!(do_health_report(&state).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn totp_code_is_none_when_no_secret_is_configured() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+
+        assert_eq!(do_totp_code(&state, cred_id).unwrap(), None);
+    }
+
+    #[test]
+    fn set_totp_secret_then_totp_code_returns_a_six_digit_code() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+
+        do_set_totp_secret(&state, cred_id, "JBSWY3DPEHPK3PXP").unwrap();
+        let totp = do_totp_code(&state, cred_id).unwrap().unwrap();
+
+        assert_eq!(totp.code.len(), 6);
+        assert!(totp.code.chars().all(|c| c.is_ascii_digit()));
+        assert!(totp.seconds_remaining >= 1 && totp.seconds_remaining <= 30);
+    }
+
+    #[test]
+    fn set_totp_secret_rejects_an_invalid_base32_secret() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+
+        let result = do_set_totp_secret(&state, cred_id, "not valid base32 !!!");
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn clear_totp_secret_makes_totp_code_none_again() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+        do_set_totp_secret(&state, cred_id, "JBSWY3DPEHPK3PXP").unwrap();
+
+        do_clear_totp_secret(&state, cred_id).unwrap();
+
+        assert_eq!(do_totp_code(&state, cred_id).unwrap(), None);
+    }
+
+    #[test]
+    fn totp_commands_require_an_unlocked_session() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_set_totp_secret(&state, 1, "JBSWY3DPEHPK3PXP").unwrap_err().code(), "locked");
+        assert_eq!(do_totp_code(&state, 1).unwrap_err().code(), "locked");
     }
 
     #[test]

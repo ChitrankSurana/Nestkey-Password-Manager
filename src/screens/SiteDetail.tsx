@@ -3,6 +3,7 @@ import { api, isCommandError, CredentialDto, SiteDto } from "../lib/api";
 import { CredentialEditor } from "./CredentialEditor";
 import { SiteEditor } from "./SiteEditor";
 import { SecretField } from "../components/SecretField";
+import { TotpDisplay } from "../components/TotpDisplay";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
@@ -94,6 +95,11 @@ export function SiteDetail({ siteId, onBack }: { siteId: number; onBack: () => v
                   </button>
                 </Tooltip>
               </div>
+              {c.hasTotp && (
+                <div className="pl-2">
+                  <TotpDisplay credentialId={c.id} />
+                </div>
+              )}
               {c.customFields.length > 0 && (
                 <div className="pl-2 space-y-1">
                   {c.customFields.map((f, i) => (

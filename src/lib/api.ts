@@ -37,6 +37,12 @@ export interface CredentialDto {
   remarks: string | null;
   customFields: CustomField[];
   reprompt: boolean;
+  hasTotp: boolean;
+}
+
+export interface TotpCodeDto {
+  code: string;
+  secondsRemaining: number;
 }
 
 export interface SearchResultDto {
@@ -180,6 +186,10 @@ export const api = {
   search: (query: string) => call<SearchResultDto[]>("search", { query }),
   softDeleteCredential: (credentialId: number) =>
     call<void>("soft_delete_credential", { credentialId }),
+  setTotpSecret: (credentialId: number, secret: string) =>
+    call<void>("set_totp_secret", { credentialId, secret }),
+  clearTotpSecret: (credentialId: number) => call<void>("clear_totp_secret", { credentialId }),
+  totpCode: (credentialId: number) => call<TotpCodeDto | null>("totp_code", { credentialId }),
   listTrash: () => call<TrashedCredentialDto[]>("list_trash"),
   restoreCredential: (credentialId: number) => call<void>("restore_credential", { credentialId }),
   purgeTrash: () => call<number>("purge_trash"),

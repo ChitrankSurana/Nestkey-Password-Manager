@@ -9,7 +9,7 @@ use pwmgr_core::commands::*;
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
     HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
-    StrengthDto, TrashedCredentialDto,
+    StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
 use pwmgr_core::paths::AppPaths;
 use pwmgr_core::state::AppState;
@@ -98,6 +98,13 @@ struct VerifyMasterPasswordRequest {
 #[serde(rename_all = "camelCase")]
 struct CredentialIdRequest {
     credential_id: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetTotpSecretRequest {
+    credential_id: i64,
+    secret: String,
 }
 
 #[derive(Deserialize)]
@@ -330,6 +337,29 @@ async fn soft_delete_credential(
     Ok(StatusCode::OK)
 }
 
+async fn set_totp_secret(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetTotpSecretRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_totp_secret(&s.app_state, b.credential_id, &b.secret)?;
+    Ok(StatusCode::OK)
+}
+
+async fn clear_totp_secret(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<CredentialIdRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_clear_totp_secret(&s.app_state, b.credential_id)?;
+    Ok(StatusCode::OK)
+}
+
+async fn totp_code(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<CredentialIdRequest>,
+) -> Result<Json<Option<TotpCodeDto>>, ApiError> {
+    Ok(Json(do_totp_code(&s.app_state, b.credential_id)?))
+}
+
 async fn list_trash(
     Extension(s): Extension<Arc<UserSession>>,
 ) -> Result<Json<Vec<TrashedCredentialDto>>, ApiError> {
@@ -522,6 +552,9 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/list_credentials_for_site", post(list_credentials_for_site))
         .route("/api/search", post(search))
         .route("/api/soft_delete_credential", post(soft_delete_credential))
+        .route("/api/set_totp_secret", post(set_totp_secret))
+        .route("/api/clear_totp_secret", post(clear_totp_secret))
+        .route("/api/totp_code", post(totp_code))
         .route("/api/list_trash", post(list_trash))
         .route("/api/restore_credential", post(restore_credential))
         .route("/api/purge_trash", post(purge_trash))

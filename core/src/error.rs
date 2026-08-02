@@ -68,6 +68,13 @@ impl From<crate::generator::GenError> for CommandError {
     }
 }
 
+impl From<crate::totp::TotpError> for CommandError {
+    fn from(e: crate::totp::TotpError) -> Self {
+        // TotpError's one variant's Display text is already safe, user-facing validation text.
+        invalid_input_error(&e.to_string())
+    }
+}
+
 impl From<crate::portio::PortioError> for CommandError {
     fn from(e: crate::portio::PortioError) -> Self {
         use crate::portio::PortioError;
