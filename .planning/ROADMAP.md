@@ -134,7 +134,23 @@ found unresolved file-path, rate-limiting, and header gaps.
   2. A user can star any item as a favorite and filter to a "Favorites" view showing only starred items.
   3. A user can create folders, assign an item to at most one folder, and filter the vault by folder.
   4. A user can view a per-item health card (strength meter, breach status, reuse status) directly in that item's detail panel, without triggering a full vault-wide health sweep.
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Tracer: new UI entry point boots end to end, and the desktop window is built at runtime from `config.ui_variant`
+- [ ] 08-02-PLAN.md — Interface toggle in Settings: setter command, web route, API wrapper, persistent restart banner
+- [ ] 08-03-PLAN.md — Three-pane shell, sidebar, searchable site list over the lazy-decryption `useVault` hook
+- [ ] 08-04-PLAN.md — Detail panel: credential repeater, reprompt-gated secrets, TOTP, custom fields, per-item strength meter
+- [ ] 08-05-PLAN.md — CRUD wiring to the existing editors, five secondary panes, sidebar nav dispatch
+- [ ] 08-06-PLAN.md — Three responsive tiers and the standing invariant gate over `src/newui/`
+
+**Scope note (2026-09-13)**: the Goal and Success Criteria above describe the ORIGINAL scope and
+are superseded for execution by
+`.planning/phases/08-new-vault-ui-figma-port/8-CONTEXT.md` `<domain>` + D-10, which the developer
+confirmed this session. Item types, favorites and folders are NOT delivered by this phase (no
+backend persistence exists for any of them); per-item health ships as a live strength meter only.
+VAULT-03/04/05 stay open after this phase; HEALTH-02 is partially satisfied. The roadmap prose was
+deliberately left unedited by developer choice — see `08-01-PLAN.md` → `## Requirement Scope Note`.
 
 **Note**: `docs/FIGMA_UI_VS_CURRENT_FEATURES.md` schedules this exact scope as "Closing," but
 Bitwarden-comparison research (`docs/bitwarden_compare_ideas/00-summary.md`) explicitly recommends
