@@ -1,110 +1,260 @@
-# Context (from DOCs)
+# Context (from DOC-type documents)
 
-31 documents were classified `DOC` in this ingestion batch (30 unique source paths — `docs/FRESH_MACHINE_SETUP.md` was classified twice by the classifier, collapsed to one entry below; see `INGEST-CONFLICTS.md` INFO). Of those 30, **7 were excluded from this file** because they form two cross-reference cycles detected in the `cross_refs` graph (see `INGEST-CONFLICTS.md` BLOCKERS): `HOW_TO_USE_MAIN_APP.md`, `HOW_TO_USE_VIEWER_APP.md`, `HOW_TO_USE_WEB_PORTAL.md` (cycle A), and `docs/testing/HOW_TO_TEST_MAIN_APP.md`, `docs/testing/HOW_TO_TEST_VIEWER_APP.md`, `docs/testing/HOW_TO_TEST_WEB_PORTAL.md`, `docs/KNOWN_LIMITATIONS.md` (cycle B). The remaining 23 are extracted below, topic-keyed.
+31 unique documents (32 classification JSONs, one duplicate pair collapsed — see
+`INGEST-CONFLICTS.md` [INFO]) were classified `type: DOC` in this ingest. Notes below are grouped by
+topic; every note is attributed to its source path(s).
 
-## Architecture Overview
+---
+
+## Topic: Architecture
+
 - source: docs/ARCHITECTURE.md
-- Three-layer shape: React/TypeScript/Tailwind frontend (webview) → Tauri IPC → Rust core (`src-tauri`, all secrets and business logic: `crypto`, `registry`, `auth`, `session`, `vault`, `generator`, `health`, `backup`, `portio`, `commands`) → disk (`~/.pwmgr/registry.db` unencrypted usernames+salts, `~/.pwmgr/vaults/<user>.vault` SQLCipher-encrypted, `~/.pwmgr/backups/*.bak` encrypted, `~/.pwmgr/config.json`).
-- Design rationale: secrets never cross the IPC boundary in derived form; registry DB is deliberately unencrypted but secret-free; SQLCipher + per-field AES-GCM is defense in depth, not redundancy; M5 viewer reuses `crypto`+`vault`+`registry` as a library with no write-path commands registered; M6 web mode reuses the same Rust core with an HTTP layer bound to `127.0.0.1` and session-token middleware.
-- Module isolation: `crypto` has no knowledge of SQLite; `vault` has no knowledge of Argon2/passwords (handed an already-derived key); `auth`/`session` are the only modules that ever see the master password, transiently; `commands` is a thin IPC translation layer with no business logic.
+- React frontend (webview) + Rust core (`src-tauri`) over Tauri IPC + disk (`~/.pwmgr/registry.db`,
+  `~/.pwmgr/vaults/<user>.vault`, `~/.pwmgr/backups/*.bak`, `~/.pwmgr/config.json`).
+- Rust core modules: `crypto`, `registry`, `auth`, `session`, `vault`, `generator`, `health`,
+  `backup`, `portio`, `commands`.
+- Design rationale: secrets never cross the IPC boundary in derived form (frontend sends the master
+  password once, then only issues intent commands); the registry DB is deliberately unencrypted but
+  secret-free (usernames + KDF salts only); SQLCipher + per-field AES-GCM is defense in depth, not
+  redundancy; read-only viewer (M5) reuses `crypto`+`vault`+`registry` as a library with no write-path
+  commands registered; web mode (M6) reuses the same Rust core with an HTTP layer bound to
+  `127.0.0.1` only and a session-token middleware in front of the same `commands` module.
+- Module isolation for testability: `crypto` has no knowledge of SQLite; `vault` has no knowledge of
+  Argon2/passwords; `auth`/`session` are the only modules that ever see the master password;
+  `commands` is a thin translation layer with no business logic of its own.
 
-## Deferred Items
-- source: docs/DEFERRED.md
-- Automated viewport/screenshot testing (e.g. Playwright) was raised during M6 responsive-layout design and explicitly deferred. Reason: no browser/UI test tooling exists today (only Node-env `vitest` unit tests); every prior milestone (M4, M5, M6 web-mode) treated visual/frontend verification as manual QA via a deferred walkthrough rather than introducing browser automation.
-- Revisit trigger: (a) a real regression slips through manual QA that automated tests would have caught, or (b) responsive layout code accumulates enough screens/breakpoints that manual re-verification becomes the bottleneck.
+## Topic: Usage Guides (per-app)
 
-## Figma UI Design vs. Current Feature Set
-- source: docs/FIGMA_UI_VS_CURRENT_FEATURES.md
-- Feature-by-feature comparison between a Figma-designed vault UI ("Password manager UI design") and the shipped application, produced independently of the codebase.
-- Gaps where the Figma design assumes capability the app lacks today (status "Closing" = scheduled for the new-UI port): four item types (Login/Secure Note/Payment Card/Identity, app has Login only), Favourites (star toggle, no backing column/command today), Folders (no folders table/reference today), per-item password health (today's health analysis is vault-wide only, not per-item). "Sync" is marked "Open" (deliberately deferred — no server/account/sync architecture exists; implementing this is "a project in its own right, not a UI feature"). TOTP presentation is marked "Aligned (app is ahead)" — the app already has a live authenticator display, the Figma design only shows a static placeholder box.
-- Shipped features absent from the Figma design (need a home in the new UI): Health dashboard, password generator, Data hub (backup/CSV export/CSV import), Settings — security (auto-lock, old-password threshold, breach-check opt-in, **PIN quick-unlock**, **Windows Hello biometric unlock**), Settings — **SSH agent** (Windows named pipe, desktop build only), Settings — appearance (theme, 5-color accent picker, narrow-window nav style choice), Settings — strength algorithm choice, Login screen (master password + optional PIN + Windows Hello), **reprompt-on-reveal** (per-credential flag requiring master-password re-entry before reveal/copy), **custom fields** (text/hidden/boolean typed), clipboard auto-clear (30s), auto-lock-on-suspend, multiple credentials per site.
-- Deferred items explicitly not being closed in this UI-port pass: Sync (button removed, not shown disabled); CSV import/export for new item types (logins only, for now); the read-only viewer build (stays login-only subset); the accent-colour picker (design assumes one fixed accent, app has five — open design question on whether to keep/reduce/drop).
-- Note: several of these shipped features (PIN quick-unlock, Windows Hello biometric unlock, SSH agent, custom fields, reprompt-on-reveal, TOTP) are not mentioned anywhere in `docs/PRD.md`'s milestone table (§7) or user stories (§6) — PRD/TRD (last updated 2026-07-01) appear to predate this later feature work. See `INGEST-CONFLICTS.md` INFO.
+- source: docs/USAGE_GUIDE.md — index document pointing to the three per-app guides below plus
+  `KNOWN_LIMITATIONS.md` and `testing/`.
+- source: docs/HOW_TO_USE_MAIN_APP.md — full read/write desktop app. Covers install/run
+  (`npm run tauri dev`), registration (no password recovery, by design), generic-error login,
+  the Vault screen (nav rail: Health/Generator/Trash/Data/Settings/Lock), 4 generator methods
+  (Random/Memorable/Pattern/Pronounceable) with a Simple/Advanced(zxcvbn) strength-meter toggle that
+  explicitly does **not** change Health Dashboard "Weak" classification, Health Dashboard
+  (Weak/Reused/Old/Breached cards, HIBP opt-in), Settings table, Trash (soft-delete + Empty Trash
+  confirmation), Backup/Restore, CSV export (3 modes: Encrypted-this-device, Encrypted-with-password,
+  Plaintext gated behind typing `EXPORT PLAINTEXT`), CSV import (Chrome/Firefox/generic mapper,
+  preview→commit), and on-disk data layout.
+- source: docs/HOW_TO_USE_VIEWER_APP.md — second, smaller desktop app for when the Main App is
+  unavailable; opens the same encrypted vault but has no add/edit/delete commands compiled in at
+  all. Same login/search/reveal/copy/lock behavior as Main App; no Register screen (registering
+  counts as "adding data"). Reflects the Main App's last-set theme/accent with no theme picker of
+  its own.
+- source: docs/HOW_TO_USE_WEB_PORTAL.md — full feature set from a browser tab at
+  `http://127.0.0.1:7373`, never listens beyond localhost. Same login/register/shared vault files as
+  Main App. One difference: clipboard copy uses the browser's own clipboard permission instead of a
+  native OS call. Each browser session is independent; sessions live in memory only (process
+  crash/restart logs everyone out, vault data itself untouched).
 
-## Bitwarden Comparison — Summary and Ranked Recommendations
-- source: docs/bitwarden_compare_ideas/00-summary.md
-- Research-only comparison (2026-07-26), explicitly not yet built. Top-ranked actionable ideas across all three sub-reports: (1) split the data-encryption key from the password-derived key — currently `vault_key` is derived straight from Argon2id and used directly as the SQLCipher key; no `change_password` function exists anywhere in `core/src`, so a password change today means re-encrypting the whole vault; a wrapped random data key would make it "re-wrap one 32-byte key" — flagged as the single biggest architectural gap found, needs a one-time migration for existing vaults; (2) decide and explicitly document unlock-attempt throttling (currently undocumented on both this project's and Bitwarden's side); (3) scripting-friendly flags (`?raw=true`) on the Web Portal HTTP API; (4) ambiguous-character avoidance + per-class minimum counts in the random generator; (5) JSON export alongside CSV (to represent multiple credentials per site without flattening); (6) surface the "device compromise is out of scope" statement to end users, not just contributors; (7) a ciphertext version/type tag on `seal()`/`open()` — flagged only, not recommended to build without a concrete need.
-- Explicitly NOT recommended: a standalone CLI binary (real gap, but new attack surface — a deliberate YAGNI call for the user to make, not a default yes); Card/Identity/SSH-key item types, folders/collections, org-sharing (exist in Bitwarden to power autofill/multi-user sharing, both explicit PRD non-goals); PBKDF2 fallback/dual-KDF support, RSA org-key wrapping, per-item Cipher Key envelope (solve problems — legacy migration, multi-tenant sharing — this project doesn't have).
-- Areas already judged as good or better than Bitwarden: compile-time-enforced read-only Viewer binary; explicit plaintext-CSV export confirmation gate; AEAD-only ciphertext (no legacy unauthenticated format); username-enumeration timing defense (decoy-salt Argon2id, test-asserted ≥5ms); concretely specified CSRF mitigation; structurally zero-knowledge (no server exists for Main/Viewer; Web Portal hard-bound to 127.0.0.1).
+## Topic: Testing Guides (manual QA checklists)
 
-## Bitwarden Comparison — Crypto Core Detail
-- source: docs/bitwarden_compare_ideas/01-crypto-core.md
-- Bitwarden's KDF enum supports both `PBKDF2 { iterations }` (legacy, min 5,000, default 600,000) and `Argon2id { iterations, memory, parallelism }` (min 2 iter/16 MiB/1 lane, default 6 iter/32 MiB/4 lanes), with hard-errored minimums enforced in code. Bitwarden derives a `MasterKey` used only to wrap things (never decrypts vault content directly) and a separately-derived `master_password_hash` (PBKDF2) for server-side login verification — analogous to this project's `verifier_key` split, but this project uses Argon2id only, fixed params (64 MiB/3 iterations/4 lanes/32-byte output), no PBKDF2 fallback, no enforced minimum (hardcoded so nothing to violate). Bitwarden's zeroization uses pinned heap allocations plus a `clear_stack()` trick specifically for Argon2's C-adjacent implementation leaving working memory on the stack; this project's `derive_key` already zeroizes via `ZeroizeOnDrop`, flagged as marginal-value-but-worth-knowing-about.
-- Verifier check comparison: this project's `verifier_matches` uses `subtle::ConstantTimeEq` plus a decoy-salt Argon2id call on unknown usernames to close a username-enumeration timing oracle — judged more defense-in-depth than what was found visible in Bitwarden's crypto crate.
+- source: docs/testing/HOW_TO_TEST_MAIN_APP.md — Part 1 automated (`cargo test --workspace`,
+  `npm test`, `npm run build`), Part 2 manual walkthrough (13 numbered sections: registration/login
+  security, add-site/search, edit, delete/trash/restore, generator, Health Dashboard, Settings,
+  manual lock, backup/restore, CSV export, CSV import, dark theme consistency, keyboard-accessible
+  tooltips).
+- source: docs/testing/HOW_TO_TEST_VIEWER_APP.md — first-ever written procedure for launching this
+  app (deferred through M5 and M6 per `KNOWN_LIMITATIONS.md`). Confirms read-only is structural (only
+  8 commands registered, no write command exists in the binary at all).
+- source: docs/testing/HOW_TO_TEST_WEB_PORTAL.md — first-ever written procedure for this surface too.
+  Covers session cookie behavior (HttpOnly, SameSite=Strict), CSRF header enforcement (`403` without
+  `x-pwmgr-csrf`, `200` with any value), multi-session isolation (separate cookie jars never leak
+  data), idle sweep (`401 {code:"locked"}`, no auto-redirect since there's no browser
+  `vault-locked` event), network-exposure confirmation (`netstat` shows `127.0.0.1:7373` only),
+  server crash/restart behavior (in-memory session store, vault data untouched).
+- source: docs/HOW_TO_TEST_M6_RESPONSIVE.md — manual-only checklist (no automated viewport tooling,
+  per `docs/DEFERRED.md`) for the 640px breakpoint and 3 narrow-nav patterns across both
+  `index.html` and `viewer.html`.
+- source: docs/HOW_TO_TEST_BIOMETRIC_UNLOCK.md — manual QA for Windows Hello + DPAPI integration,
+  added on branch `feature/bitwarden-port-phase1`. Unit-tested only against a fake provider
+  (`core/src/biometric.rs`); never exercised against a real Windows Hello prompt before this doc.
+  Defaults off (`biometric_enabled: false`). Desktop app only, no web-mode route.
+- source: docs/HOW_TO_TEST_SSH_AGENT.md — manual QA for an SSH agent over a Windows named pipe,
+  added on branch `feature/bitwarden-port-phase1`. Signing logic (`core/src/ssh_agent.rs`) is
+  unit-tested with a real Ed25519 key; the named-pipe server and real OpenSSH/PuTTY interop are not
+  automatable and are the subject of this checklist. Defaults off (`ssh_agent_enabled: false`).
+  Known v1 gaps (deliberate, not bugs): no in-app key generation, no passphrase-encrypted key
+  support, no trash/undo for deleted keys.
+- source: docs/testing/PHASE_B_MANUAL_VERIFICATION.md — M1 Phase B's Task 28 manual UI walkthrough:
+  registration/generic-error login, add/search, edit, delete/trash/restore, auto-lock takes live
+  effect, manual lock, dark theme consistency, keyboard-accessible tooltips (including the
+  best-effort disabled-control tooltip case).
 
-## Bitwarden Comparison — Vault Data Model & CLI/UX Detail
-- source: docs/bitwarden_compare_ideas/02-vault-and-cli.md
-- Bitwarden vault item types: Login, Secure Note, Card, Identity, SSH key (5 types), plus folders (personal) vs. collections (org-shared) as distinct concepts, favorites, and typed custom fields (Text/Hidden/Boolean). This project's data model (`core/src/vault.rs`) is effectively Bitwarden's "Login" type only — no Card/Identity/Secure-Note/SSH-key equivalents, no folders, no collections, no favorites, no custom fields — but supports multiple credentials per site, which Bitwarden's flat item list doesn't do as cleanly.
-- Bitwarden `bw` CLI: session-key based (`bw login`/`bw unlock` → `BW_SESSION`), `bw serve` exposes the full CLI as a local REST API, global scripting flags (`--raw`, `--response`, `--pretty`, `--quiet`, `--nointeraction`). This project has no CLI at all — all three surfaces (Main App, Viewer, Web Portal) are GUI-only.
-- This project's generator (`core/src/generator.rs`): four methods (random, memorable via EFF short wordlist, pattern DSL, pronounceable) — random mode lacks per-class minimum-count and ambiguous-character-avoidance options that Bitwarden-equivalent generators commonly have.
-- This project's export/import (`core/src/portio.rs`, `core/src/backup.rs`): CSV export/import (generic 6-column schema), Chromium-format import parser; encrypted backup is a custom length-prefixed binary bundle wrapping the registry record + raw SQLCipher vault bytes (not JSON, not per-item granular).
+## Topic: Known Limitations & Deferred Items
 
-## Bitwarden Comparison — Server/Security Model Detail
-- source: docs/bitwarden_compare_ideas/03-server-security-notes.md
-- Bitwarden's key hierarchy: master password + email salt → PBKDF2 (default 600,000 iter, Argon2id optional) → Master Key → HKDF stretch → Stretched Master Key; separate PBKDF2-derived Master Password Hash sent server-side for auth only; a random Generated Symmetric Key wraps a per-item Cipher Key (per-item envelope encryption). This project uses one derived key path (Argon2id only) since there's no server to authenticate against separately, so no Master-Key/Master-Password-Hash split is needed; uses SQLCipher full-DB + per-field AES-256-GCM instead of per-item Cipher Key envelopes (coarser granularity, no per-item key-management surface).
-- Bitwarden's third-party audits (2022–2025): Cure53, IOActive, Unit 42, Fracture Labs, SOC 2 Type 2 + SOC 3, and a 2025 ETH Zurich cryptography audit modeling a fully malicious server (10-12 attacks found, all medium/low severity, 7 fixed, 3 accepted as intentional tradeoffs). No public documentation found (on either project) of specific brute-force/lockout throttling parameters.
-- Ideas worth adopting: explicit user-facing statement that device/OS compromise is out of scope (already in THREAT_MODEL.md as O1 for contributors, not yet surfaced to end users); explicitly document failed-unlock-attempt throttling behavior (or the deliberate decision not to add one) in THREAT_MODEL.md; third-party audit transparency as a future practice once any external review happens.
+- source: docs/KNOWN_LIMITATIONS.md (last updated 2026-07-19) — Testing gaps: Viewer App and Web
+  Portal had never been launched/clicked-through end-to-end before the `testing/` docs above were
+  written; no automated UI/visual test tooling exists anywhere (deliberate, per TRD §7); a
+  two-browser-session HTTP integration test hasn't been written yet (today: 3 single-session
+  integration tests); tooltip-on-disabled-control behavior is best-effort/unconfirmed. Known
+  behavioral quirks: Health Dashboard "Weak" always scores with zxcvbn regardless of the Settings
+  strength-algorithm toggle (confirmed intentional after review); a Web Portal crash/restart silently
+  logs out every session; Web Portal concurrency accepted at "household scale," not load-tested
+  beyond it. Deferred code cleanup: no `AppState::open(paths)` production constructor yet (same
+  boilerplate duplicated 3×); `SessionStore::remove` has zero production callers. Not yet built: M6
+  responsive layout is spec'd/planned but has zero implementation code as of this doc; automated
+  viewport/screenshot testing deferred; macOS/Linux builds not started (Windows-only today); Android
+  companion + sync is design-only. Deliberate non-goals (restated from PRD/THREAT_MODEL): cloud sync,
+  browser extension/autofill, master-password recovery, defense against O1–O4 threat classes.
+- source: docs/DEFERRED.md — one tracked item: automated viewport/screenshot testing (e.g.
+  Playwright), raised during M6 responsive-layout design, deferred because the project has no
+  browser/UI test tooling today and every prior milestone (M4, M5, M6 web-mode) used manual QA
+  instead. Revisit trigger: either a real regression slips through manual QA that automated tests
+  would have caught, or responsive-layout code accumulates enough screens/breakpoints that manual
+  re-verification becomes the bottleneck.
 
-## M1 Phase A — Secure Core Implementation Plan
-- source: docs/superpowers/plans/2026-07-01-m1-secure-core.md
-- Step-by-step plan to build the standalone Rust crypto/vault/auth/session core library (`pwmgr-core`) with full TDD test coverage: Argon2id, AES-256-GCM, SQLCipher, registry.
+## Topic: Figma UI vs. current feature set (planned new-UI port)
 
-## M1 Phase B — Desktop App + IPC + React Vault UI Implementation Plan
-- source: docs/superpowers/plans/2026-07-05-m1-phase-b.md
-- Step-by-step plan for the Tauri desktop shell, IPC command layer, and React vault UI: authentication, auto-lock, dark theme, Tailwind CSS. Companion manual-verification checklist is `docs/testing/PHASE_B_MANUAL_VERIFICATION.md` (below).
+- source: docs/FIGMA_UI_VS_CURRENT_FEATURES.md — feature-by-feature comparison between a Figma
+  ("Password manager UI design") mockup and the current app. Gaps to close ("Closing" status): 4 item
+  types (Login/Secure Note/Payment Card/Identity — schema has no type discriminator today),
+  favorites (no column/command exists), folders (no table/reference exists), per-item password health
+  (today's health check is vault-wide only). Deliberately deferred ("Open" status): Sync (no
+  server/account system exists; out of scope, button removed rather than shown disabled). Where the
+  app is already ahead of the mockup: multi-credential-per-site data model, live TOTP display (vs. a
+  static placeholder in the design). Shipping features absent from the Figma design that need a home
+  in any new UI: Health dashboard, password generator, Data hub (backup/CSV), Settings (security incl.
+  PIN quick-unlock and Windows Hello biometric unlock, SSH agent [desktop-only], appearance, strength
+  algorithm), reprompt-on-reveal, custom fields (text/hidden/boolean), clipboard auto-clear, auto-lock
+  on OS suspend, multiple credentials per site. Other deferred items: CSV import/export stays
+  logins-only for now (new item types won't appear in exports); the read-only Viewer won't display
+  the new item types either (separate future work); the 5-color accent picker vs. the design's single
+  fixed accent is an open design question.
 
-## M2 — Password Generator + Strength/Entropy Implementation Plan
-- source: docs/superpowers/plans/2026-07-12-m2-password-generator.md
-- Task-by-task plan for the four generator methods (random, memorable, pattern, pronounceable), zxcvbn-based strength estimation, and clipboard integration, touching `CredentialEditor` and `Settings`.
+## Topic: Setup / Environment
 
-## M3 — Encrypted Backup/Restore + CSV Export/Import Implementation Plan
-- source: docs/superpowers/plans/2026-07-12-m3-backup-csv.md
-- Task-by-task plan for encrypted backup/restore bundles, CSV export in 3 modes, and CSV import with a two-phase preview/commit flow, in Rust `core::backup` and `core::portio` modules.
+- source: docs/FRESH_MACHINE_SETUP.md (classified twice under two classification IDs pointing at the
+  same source file — collapsed here; see `INGEST-CONFLICTS.md` [INFO]) — Windows-only setup guide
+  (10 2004+/11). All three apps (Main, Viewer, Web Portal) share one `~/.pwmgr` data directory, so a
+  user registers once and can log into any of the three. Automated path:
+  `scripts/setup-dependencies.ps1` (installs Git, Rust, Strawberry Perl, MSVC Build Tools, Node.js,
+  WebView2 via `winget`, then `npm install` + `cargo fetch`). Manual path: a 5-tool table (Git, Rust/
+  rustup, MSVC Build Tools C++ workload, Strawberry Perl, Node.js LTS, WebView2 Runtime). Build
+  verification: `cargo test --workspace` (first run compiles vendored OpenSSL+SQLCipher from source,
+  5-15+ min), `npm test`, `npm run build`. Running each app documented (Main:
+  `npm run tauri dev`; Viewer: `cd viewer-src-tauri && npx tauri dev`; Web Portal:
+  `npm run build && cargo run -p pwmgr-web` from repo root, binds `127.0.0.1:7373` only).
+- source: docs/PATH_AUDIT.md (audit date 2026-07-19) — project-scoped PATH entries required to
+  build/run/test this Rust+Node workspace: Cargo bin, Node/npm, Git, OpenSSH (repo's `origin` is an
+  SSH URL), Strawberry Perl bin + site\bin (needed by `rusqlite`'s
+  `bundled-sqlcipher-vendored-openssl` feature, which compiles OpenSSL from source via a Perl-based
+  `Configure` script), Windows core dirs, PowerShell. One "required but not currently on PATH" entry:
+  MSVC `link.exe`/`cl.exe` dir — not added permanently because `cargo build` already auto-locates
+  MSVC via the registry/vswhere, and adding it would conflict with other `link`/`cl`-named tools.
 
-## M6 — Web Mode Implementation Plan (executes the web-mode SPEC)
-- source: docs/superpowers/plans/2026-07-18-m6-web-mode.md
-- Runbook decomposing the M6 web-mode design (see `constraints.md`) into Slice 1/2/3 task sequences (pwmgr-core promotion, web server scaffolding). Contains "findings surfaced during planning" — implementation-time deviations from the spec's wording, explicitly flagged as implementation notes, not new locked architectural decisions.
+## Topic: Repo / Branch Hygiene (point-in-time snapshot)
 
-## M6 — Responsive Layout Implementation Plan (executes the responsive-layout SPEC)
-- source: docs/superpowers/plans/2026-07-19-m6-responsive-layout.md
-- Runbook for the M6 responsive layout: mobile nav pattern implementation, backend config plumbing, manual QA below the 640px breakpoint. Companion manual test checklist is `docs/HOW_TO_TEST_M6_RESPONSIVE.md` (below).
+- source: docs/REPO_VS_LOCAL_COMPARISON_2026-07-19.md — snapshot after pushing branch
+  `docs/security-and-setup-audit` (PR #7, not yet merged to `main`; 4 files exist only on that
+  branch: `SECURITY_CONCERNS.md`, `docs/PATH_AUDIT.md`, `docs/FRESH_MACHINE_SETUP.md`,
+  `scripts/setup-dependencies.ps1`). The `.worktrees/m6-responsive-layout` worktree was 2 commits
+  behind `origin/m6-responsive-layout` at snapshot time. `origin/m4-health-nav-theming` and
+  `origin/m5-readonly-viewer` exist remotely with no local tracking branch (normal, already-merged).
+  This is a point-in-time git-state snapshot, not an ongoing constraint — treat as historical context
+  only, not current repository state.
 
-## npm Audit Fix — vitest 2 → 4 Upgrade (two independent write-ups, same decision)
-- source: docs/superpowers/plans/2026-07-19-npm-audit-fix.md AND docs/Plans/npm_vulnerability_fix_plan_19-07-2026.md
-- Both documents independently describe the identical fix: upgrade `vitest` from 2.1.9 to 4.1.10 to collapse a vulnerable nested `vite@5.4.21`/`esbuild@0.21.5` subtree (5 npm audit findings: 3 moderate, 1 high, 1 critical), resolving GHSA-67mh-4wv8-2f99. Top-level `vite@7.3.6`/`esbuild@0.28.1` toolchain is already safe; the vulnerable path is a dev-only esbuild dev-server issue, never shipped in the Tauri production build — severity is low in practice but the fix is a trivial one-line `package.json` bump plus `npm install`. Verified compatible: only 1 test file in the repo, uses only stable vitest APIs unchanged across v2→v4. No content contradiction between the two write-ups; see `INGEST-CONFLICTS.md` INFO for the duplication note.
+## Topic: Bitwarden Comparison Research (docs/bitwarden_compare_ideas/, research-only, no code changed)
 
-## Fresh Machine Setup
-- source: docs/FRESH_MACHINE_SETUP.md (classified twice by the classifier under two different JSON filenames for the same source path; collapsed here — see `INGEST-CONFLICTS.md` INFO)
-- Windows-only setup guide (macOS/Linux builds not done yet). All three apps (Main, Viewer, Web Portal) share one data directory (`~/.pwmgr`) — register once, log into the same account from any of the three. Prereqs: Windows 10 2004+/11, admin rights, ~2GB disk, internet (first build compiles OpenSSL+SQLCipher from source). Automated setup via `scripts/setup-dependencies.ps1` (installs Git, Rust, Strawberry Perl, MSVC Build Tools, Node.js, WebView2 Runtime via winget) or manual per-tool winget install. Verify via `cargo test --workspace`, `npm test`, `npm run build`. Web Portal served at `http://127.0.0.1:7373`.
+- source: docs/bitwarden_compare_ideas/00-summary.md (research date 2026-07-26) — top ranked ideas
+  across all three reports: (1) split the data-encryption key from the password-derived key
+  (Bitwarden wraps a random `UserKey` under a password-derived key; this project derives `vault_key`
+  straight from Argon2id and uses it directly — confirmed via grep that no `change_password`/rewrap
+  function exists anywhere in `core/src`, so today a password change would require re-encrypting the
+  whole vault); (2) decide and explicitly document unlock-attempt throttling (open gap on both sides);
+  (3) scripting-friendly `?raw=true`/`Accept: text/plain` flags on the Web Portal HTTP API; (4)
+  generator ambiguous-character avoidance + per-class minimum counts; (5) JSON export alongside CSV
+  (to represent multiple credentials per site without flattening); (6) surface "device compromise is
+  out of scope" to end users in `USAGE_GUIDE.md`, not just `THREAT_MODEL.md`; (7) a ciphertext
+  version/type tag on `seal()`/`open()` (flag only, don't build). Explicitly **not** recommended:
+  standalone CLI binary (new attack surface, YAGNI), Card/Identity/SSH-key item types & folders/
+  collections & org-sharing (speculative scope, no user story — PRD non-goals), PBKDF2 fallback/
+  dual-KDF/RSA org-key wrapping (solve problems this project doesn't have). Where this project already
+  does as well or better: compile-time-enforced read-only Viewer, explicit plaintext-CSV confirmation
+  gate, AEAD-only ciphertext with no legacy unauthenticated format, tested username-enumeration timing
+  defense, concretely specified CSRF double-submit mitigation, structurally zero-knowledge (no server
+  exists for Main/Viewer; Web Portal hard-bound to `127.0.0.1`).
+- source: docs/bitwarden_compare_ideas/01-crypto-core.md — detailed KDF/key-hierarchy/ciphertext-
+  format/zeroization comparison against `bitwarden/sdk-internal`'s crypto crates (fetched 2026-07-26).
+  Confirms the split-key gap (ranked #1) in the most detail; also notes this project's ciphertext
+  format has no version/type tag (Bitwarden's `EncString` does) and that enforced KDF minimums don't
+  apply here (single hardcoded Argon2id param set, no user-facing KDF choice to misconfigure).
+- source: docs/bitwarden_compare_ideas/02-vault-and-cli.md — vault data model / CLI/UX comparison
+  against Bitwarden's published docs (fetched 2026-07-26). This project's `Site`/`Credential` model
+  covers only Bitwarden's "Login" item type (no Card/Identity/Secure-Note/SSH-key, no folders/
+  collections/favorites/custom fields) but already exceeds Bitwarden's flat item list for
+  multi-credential-per-site. No CLI exists in this project at all (GUI-only, all three surfaces).
+- source: docs/bitwarden_compare_ideas/03-server-security-notes.md — Bitwarden's publicly-documented
+  security whitepaper/ETH-Zurich-audit model vs. this project's `THREAT_MODEL.md` (fetched
+  2026-07-26). Bitwarden's O1-equivalent (client device/keylogger compromise) is explicitly out of
+  scope for them too, phrased directly to end users ("you are responsible for...") — recommends this
+  project surface a similar one-liner beyond just `THREAT_MODEL.md`. Neither project documents a
+  concrete brute-force/lockout algorithm (echoes the summary doc's #2 recommendation). Notes
+  Bitwarden's 2025 ETH Zurich audit modeled a fully malicious server and found 10-12 attacks, all
+  medium/low severity requiring server-infrastructure control as a precondition — not directly
+  comparable since this project has no server for Main/Viewer and a hard-bound localhost server for
+  Web Portal.
 
-## How to Test — Biometric Unlock (Windows Hello)
-- source: docs/HOW_TO_TEST_BIOMETRIC_UNLOCK.md
-- Manual QA checklist for Windows Hello (`UserConsentVerifier`) + DPAPI (`CryptProtectData`/`CryptUnprotectData`) integration, added on branch `feature/bitwarden-port-phase1`. Only unit-tested against a fake provider (`core/src/biometric.rs`); never exercised against a real Windows Hello prompt or real DPAPI round-trip — this checklist is the missing verification step. Defaults off (`biometric_enabled: false`). Desktop app only — no web-mode route (Windows Hello cannot run server-side for a remote browser). Checklist covers: off-by-default, setup flow (Windows Hello prompt success/cancel), lock/unlock via biometric with master-password fallback, removal, feature-off hides everything (server-side gate, not just UI), restart persistence, and a DPAPI cross-account sanity check (a biometric record set up under Windows account A should not work under account B).
+## Topic: Milestone Implementation Plans (docs/superpowers/plans/ — execution runbooks, not specs)
 
-## How to Test — M6 Responsive Layout
-- source: docs/HOW_TO_TEST_M6_RESPONSIVE.md
-- Manual QA checklist (no automated viewport/screenshot tooling — see Deferred Items above). Test at 375px (phone), 640px (breakpoint), 1024px (desktop) for both `index.html` and `viewer.html`: ≥640px must show no visual regression; <640px must correctly render each of the three `mobileNavStyle` values (icon rail / bottom tab bar / hamburger drawer); editor dialogs stay on-screen with margins at 320-375px; CSV import preview table scrolls horizontally rather than breaking layout; no screen produces a `<body>`-level horizontal scrollbar.
+- source: docs/superpowers/plans/2026-07-01-m1-secure-core.md — M1 Phase A: standalone `pwmgr-core`
+  Rust library (crypto/registry/vault/auth/session), TDD, no Tauri/frontend yet. Notes a real
+  lesson-learned: declaring all `pub mod` upfront in `lib.rs` before their files exist is a hard
+  compile error (`E0583`) that blocks `cargo test` for every module at once — modules must be
+  declared incrementally, one per task, to preserve TDD granularity.
+- source: docs/superpowers/plans/2026-07-05-m1-phase-b.md — M1 Phase B: Tauri desktop shell + IPC
+  command layer + React vault UI on top of `pwmgr-core`. Converts the repo root to a Cargo workspace;
+  notes that listing a not-yet-existing member path (`src-tauri`) in `[workspace] members` is a hard
+  manifest-load error in modern Cargo, not a warning — the member is added only once its directory
+  exists on disk.
+- source: docs/superpowers/plans/2026-07-12-m2-password-generator.md — M2: 4-method generator in
+  `pwmgr-core::generator` (serde-free, reuses `rand::thread_rng()`), simple entropy estimator lives
+  entirely in the frontend TS, advanced estimator is the `zxcvbn` Rust crate in the app crate only
+  (kept out of `core` deliberately — precedent later cited by M4's `core::health` network-free
+  invariant).
+- source: docs/superpowers/plans/2026-07-12-m3-backup-csv.md — M3: encrypted backup/restore (hand-
+  rolled versioned binary bundle, no serde) + CSV export (3 modes) + CSV import (2-phase preview/
+  commit, transactional rollback). Notes the `csv` crate's dependency on `serde`/`serde_core` turned
+  out to be unconditional (not feature-gated as originally assumed) — `serde_core`'s trait
+  definitions transitively appear in `pwmgr-core`'s dependency tree, but no `serde_derive` codegen
+  runs anywhere in the workspace because of it; the actual invariant ("no serde derive in our own
+  types") still holds.
+- source: docs/superpowers/plans/2026-07-16-m5-readonly-viewer.md — M5 implementation: Slice 1
+  promotes shared `AppState`/DTO/`do_*` glue into `pwmgr-core` with zero behavior change (214-test
+  baseline must stay green); Slice 2 adds the `viewer-src-tauri` binary registering only 9 read
+  commands; Slice 3 adds the frontend. Documents a judgment call vs. the design spec: the spec said
+  the viewer's new command wrappers should get their own unit tests, but tracing actual project
+  convention showed thin `#[tauri::command]` wrappers are never unit-tested directly anywhere in this
+  codebase — only the `do_*` inner functions are, and those move (with their tests) into `core` in
+  Slice 1 — so no redundant wrapper-test file was added, matching real convention over the spec's
+  wording.
+- source: docs/superpowers/plans/2026-07-18-m6-web-mode.md — M6 web-mode implementation. Baseline
+  before this plan: 224 total tests (72 `pwmgr-app` + 150 `pwmgr-core` + 2 e2e). Documents 4 flagged
+  deviations from the design spec's literal wording: (1) `do_check_breach` promotion requires
+  converting `hibp` to `reqwest::blocking` to drop the `tauri::async_runtime` dependency (run via
+  `spawn_blocking` in the web server to avoid panicking inside a tokio runtime); (2) Tauri v2's
+  frontend-detection global is actually `__TAURI_INTERNALS__`, not `__TAURI__` as the spec assumed
+  (`withGlobalTauri` unset by default); (3) there is no Tauri event bus in the browser, so an
+  idle-locked web session surfaces as a `401 {code:"locked"}` rather than an automatic UI redirect;
+  (4) each `UserSession` owns a full `AppState` (including its own registry connection) rather than
+  the spec's pictured single shared registry connection, to avoid an invasive `AppState` decomposition
+  — judged to match the spec's intent with a smaller, safer diff.
+- source: docs/superpowers/plans/2026-07-19-m6-responsive-layout.md — M6 responsive-layout
+  implementation. Baseline before this plan: 243 total tests. Adds `mobile_nav_style` end-to-end
+  through the existing Settings-field pattern; narrow-nav selection is pure CSS breakpoint visibility
+  (`hidden sm:flex`/`sm:hidden`), not a JS resize listener. Deliberately no automated viewport tests
+  (per `docs/DEFERRED.md`), no changes to the ≥640px desktop experience, no visual/brand redesign.
 
-## How to Test — SSH Agent
-- source: docs/HOW_TO_TEST_SSH_AGENT.md
-- Manual QA checklist for the SSH agent feature, added on branch `feature/bitwarden-port-phase1`. Signing logic (`core/src/ssh_agent.rs`) is unit-tested with a real Ed25519 key including sign+verify round-trip; the actual named-pipe server (`ssh-agent-lib` crate) and real interop with OpenSSH/PuTTY clients is not automatable and needs this manual pass. Defaults off (`ssh_agent_enabled: false`). Desktop app only, no web-mode route. Checklist covers: off-by-default; live listener start/stop on toggle (named pipe `\\.\pipe\pwmgr-ssh-agent` appears/disappears without app restart); key validation (rejects garbage/public keys, rejects passphrase-encrypted keys with a clear error — a known deliberate v1 limitation, accepts valid unencrypted keys); `ssh-add -l` identity listing via a real OpenSSH client; locked vault yields empty identity list, not an error; per-operation signing approval dialog (Allow/Deny); live key deletion; toggle-off/on preserves stored keys. Known deliberate v1 gaps: no in-app key generation (import only), no passphrase-encrypted key support, no trash/undo for deleted SSH keys.
+## Topic: Dependency / npm audit fixes (vitest 2 → 4, GHSA-67mh-4wv8-2f99)
 
-## Web Portal (HTTP Server) — Usage
-- source: docs/HOW_TO_USE_WEB_PORTAL.md
-- Tutorial for the browser-based localhost web portal: startup, login, feature usage, session behavior, clipboard behavior over HTTP.
-
-## PATH Environment Variable Audit
-- source: docs/PATH_AUDIT.md
-- Reference doc of required PATH entries for the Rust workspace build (audit date 2026-07-19): Rust toolchain (`.cargo\bin`), Node.js, Git, OpenSSH, Strawberry Perl (`perl\bin` and `perl\site\bin` — required because `rusqlite`'s `bundled-sqlcipher-vendored-openssl` feature compiles OpenSSL from source, and OpenSSL's `Configure` script needs Perl), Windows core paths, PowerShell. MSVC `link.exe`/`cl.exe` is required but intentionally NOT kept permanently on PATH (rustc auto-locates MSVC via registry/vswhere; adding it conflicts with other `link`/`cl`-named tools) — use "Developer PowerShell for VS 2022" or `vcvars64.bat` if a build ever needs it directly.
-
-## M1 Phase B — Manual UI Verification Walkthrough
-- source: docs/testing/PHASE_B_MANUAL_VERIFICATION.md
-- Manual checklist for the one Phase B verification step (plan doc Task 28, Step 2) that automated tests/code review cannot cover — there is no visual/UI test harness in this repo (no Playwright, no `*.test.tsx`). Covers: registration + generic-error login security (wrong password or nonexistent username both yield the identical "Incorrect master password." message — TRD §3.2/THREAT_MODEL requirement); add site/credential + live search; edit credential; delete → Trash → Restore → Empty Trash; Settings auto-lock taking live effect on the running session (not just next login); manual Lock; dark theme consistency across every screen; keyboard-accessible tooltips (TRD NFR-6) including on Tab-focus and on disabled controls.
-
-## Repo vs. Local Folder Comparison (2026-07-19 snapshot)
-- source: docs/REPO_VS_LOCAL_COMPARISON_2026-07-19.md
-- Point-in-time git state snapshot, not an ongoing project fact: branch `docs/security-and-setup-audit` (PR #7, adding `SECURITY_CONCERNS.md`, `docs/PATH_AUDIT.md`, `docs/FRESH_MACHINE_SETUP.md`, `scripts/setup-dependencies.ps1`) was in sync with its origin counterpart but not yet merged into `main` as of this snapshot; the `m6-responsive-layout` git worktree was 2 commits behind its origin branch; `origin/m4-health-nav-theming` and `origin/m5-readonly-viewer` exist as remote-only (already-merged) branches with no local tracking branch.
-
-## Usage Guide (Index)
-- source: docs/USAGE_GUIDE.md
-- Index document pointing to the three per-app usage guides (Main App, Viewer App, Web Portal — the latter three are excluded from this file as cycle-A members, see header note) and to `KNOWN_LIMITATIONS.md`/`testing/` (KNOWN_LIMITATIONS.md is a cycle-B member, also excluded).
+- source: docs/superpowers/plans/2026-07-19-npm-audit-fix.md;
+  docs/Plans/npm_vulnerability_fix_plan_19-07-2026.md — **two independent documents describing the
+  same fix**, consistent with each other (see `INGEST-CONFLICTS.md` [INFO], not a conflict). Root
+  cause: `vitest@2.1.9` nests a vulnerable `vite@5.4.21`→`esbuild@0.21.5` (the top-level
+  `vite@7.3.6`→`esbuild@0.28.1` used by the production build is already unaffected). Fix: upgrade
+  `vitest` to `^4.1.10` (`npm audit fix --force` or a manual `package.json` edit + `npm install`),
+  verify `npm test`/`npm run build`/`npm audit` (expect 0 vulnerabilities) and, as a broader sanity
+  check, `cargo test --workspace`. Severity noted as low (dev-only, headless `vitest run`, never
+  opens the vulnerable watch/UI dev server) — the fix is done anyway because it's cheap. Explicitly
+  not bundled into this fix: unrelated `npm outdated` items (`@vitejs/plugin-react`, `typescript`,
+  top-level `vite`).

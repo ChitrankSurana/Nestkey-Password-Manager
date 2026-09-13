@@ -1,14 +1,27 @@
-# Decisions (from ADRs)
+# Decisions (from ADR-type documents)
 
-No ADR-type documents were found in this ingest set (39 classifications; 0 typed `ADR`). There are
-therefore no locked or proposed architectural decisions to record from this pass.
+**No entries.**
 
-Several documents contain design rationale and architecture commitments that *read* like decisions
-(e.g. `docs/ARCHITECTURE.md`'s module-boundary rationale, the M4/M5/M6 design specs' "Architecture —
-module placement" sections), but per the doc-classifier these were typed `DOC` or `SPEC`, not `ADR`.
-Their content is captured in `constraints.md` (SPECs) and `context.md` (DOCs) instead, per the
-type-routing rules — it is not duplicated here.
+0 of the 39 classified documents in this ingest carry `type: ADR` or `locked: true`. No ADR-type
+documents were found anywhere under `docs/` at ingest time — there is nothing to extract here, and
+nothing has been fabricated to fill this file.
 
-If any of these should be formalized as locked decisions (e.g. "split data-encryption key from
-password-derived key," proposed but not yet built — see `context.md` topic "Bitwarden Comparison
-Research"), they should be written up as ADRs and re-ingested.
+This does **not** mean the project has no technical decisions — it means those decisions currently
+live as narrative content inside documents classified as PRD, SPEC, or DOC instead of as dedicated,
+governance-tracked ADRs. In particular:
+
+- Crypto stack (Argon2id KDF, AES-256-GCM, SQLCipher), data model, and IPC contract choices are
+  described in `docs/TRD.md` (classified SPEC) → extracted to `constraints.md`.
+- Product-level scope decisions (local-first, zero-knowledge, no cloud sync, milestone sequencing)
+  are described in `docs/PRD.md` (classified PRD) → extracted to `requirements.md`.
+- Security/threat-boundary decisions (127.0.0.1-only bind, CSRF double-submit, HIBP k-anonymity,
+  generic login-failure message) are described in `docs/THREAT_MODEL.md` (classified SPEC) →
+  extracted to `constraints.md`.
+- Architectural rationale (module boundaries, why the registry DB is unencrypted, why the Viewer
+  reuses `core` as a library) is described in `docs/ARCHITECTURE.md` (classified DOC) → extracted
+  to `context.md`.
+
+See `INGEST-CONFLICTS.md` → `[INFO] No ADR-type documents in this ingest set` for the full note.
+If any of the above should be formally locked as ADRs going forward, that is a decision for the
+user/roadmapper to make explicitly — this synthesizer does not promote narrative content to ADR
+status on its own authority.

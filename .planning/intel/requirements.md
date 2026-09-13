@@ -1,143 +1,125 @@
-# Requirements (from PRDs)
+# Requirements (from PRD-type documents)
 
-Single PRD source for this ingest: `docs/PRD.md` ("Product Requirements Document: Local-First
-Zero-Knowledge Password Manager", Status: Draft v1.0 — approved design, pre-implementation, owner
-tpass0960@gmail.com, last updated 2026-07-01). No competing PRDs were found, so no competing
-acceptance variants exist for this pass.
+Single source for this entire file: `docs/PRD.md` (Product Requirements Document, "Draft v1.0 —
+approved design, pre-implementation", last updated 2026-07-01, owner tpass0960@gmail.com). This was
+the only document in the ingest set classified `type: PRD`, so there are no competing-variant
+requirements to reconcile — every entry below traces to a single, internally-consistent source.
 
-**Non-Goals (PRD §4, out of scope for this product):** cloud sync/hosted accounts; browser
-extension/autofill; Android app build (design-only, see REQ-android-companion); recovering a
-forgotten master password (impossible by design — zero-knowledge).
-
-**Note for roadmapper:** other ingested docs (see `context.md` topic "Figma UI vs Current Features"
-and topic "Testing Guides — Biometric Unlock / SSH Agent") describe shipped features — Windows Hello
-biometric unlock, SSH agent (named pipe), PIN quick-unlock, LastPass CSV import — that have **no**
-corresponding entry in this PRD and no ADR/SPEC of their own in this ingest set. See
-`INGEST-CONFLICTS.md` WARNING "Shipped features have no PRD/ADR/SPEC provenance."
+See `INGEST-CONFLICTS.md` → `[INFO] PRD.md predates several already-shipped or in-progress features`
+for a note on features (biometric unlock, SSH agent, new item types) that exist in other docs but
+are absent from this PRD.
 
 ---
 
-## REQ-local-only-vault
-
+## REQ-master-password-registration-login
 - source: docs/PRD.md
-- description: Every credential is stored only on the user's own machine, protected by strong
-  encryption, unlockable only with a master password the software never stores or transmits. No
-  account, no cloud sync, no telemetry.
+- description: As a new user, register a master password once; it becomes the only key to the vault
+  (User Story 1). As a returning user, log in with the master password to see saved sites/credentials
+  (User Story 2). Zero plaintext persistence of the master password (§3 Goals); the software never
+  stores or transmits the master password (§1 Purpose). Recovering a forgotten master password is
+  explicitly impossible by design — zero-knowledge means there is nothing to reset (§4 Non-Goals).
 - acceptance: A vault file opened outside the app (hex viewer / raw SQLite) shows no readable
-  plaintext (PRD §8 Success Criteria). Zero network calls unless the user explicitly opts into the
-  HIBP breach check.
-- scope: encrypted vault storage, zero-knowledge architecture, master password
-
-## REQ-registration-and-login
-
-- source: docs/PRD.md
-- description: As a new user, register a master password once; it becomes the only key to the
-  vault. As a returning user, log in with the master password and see saved sites/credentials.
-  (User stories 1–2.)
-- acceptance: Wrong master password never unlocks the vault, with no information leaked about why
-  it failed beyond "incorrect." (PRD §8.)
-- scope: registration, login, authentication, master password
+  plaintext. Wrong master password never unlocks the vault, with no information leaked about why it
+  failed beyond "incorrect." (§8 Success Criteria)
+- scope: M1 — Register/login, encrypted vault (§7 Feature Set by Milestone).
 
 ## REQ-vault-crud
-
 - source: docs/PRD.md
-- description: Add a new site with one or more username/password pairs and free-text remarks.
-  (User story 3.)
-- acceptance: absent (not separately specified beyond the user story itself in this PRD)
-- scope: vault CRUD, sites, credentials, remarks
+- description: As a user, add a new site with one or more username/password pairs and free-text
+  remarks (User Story 3).
+- acceptance: absent — no distinct §8 criterion beyond the general "no perceptible lag" search
+  criterion and the vault-encryption criterion under REQ-master-password-registration-login.
+- scope: M1 — encrypted vault, CRUD, soft-delete trash (§7).
 
 ## REQ-password-generator
-
 - source: docs/PRD.md
-- description: Generate a strong password with a chosen method (random, memorable, pattern,
-  pronounceable) and see its strength/entropy before saving. (User story 4; delivered M2 per §7
-  milestone table.)
-- acceptance: absent (see constraints.md for the TRD/SPEC-level acceptance detail)
-- scope: password generator, strength/entropy estimation
+- description: As a user, generate a strong password with a method I choose (random, memorable,
+  pattern, pronounceable) and see its strength/entropy before saving (User Story 4).
+- acceptance: absent — no distinct §8 criterion for this story specifically.
+- scope: M2 — Password generator (4 methods), real-time strength + entropy (§7).
 
-## REQ-search
-
+## REQ-live-search
 - source: docs/PRD.md
-- description: Search the vault in real time by site, username, or remarks. (User story 5.)
-- acceptance: Search returns results as you type with no perceptible lag at hundreds of entries.
-  (PRD §8.)
-- scope: real-time search
+- description: As a user, search the vault in real time by site, username, or remarks (User Story 5).
+- acceptance: Search returns results as you type with no perceptible lag at hundreds of entries. (§8)
+- scope: M1 (§7).
 
 ## REQ-health-dashboard
-
 - source: docs/PRD.md
-- description: A health dashboard telling the user which passwords are weak, reused, old, or (if
-  opted in) exposed in a known breach — and what to do about it. (User story 6; delivered M4 per §7
-  milestone table.)
-- acceptance: absent (see constraints.md for the SPEC-level acceptance detail, including a flagged
-  conflict over "weak" classification — see INGEST-CONFLICTS.md)
-- scope: health dashboard, weak/reused/old detection, HIBP breach check (opt-in)
+- description: As a user, see a health dashboard telling which passwords are weak, reused, old, or
+  (if opted in) exposed in a known breach — and what to do about it (User Story 6).
+- acceptance: absent — no distinct §8 criterion for this story specifically.
+- scope: M4 — Health dashboard (weak/reused/old + opt-in HIBP breach check) (§7). §10 Risks flags
+  the HIBP opt-in check as "the only network path" and requires it be clearly labeled and off by
+  default so the local-only promise isn't accidentally broken.
 
 ## REQ-backup-restore
-
 - source: docs/PRD.md
-- description: Back up the entire vault and restore it in one click, on this machine or another.
-  (User story 7; delivered M3 per §7 milestone table.)
-- acceptance: absent (not separately specified beyond the user story itself in this PRD)
-- scope: encrypted backup, restore
+- description: As a user, back up the entire vault and restore it in one click, on this machine or
+  another (User Story 7).
+- acceptance: absent — no distinct §8 criterion for this story specifically.
+- scope: M3 — Encrypted backup/restore (§7).
 
 ## REQ-csv-export-import
-
 - source: docs/PRD.md
-- description: Export the vault to CSV — encrypted by default, or plaintext only after an explicit
-  typed confirmation — and import credentials from a Chrome/Edge or Firefox CSV export, or map any
-  other CSV's columns manually. (User story 8; delivered M3 per §7 milestone table.)
+- description: As a user, export the vault to CSV — encrypted by default, or plaintext only after an
+  explicit typed confirmation — and import credentials from a Chrome/Edge or Firefox CSV export, or
+  map any other CSV's columns myself (User Story 8).
 - acceptance: Plaintext CSV export cannot happen without an explicit, unambiguous confirmation step.
-  (PRD §8.)
-- scope: CSV export, CSV import, plaintext-export confirmation gate
+  (§8)
+- scope: M3 — CSV export (encrypted + confirmed-plaintext), CSV import (Chromium/Firefox/generic
+  mapper) (§7).
 
 ## REQ-readonly-viewer
-
 - source: docs/PRD.md
-- description: If the main app is ever broken or unavailable, open a separate read-only viewer,
-  enter the master password, and see the data. (User story 9; delivered M5 per §7 milestone table.)
-- acceptance: absent (see constraints.md, M5 SPEC, for the compile-time-enforced read-only
-  guarantee)
-- scope: read-only viewer app, emergency access
+- description: As a user, if the main app is ever broken or unavailable, open a separate read-only
+  viewer, enter the master password, and see the data (User Story 9).
+- acceptance: absent — no distinct §8 criterion for this story specifically.
+- scope: M5 — Read-only viewer app (§7).
 
 ## REQ-theming
-
 - source: docs/PRD.md
-- description: Pick a light or dark theme and one of five accent colors, consistent everywhere.
-  (User story 10; delivered M4 per §7 milestone table.)
-- acceptance: absent (not separately specified beyond the user story itself in this PRD)
-- scope: theming, light/dark mode, accent colors
+- description: As a user, pick a light or dark theme and one of five accent colors, and it's
+  consistent everywhere (User Story 10).
+- acceptance: absent — no distinct §8 criterion for this story specifically.
+- scope: M4 — full theming (light/dark × 5 accents) (§7).
 
 ## REQ-tooltips
+- source: docs/PRD.md
+- description: As a user, hover any icon/button and get a short tooltip explaining what it does
+  (User Story 11).
+- acceptance: Every icon/button has a working tooltip. (§8)
+- scope: M1 (§7).
+
+## REQ-localhost-web-mode
+- source: docs/PRD.md
+- description: As a user (future), access the vault from a browser on localhost when desired, without
+  exposing it to the network (User Story 12).
+- acceptance: absent — no distinct §8 criterion for this story specifically; §8 does note "each
+  milestone has a runnable, demonstrable 'Verify' scenario (see TRD/plan)" as a general criterion.
+- scope: M6 — Localhost-bound web mode, responsive layout (§7).
+
+## REQ-android-companion-future
+- source: docs/PRD.md
+- description: Android companion app that periodically syncs with the desktop vault (§9 Future
+  Scope). Sync transport (Bluetooth vs. LAN-discovery vs. QR/manual export-import) is explicitly an
+  open decision to be made when this phase starts; Bluetooth was the original ask but "is fiddly and
+  may be replaced by a safer/simpler alternative."
+- acceptance: absent — documented now, not built (§9).
+- scope: "Later" row of §7 Feature Set — Android companion + sync design.
+
+## REQ-macos-linux-builds-future
+- source: docs/PRD.md
+- description: macOS/Linux builds — "Tauri supports this with modest per-OS packaging work." (§9)
+- acceptance: absent — documented now, not built (§9).
+- scope: "Later" row of §7 Feature Set.
+
+---
+
+## Non-Goals (explicitly out of scope, PRD §4 — not requirements, recorded for traceability)
 
 - source: docs/PRD.md
-- description: Hover any icon/button and get a short tooltip explaining what it does. (User story
-  11.)
-- acceptance: Every icon/button has a working tooltip. (PRD §8.)
-- scope: tooltips, accessibility
-
-## REQ-web-mode
-
-- source: docs/PRD.md
-- description: Access the vault from a browser on `localhost` when wanted, without exposing it to
-  the network. (User story 12, marked "future" in the PRD; delivered M6 per §7 milestone table.)
-- acceptance: absent (see constraints.md, M6 web-mode SPEC, for the session/CSRF/bind-address
-  acceptance detail)
-- scope: localhost web mode, browser access
-
-## REQ-android-companion
-
-- source: docs/PRD.md
-- description: Future scope, documented but not built (PRD §9). Periodically syncs with the desktop
-  vault. Sync transport (Bluetooth vs. LAN-discovery vs. QR/manual export-import) is an explicitly
-  open decision to make when this phase starts.
-- acceptance: absent
-- scope: Android companion, future sync (not built)
-
-## REQ-macos-linux-builds
-
-- source: docs/PRD.md
-- description: Future scope, documented but not built (PRD §9). Tauri supports this with modest
-  per-OS packaging work.
-- acceptance: absent
-- scope: macOS/Linux builds (not built; confirmed still not done as of docs/KNOWN_LIMITATIONS.md §4)
+- Cloud sync or hosted accounts of any kind.
+- Browser extension / autofill (not requested; may be considered later, not in this PRD).
+- Android app build (design-only for now; see REQ-android-companion-future).
+- Recovering a forgotten master password (zero-knowledge means this is impossible by design).

@@ -1,37 +1,77 @@
-# Doc Ingestion Synthesis Summary
+# Doc Ingest Synthesis — Summary
 
-Mode: `new`. Classifications consumed: 39 (from `.planning/intel/classifications/*.json`).
+Mode: `new` (no existing `.planning/` context to merge against).
+Classifications consumed: 40 JSON files in `.planning/intel/classifications/` → 39 unique source
+documents (one duplicate pair for `docs/FRESH_MACHINE_SETUP.md` collapsed — see
+`INGEST-CONFLICTS.md`).
 
 ## Doc counts by type
-- DOC: 31 classifications / 30 unique source paths (`docs/FRESH_MACHINE_SETUP.md` classified twice — see conflicts report INFO)
-- SPEC: 7
-- PRD: 1
-- ADR: 0
-- UNKNOWN: 0
+
+| Type | Count |
+|---|---|
+| DOC  | 31 |
+| SPEC | 7  |
+| PRD  | 1  |
+| ADR  | 0  |
+| **Total** | **39** |
 
 ## Decisions (decisions.md)
-0 locked or proposed decisions recorded — no ADR-type documents were present in this batch. See `decisions.md` for candidate future-ADR content (KDF/encryption choice, 127.0.0.1-only web-mode bind, structurally-enforced read-only viewer) currently living only in SPEC/DOC tier.
+
+**0 locked decisions, 0 ADR entries.** No ADR-type documents exist anywhere in this ingest set.
+`decisions.md` explains this explicitly and points to where the equivalent narrative decisions
+actually live (PRD.md, TRD.md, THREAT_MODEL.md, the four milestone `*-design.md` SPECs,
+ARCHITECTURE.md) so the roadmapper isn't left guessing whether this is an omission.
 
 ## Requirements (requirements.md)
-12 requirements extracted, one per PRD user story, all sourced from the single PRD (`docs/PRD.md`):
-REQ-master-password-registration, REQ-login-unlock, REQ-vault-crud, REQ-password-generator, REQ-live-search, REQ-health-dashboard, REQ-backup-restore, REQ-csv-export-import, REQ-readonly-viewer, REQ-theming, REQ-tooltips, REQ-web-mode-localhost. No competing-variant conflicts were possible (only one PRD in the batch). PRD §4 Non-Goals recorded separately at the end of the file.
+
+**13 requirements** extracted from the single PRD source (`docs/PRD.md`), one per PRD user story
+plus the two "Future Scope" items (Android companion, macOS/Linux builds): REQ-master-password-
+registration-login, REQ-vault-crud, REQ-password-generator, REQ-live-search, REQ-health-dashboard,
+REQ-backup-restore, REQ-csv-export-import, REQ-readonly-viewer, REQ-theming, REQ-tooltips,
+REQ-localhost-web-mode, REQ-android-companion-future, REQ-macos-linux-builds-future. PRD §4
+Non-Goals are recorded separately at the bottom of the file for traceability (not as requirements).
+No competing PRD acceptance-criteria variants — only one PRD document was in this ingest.
 
 ## Constraints (constraints.md)
-25 constraint entries extracted from the 7 SPEC documents (`docs/TRD.md`, `docs/THREAT_MODEL.md`, M4 design + M4 plan, M5 design, M6 web-mode design, M6 responsive-layout design). Type breakdown: nfr 12, protocol 4, schema 5, api-contract 4. All 7 SPECs were cross-checked pairwise for contradictory technical assertions (crypto facts, M4 design-vs-plan overlap) — none found.
+
+**20 constraint entries** extracted from the 7 SPEC-type documents (`docs/TRD.md`,
+`docs/THREAT_MODEL.md`, and the M4/M5/M6 `*-design.md` specs plus the M4 implementation plan, which
+the upstream classifier tagged SPEC rather than DOC). Breakdown by type: 9 `nfr`, 6 `api-contract`,
+4 `protocol`, 1 `schema`. One entry pair carries a flagged WARNING (see Conflicts below) — both
+variants are preserved verbatim rather than merged.
 
 ## Context (context.md)
-23 of 30 unique DOC-type documents extracted, topic-keyed. 7 were excluded because they form two cross-reference cycles (see below) — extraction did not proceed on those to avoid synthesis-loop garbage, per the doc-synthesizer's cycle-detection rule.
 
-## Conflicts: 2 blockers, 1 competing variant, 5 auto-resolved/info
-- **2 BLOCKERS**: two mutual cross-reference cycles detected in the `cross_refs` graph — Cycle A (`HOW_TO_USE_MAIN_APP.md` / `HOW_TO_USE_VIEWER_APP.md` / `HOW_TO_USE_WEB_PORTAL.md`) and Cycle B (`docs/testing/HOW_TO_TEST_MAIN_APP.md` / `docs/testing/HOW_TO_TEST_VIEWER_APP.md` / `docs/testing/HOW_TO_TEST_WEB_PORTAL.md` / `docs/KNOWN_LIMITATIONS.md`). These 7 documents were withheld from `context.md`. Full detail and remediation path in `.planning/INGEST-CONFLICTS.md`.
-- **1 WARNING**: competing DOC-tier guidance on whether to build additional vault item types (Card/Secure Note/Identity) — one source ("Closing," scheduled) vs. two sources (explicitly recommend skipping).
-- **5 INFO**: no ADRs present in batch; duplicate classification of FRESH_MACHINE_SETUP.md; redundant-but-consistent npm-audit-fix planning docs; PRD/TRD appear stale relative to later-shipped features (biometric unlock, SSH agent, PIN unlock, TOTP, custom fields, reprompt-on-reveal); M4 design-vs-plan cross-check found consistent.
+**31 DOC-type documents**, organized into 9 topic groups: Architecture; Usage Guides (3 apps);
+Testing Guides (7 manual QA checklists); Known Limitations & Deferred Items; Figma UI vs. current
+feature set (planned new-UI port); Setup/Environment (fresh-machine setup, PATH audit); Repo/Branch
+Hygiene (point-in-time git snapshot, historical only); Bitwarden Comparison Research (4 docs,
+research-only, no code changed — ranked adoption ideas, explicitly-not-recommended items, and
+"already better" comparisons); Milestone Implementation Plans (7 runbooks for M1-M6, each with
+source-attributed judgment-call/deviation notes where the plan diverged from its design spec); and
+the vitest/npm audit fix (2 redundant, consistent documents, captured once).
 
-See `.planning/INGEST-CONFLICTS.md` for full detail on every entry above.
+## Conflicts
 
-## Pointers
-- Decisions: `.planning/intel/decisions.md`
-- Requirements: `.planning/intel/requirements.md`
-- Constraints: `.planning/intel/constraints.md`
-- Context: `.planning/intel/context.md`
-- Conflicts report: `.planning/INGEST-CONFLICTS.md`
+- **0 BLOCKERS** — no LOCKED-vs-LOCKED contradictions (no ADRs exist), no cross-reference cycles
+  (graph walked, clean), no UNKNOWN/low-confidence classifications.
+- **1 WARNING** — competing SPEC-vs-SPEC(-plan) variants on whether the Health Dashboard's "Weak"
+  classification respects the user's `strength_algorithm` Settings toggle. Both variants preserved
+  in `constraints.md`; needs an explicit user decision (amend the design doc, or change the shipped
+  behavior) before downstream planning treats either as settled.
+- **6 INFO** — transparency notes: the duplicate-classification collapse; the "0 ADRs" observation;
+  PRD.md being stale relative to shipped/planned features (biometric unlock, SSH agent, new item
+  types from the Figma comparison); a clean cross-reference cycle check; redundant (non-conflicting)
+  npm-audit-fix coverage; and the open (non-contradictory) unlock-throttling gap flagged by the
+  Bitwarden comparison research.
+
+Full detail: `.planning/INGEST-CONFLICTS.md`.
+
+## For the roadmapper
+
+Read, in order: this file → `decisions.md` (empty, explained) → `requirements.md` →
+`constraints.md` → `context.md` → `.planning/INGEST-CONFLICTS.md` for the one WARNING needing a
+decision before it's baked into a roadmap. Recommended first action given the INFO notes: consider
+whether `docs/PRD.md` needs a refresh pass (new item types, biometric unlock, SSH agent) before using
+it as the sole source of truth for feature scope — none of this blocks planning, but planning on
+PRD.md alone will under-represent the project's actual current surface.
