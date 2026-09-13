@@ -1,0 +1,13 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/bitwarden_compare_ideas/03-server-security-notes.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Bitwarden Security Model vs. Our Threat Model",
+  "summary": "Comparative analysis of Bitwarden's cryptographic threat model against local-only architecture, identifying adoption ideas and parity areas.",
+  "scope": ["Bitwarden", "security model", "threat model", "cryptography", "key derivation", "Argon2id", "PBKDF2", "AES-256", "encryption", "audit"],
+  "cross_refs": ["docs/THREAT_MODEL.md", "USAGE_GUIDE.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

@@ -1,0 +1,12 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/superpowers/specs/2026-07-18-m6-web-mode-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "M6 Design — Localhost Web Mode",
+  "summary": "Technical specification for M6's localhost web mode: pure Rust HTTP server with session-token auth, multi-session support, and frontend reuse.",
+  "scope": ["localhost web mode", "Rust HTTP server", "session-token auth", "multi-session support", "CSRF mitigation", "web-src-tauri", "pwmgr-core", "127.0.0.1 binding", "session store", "vault connection"],
+  "cross_refs": ["docs/PRD.md", "docs/ARCHITECTURE.md", "docs/TRD.md", "docs/THREAT_MODEL.md", "RESUME_HERE.md", "src-tauri/src/commands.rs"],
+  "locked": false,
+  "precedence": null
+}

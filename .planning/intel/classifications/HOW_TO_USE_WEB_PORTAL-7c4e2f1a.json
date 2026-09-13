@@ -1,0 +1,13 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/HOW_TO_USE_WEB_PORTAL.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "How to Use — Web Portal",
+  "summary": "Tutorial for using the browser-based web portal version of the password manager, covering startup, login, feature usage, and session behavior.",
+  "scope": ["web portal", "browser", "password manager", "localhost", "setup", "login", "sessions", "clipboard", "HTTP"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

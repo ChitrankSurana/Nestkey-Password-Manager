@@ -1,0 +1,27 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/FRESH_MACHINE_SETUP.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Fresh Machine Setup",
+  "summary": "Step-by-step guide to set up Windows development environment and run three password manager apps from source.",
+  "scope": [
+    "Windows setup",
+    "development dependencies",
+    "build process",
+    "Rust",
+    "Node.js",
+    "Tauri",
+    "PowerShell"
+  ],
+  "cross_refs": [
+    "docs/KNOWN_LIMITATIONS.md",
+    "docs/PATH_AUDIT.md",
+    "docs/testing/HOW_TO_TEST_MAIN_APP.md",
+    "docs/HOW_TO_USE_MAIN_APP.md",
+    "docs/HOW_TO_USE_VIEWER_APP.md",
+    "docs/HOW_TO_USE_WEB_PORTAL.md"
+  ],
+  "locked": false,
+  "precedence": null
+}

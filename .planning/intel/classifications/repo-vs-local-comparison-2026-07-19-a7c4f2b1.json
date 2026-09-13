@@ -1,0 +1,13 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/REPO_VS_LOCAL_COMPARISON_2026-07-19.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Repo vs. Local Folder Comparison — 2026-07-19",
+  "summary": "Git repository state snapshot comparing local clone against origin, documenting sync status and branch differences as of 2026-07-19.",
+  "scope": ["git", "repo synchronization", "branch status", "PR #7", "worktree management"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

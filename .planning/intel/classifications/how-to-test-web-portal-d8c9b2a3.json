@@ -1,0 +1,12 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/testing/HOW_TO_TEST_WEB_PORTAL.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "How to Test — Web Portal",
+  "summary": "Step-by-step testing guide for the Web Portal HTTP server, covering automated tests, launch procedures, and manual functional walkthroughs.",
+  "scope": ["Web Portal", "HTTP server", "Axum", "testing", "automated tests", "manual walkthrough", "session cookie", "CSRF header", "multi-session", "auto-lock"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null
+}

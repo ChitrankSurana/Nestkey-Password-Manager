@@ -1,0 +1,20 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/DEFERRED.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Deferred Items",
+  "summary": "Tracks cross-milestone work items that were deliberately deferred with documented rationale and revisit criteria.",
+  "scope": [
+    "automated testing",
+    "viewport testing",
+    "browser automation",
+    "responsive layout",
+    "QA",
+    "deferred work"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

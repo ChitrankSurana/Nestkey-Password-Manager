@@ -1,0 +1,27 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/bitwarden_compare_ideas/00-summary.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Bitwarden Comparison — Summary",
+  "summary": "Research summary comparing Bitwarden to Password Manager project with ranked actionable recommendations.",
+  "scope": [
+    "Bitwarden comparison",
+    "encryption architecture",
+    "vault design",
+    "unlock throttling",
+    "password generator",
+    "export formats",
+    "threat model",
+    "security analysis"
+  ],
+  "cross_refs": [
+    "01-crypto-core.md",
+    "02-vault-and-cli.md",
+    "03-server-security-notes.md",
+    "THREAT_MODEL.md",
+    "USAGE_GUIDE.md"
+  ],
+  "locked": false,
+  "precedence": null
+}
