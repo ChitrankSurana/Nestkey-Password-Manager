@@ -29,6 +29,13 @@ impl VaultKey {
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    /// Reconstructs a previously-derived key from raw bytes - for unlock paths (PIN, biometric)
+    /// that recover an already-existing vault key from a locally unwrapped blob, rather than
+    /// deriving a fresh one from a password.
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        VaultKey(bytes)
+    }
 }
 
 pub fn random_salt() -> [u8; 16] {

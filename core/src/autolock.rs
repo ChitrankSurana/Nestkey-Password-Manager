@@ -1,5 +1,6 @@
 use crate::session::Clock;
 use crate::state::AppState;
+use std::time::Duration;
 
 /// Returns true only on the transition from unlocked to locked (so the caller emits the
 /// `vault-locked` event exactly once per lock, not on every tick of an already-locked session).
@@ -16,6 +17,17 @@ pub fn tick(state: &AppState, clock: &dyn Clock) -> bool {
         state.clear_vault();
     }
     just_locked
+}
+
+/// True when more real time elapsed between two consecutive scheduled poll-loop ticks than the
+/// loop's own sleep interval could explain (with generous slack for scheduler jitter under load) -
+/// the system was very likely suspended in between. A suspended process's async timers simply
+/// don't fire during suspend, so the gap shows up here as a missed wakeup on resume, rather than
+/// through any OS-specific suspend/resume notification API - portable (no platform-specific hook
+/// needed) at the cost of only catching actual suspend/hibernate, not a bare screen-lock that
+/// leaves the machine running.
+pub fn suspend_gap_exceeds(elapsed_since_last_tick: Duration, tick_interval: Duration) -> bool {
+    elapsed_since_last_tick > tick_interval * 5
 }
 
 #[cfg(test)]
@@ -59,6 +71,21 @@ mod tests {
     }
 
     #[test]
+    fn suspend_gap_exceeds_is_false_for_a_normal_tick_interval() {
+        assert!(!suspend_gap_exceeds(Duration::from_secs(2), Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn suspend_gap_exceeds_is_false_for_ordinary_scheduler_jitter() {
+        assert!(!suspend_gap_exceeds(Duration::from_secs(9), Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn suspend_gap_exceeds_is_true_after_a_long_gap() {
+        assert!(suspend_gap_exceeds(Duration::from_secs(600), Duration::from_secs(2)));
+    }
+
+    #[test]
     fn tick_on_already_locked_session_returns_false() {
         let (state, _dir) = test_state(Duration::from_secs(300));
         let clock = FakeClock::new();
@@ -71,7 +98,7 @@ mod tests {
         let (state, _dir) = test_state(Duration::from_secs(300));
         let clock = FakeClock::new();
         let key = crate::crypto::derive_key("pw", &[1u8; 16]).unwrap();
-        state.session.lock().unwrap().unlock(key, &clock);
+        state.session.lock().unwrap().unlock(key, "alice", &clock);
 
         clock.advance(Duration::from_secs(100));
         assert!(!tick(&state, &clock));
@@ -83,7 +110,7 @@ mod tests {
         let (state, _dir) = test_state(Duration::from_secs(300));
         let clock = FakeClock::new();
         let key = crate::crypto::derive_key("pw", &[1u8; 16]).unwrap();
-        state.session.lock().unwrap().unlock(key, &clock);
+        state.session.lock().unwrap().unlock(key, "alice", &clock);
         state.set_vault(Connection::open_in_memory().unwrap(), PathBuf::from("dummy.vault"));
 
         clock.advance(Duration::from_secs(301));

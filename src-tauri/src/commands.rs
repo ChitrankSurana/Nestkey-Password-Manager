@@ -1,21 +1,28 @@
+use crate::biometric_provider::WindowsHelloProvider;
 use pwmgr_core::commands::{
-    do_add_credential, do_add_site, do_analyze_strength, do_check_breach, do_create_backup,
-    do_export_csv, do_generate_password, do_get_config, do_health_report, do_import_csv_commit,
-    do_import_csv_preview, do_list_credentials_for_site, do_list_sites, do_list_trash, do_lock,
-    do_login, do_purge_trash, do_read_csv_headers, do_register, do_restore_backup,
-    do_restore_credential, do_search, do_soft_delete_credential, do_touch, do_unlock_status,
-    do_update_accent_color, do_update_auto_lock_minutes, do_update_credential, do_update_hibp_opt_in,
+    do_add_credential, do_add_site, do_add_ssh_key, do_analyze_strength, do_check_breach,
+    do_clear_biometric, do_clear_pin, do_clear_totp_secret, do_create_backup, do_delete_ssh_key,
+    do_export_csv, do_generate_password, do_get_config, do_has_biometric, do_has_pin,
+    do_health_report, do_import_csv_commit, do_import_csv_preview, do_list_credentials_for_site,
+    do_list_sites, do_list_ssh_keys, do_list_trash, do_lock, do_login, do_purge_trash,
+    do_read_csv_headers, do_register, do_restore_backup, do_restore_credential, do_search,
+    do_set_biometric, do_set_pin, do_set_totp_secret, do_soft_delete_credential,
+    do_soft_delete_site, do_totp_code, do_touch, do_unlock_status, do_unlock_with_biometric,
+    do_unlock_with_pin, do_update_accent_color, do_update_auto_lock_minutes,
+    do_update_biometric_enabled, do_update_credential, do_update_hibp_opt_in,
     do_update_mobile_nav_style, do_update_nav_collapsed, do_update_old_password_days,
-    do_update_strength_algorithm, do_update_theme,
+    do_update_site, do_update_ssh_agent_enabled, do_update_strength_algorithm, do_update_theme,
+    do_verify_master_password,
 };
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
     HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
-    StrengthDto, TrashedCredentialDto,
+    SshKeyDto, StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
 use pwmgr_core::error::CommandError;
 use pwmgr_core::paths::AppPaths;
 use pwmgr_core::state::AppState;
+use pwmgr_core::vault::CustomField;
 use std::time::Duration;
 use tauri::{Emitter, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -47,6 +54,95 @@ pub fn login(
 }
 
 #[tauri::command]
+pub fn has_pin(state: State<AppState>, username: String) -> Result<bool, CommandError> {
+    do_has_pin(&state, &username)
+}
+
+#[tauri::command]
+pub fn unlock_with_pin(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    username: String,
+    pin: String,
+) -> Result<AuthSuccess, CommandError> {
+    do_unlock_with_pin(&state, &paths, &username, &pin)
+}
+
+#[tauri::command]
+pub fn set_pin(state: State<AppState>, pin: String) -> Result<(), CommandError> {
+    do_set_pin(&state, &pin)
+}
+
+#[tauri::command]
+pub fn clear_pin(state: State<AppState>) -> Result<(), CommandError> {
+    do_clear_pin(&state)
+}
+
+#[tauri::command]
+pub fn has_biometric(state: State<AppState>, username: String) -> bool {
+    do_has_biometric(&state, &username, &WindowsHelloProvider)
+}
+
+#[tauri::command]
+pub fn unlock_with_biometric(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    username: String,
+) -> Result<AuthSuccess, CommandError> {
+    do_unlock_with_biometric(&state, &paths, &username, &WindowsHelloProvider)
+}
+
+#[tauri::command]
+pub fn set_biometric(state: State<AppState>) -> Result<(), CommandError> {
+    do_set_biometric(&state, &WindowsHelloProvider)
+}
+
+#[tauri::command]
+pub fn clear_biometric(state: State<AppState>) -> Result<(), CommandError> {
+    do_clear_biometric(&state)
+}
+
+#[tauri::command]
+pub fn update_biometric_enabled(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    enabled: bool,
+) -> Result<(), CommandError> {
+    do_update_biometric_enabled(&state, &paths, enabled)
+}
+
+#[tauri::command]
+pub fn add_ssh_key(state: State<AppState>, label: String, private_key: String) -> Result<i64, CommandError> {
+    do_add_ssh_key(&state, &label, &private_key)
+}
+
+#[tauri::command]
+pub fn list_ssh_keys(state: State<AppState>) -> Result<Vec<SshKeyDto>, CommandError> {
+    do_list_ssh_keys(&state)
+}
+
+#[tauri::command]
+pub fn delete_ssh_key(state: State<AppState>, id: i64) -> Result<(), CommandError> {
+    do_delete_ssh_key(&state, id)
+}
+
+#[tauri::command]
+pub fn update_ssh_agent_enabled(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> Result<(), CommandError> {
+    do_update_ssh_agent_enabled(&state, &paths, enabled)?;
+    if enabled {
+        crate::ssh_agent_service::start(&app);
+    } else {
+        crate::ssh_agent_service::stop(&app);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn lock(state: State<AppState>, app: tauri::AppHandle) {
     do_lock(&state);
     if let Err(e) = app.emit("vault-locked", ()) {
@@ -57,6 +153,11 @@ pub fn lock(state: State<AppState>, app: tauri::AppHandle) {
 #[tauri::command]
 pub fn touch(state: State<AppState>) {
     do_touch(&state);
+}
+
+#[tauri::command]
+pub fn verify_master_password(state: State<AppState>, master_password: String) -> Result<bool, CommandError> {
+    do_verify_master_password(&state, &master_password)
 }
 
 #[tauri::command]
@@ -75,14 +176,32 @@ pub fn add_site(
 }
 
 #[tauri::command]
+pub fn update_site(
+    state: State<AppState>,
+    site_id: i64,
+    name: String,
+    url: Option<String>,
+    notes: Option<String>,
+) -> Result<(), CommandError> {
+    do_update_site(&state, site_id, &name, url.as_deref(), notes.as_deref())
+}
+
+#[tauri::command]
+pub fn soft_delete_site(state: State<AppState>, site_id: i64) -> Result<(), CommandError> {
+    do_soft_delete_site(&state, site_id)
+}
+
+#[tauri::command]
 pub fn add_credential(
     state: State<AppState>,
     site_id: i64,
     username: Option<String>,
     secret: String,
     remarks: Option<String>,
+    custom_fields: Vec<CustomField>,
+    reprompt: bool,
 ) -> Result<i64, CommandError> {
-    do_add_credential(&state, site_id, username.as_deref(), &secret, remarks.as_deref())
+    do_add_credential(&state, site_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt)
 }
 
 #[tauri::command]
@@ -92,8 +211,10 @@ pub fn update_credential(
     username: Option<String>,
     secret: String,
     remarks: Option<String>,
+    custom_fields: Vec<CustomField>,
+    reprompt: bool,
 ) -> Result<(), CommandError> {
-    do_update_credential(&state, credential_id, username.as_deref(), &secret, remarks.as_deref())
+    do_update_credential(&state, credential_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt)
 }
 
 #[tauri::command]
@@ -112,6 +233,21 @@ pub fn search(state: State<AppState>, query: String) -> Result<Vec<SearchResultD
 #[tauri::command]
 pub fn soft_delete_credential(state: State<AppState>, credential_id: i64) -> Result<(), CommandError> {
     do_soft_delete_credential(&state, credential_id)
+}
+
+#[tauri::command]
+pub fn set_totp_secret(state: State<AppState>, credential_id: i64, secret: String) -> Result<(), CommandError> {
+    do_set_totp_secret(&state, credential_id, &secret)
+}
+
+#[tauri::command]
+pub fn clear_totp_secret(state: State<AppState>, credential_id: i64) -> Result<(), CommandError> {
+    do_clear_totp_secret(&state, credential_id)
+}
+
+#[tauri::command]
+pub fn totp_code(state: State<AppState>, credential_id: i64) -> Result<Option<TotpCodeDto>, CommandError> {
+    do_totp_code(&state, credential_id)
 }
 
 #[tauri::command]

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, isCommandError, GenerateRequest, StrengthDto } from "../lib/api";
 import { Tooltip } from "./Tooltip";
+import { Icon } from "./Icon";
 import { simpleEntropyBits, entropyBand } from "../lib/strength";
 
 type GenMethod = "random" | "memorable" | "pattern" | "pronounceable";
@@ -64,11 +65,11 @@ export function PasswordGeneratorPanel({
   }
 
   return (
-    <div className="space-y-2 rounded border border-slate-600 p-2">
+    <div className="space-y-2 rounded border border-[var(--border)] p-2">
       <label className="block">
         <span className="text-sm">Generate method</span>
         <select
-          className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-900 dark:border-slate-600"
+          className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
           value={genMethod}
           onChange={(e) => setGenMethod(e.target.value as GenMethod)}
         >
@@ -86,7 +87,7 @@ export function PasswordGeneratorPanel({
             <input
               type="number"
               min={1}
-              className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-900 dark:border-slate-600"
+              className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
               value={length}
               onChange={(e) => setLength(Number(e.target.value))}
             />
@@ -135,7 +136,7 @@ export function PasswordGeneratorPanel({
             <input
               type="number"
               min={1}
-              className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-900 dark:border-slate-600"
+              className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
               value={words}
               onChange={(e) => setWords(Number(e.target.value))}
             />
@@ -143,7 +144,7 @@ export function PasswordGeneratorPanel({
           <label className="block">
             <span className="text-sm">Separator</span>
             <input
-              className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-900 dark:border-slate-600"
+              className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
               value={separator}
               onChange={(e) => setSeparator(e.target.value)}
             />
@@ -156,7 +157,7 @@ export function PasswordGeneratorPanel({
           <label className="block">
             <span className="text-sm">Template</span>
             <input
-              className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-900 dark:border-slate-600"
+              className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
               value={template}
               onChange={(e) => setTemplate(e.target.value)}
             />
@@ -171,7 +172,7 @@ export function PasswordGeneratorPanel({
           <input
             type="number"
             min={1}
-            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-900 dark:border-slate-600"
+            className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
             value={length}
             onChange={(e) => setLength(Number(e.target.value))}
           />
@@ -179,7 +180,7 @@ export function PasswordGeneratorPanel({
       )}
 
       <div>
-        <div className="h-2 w-full overflow-hidden rounded bg-slate-700">
+        <div className="h-2 w-full overflow-hidden rounded bg-[var(--surface)]">
           <div
             className={`h-full ${BAR_COLORS[meter.score]} transition-all`}
             style={{ width: `${(meter.score / 4) * 100}%` }}
@@ -201,7 +202,7 @@ export function PasswordGeneratorPanel({
             disabled={disabled}
             className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50"
           >
-            Generate
+            <Icon name="dice-5" /> Generate
           </button>
         </Tooltip>
         <Tooltip text="Copy to clipboard (auto-clears after 30s)">
@@ -211,7 +212,7 @@ export function PasswordGeneratorPanel({
             disabled={disabled || value === ""}
             className="px-3 py-1 disabled:opacity-50"
           >
-            Copy
+            <Icon name="clipboard" /> Copy
           </button>
         </Tooltip>
       </div>

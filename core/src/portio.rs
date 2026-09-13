@@ -150,6 +150,39 @@ pub fn parse_firefox_csv(csv_text: &str) -> Result<Vec<ImportRecord>, PortioErro
     Ok(out)
 }
 
+const LASTPASS_HEADER: [&str; 8] =
+    ["url", "username", "password", "totp", "extra", "name", "grouping", "fav"];
+
+/// LastPass's standard "Export to CSV" format. `name` (LastPass's item title, which can differ
+/// from the URL) is preferred as the site name when present; `extra` is LastPass's free-text notes
+/// field, mapped straight to `notes`.
+// ponytail: `totp` (LastPass's own 2FA seed column) isn't threaded into the new TOTP field yet -
+// add a totp_secret param here and to do_import_csv_commit's row handling if imported TOTP seeds
+// are wanted; skipped for now since the CSV import path predates that feature and this keeps the
+// two changes independent.
+pub fn parse_lastpass_csv(csv_text: &str) -> Result<Vec<ImportRecord>, PortioError> {
+    let mut reader = csv::Reader::from_reader(csv_text.as_bytes());
+    let headers = reader.headers().map_err(|_| PortioError::Parse)?.clone();
+    if headers.iter().collect::<Vec<_>>() != LASTPASS_HEADER.to_vec() {
+        return Err(PortioError::HeaderMismatch("LastPass"));
+    }
+    let mut out = Vec::new();
+    for result in reader.records() {
+        let record = result.map_err(|_| PortioError::Parse)?;
+        let url = record.get(0).unwrap_or("");
+        let name = record.get(5).unwrap_or("");
+        out.push(ImportRecord {
+            site_name: if !name.is_empty() { name.to_string() } else { url.to_string() },
+            url: non_empty(Some(url)),
+            notes: non_empty(record.get(4)),
+            username: non_empty(record.get(1)),
+            secret: record.get(2).unwrap_or("").to_string(),
+            remarks: None,
+        });
+    }
+    Ok(out)
+}
+
 use std::collections::HashMap;
 
 const IMPORT_FIELDS: [&str; 6] = ["site_name", "url", "notes", "username", "secret", "remarks"];
@@ -350,6 +383,43 @@ mod tests {
         let result = parse_firefox_csv(csv);
 
         assert!(matches!(result, Err(PortioError::HeaderMismatch("Firefox"))));
+    }
+
+    const LASTPASS_SAMPLE_HEADER: &str = "url,username,password,totp,extra,name,grouping,fav";
+
+    #[test]
+    fn parse_lastpass_csv_prefers_the_name_column_as_site_name() {
+        let csv = format!(
+            "{}\nhttps://example.com,alice,s3cret,,some notes,My Example Login,Work,0\n",
+            LASTPASS_SAMPLE_HEADER
+        );
+
+        let records = parse_lastpass_csv(&csv).unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].site_name, "My Example Login");
+        assert_eq!(records[0].url.as_deref(), Some("https://example.com"));
+        assert_eq!(records[0].username.as_deref(), Some("alice"));
+        assert_eq!(records[0].secret, "s3cret");
+        assert_eq!(records[0].notes.as_deref(), Some("some notes"));
+    }
+
+    #[test]
+    fn parse_lastpass_csv_falls_back_to_url_when_name_is_empty() {
+        let csv = format!("{}\nhttps://example.com,alice,s3cret,,,,,0\n", LASTPASS_SAMPLE_HEADER);
+
+        let records = parse_lastpass_csv(&csv).unwrap();
+
+        assert_eq!(records[0].site_name, "https://example.com");
+    }
+
+    #[test]
+    fn parse_lastpass_csv_rejects_an_unexpected_header() {
+        let csv = "url,user,pass\na,b,c\n";
+
+        let result = parse_lastpass_csv(csv);
+
+        assert!(matches!(result, Err(PortioError::HeaderMismatch("LastPass"))));
     }
 
     use std::collections::HashMap;

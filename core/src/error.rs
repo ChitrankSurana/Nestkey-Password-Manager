@@ -46,6 +46,15 @@ impl From<crate::auth::AuthError> for CommandError {
     }
 }
 
+// Only ever reached from commands that touch the registry directly for something outside
+// register/login (e.g. biometric unlock's own table) - the auth.rs-mediated paths already
+// collapse RegistryError through AuthError::Registry instead.
+impl From<crate::registry::RegistryError> for CommandError {
+    fn from(_: crate::registry::RegistryError) -> Self {
+        internal_error()
+    }
+}
+
 impl From<crate::vault::VaultError> for CommandError {
     fn from(e: crate::vault::VaultError) -> Self {
         use crate::vault::VaultError;
@@ -65,6 +74,33 @@ impl From<crate::generator::GenError> for CommandError {
     fn from(e: crate::generator::GenError) -> Self {
         // GenError's Display strings are already safe, user-facing validation text - surface directly.
         invalid_input_error(&e.to_string())
+    }
+}
+
+impl From<crate::totp::TotpError> for CommandError {
+    fn from(e: crate::totp::TotpError) -> Self {
+        // TotpError's one variant's Display text is already safe, user-facing validation text.
+        invalid_input_error(&e.to_string())
+    }
+}
+
+impl From<crate::ssh_agent::SshAgentError> for CommandError {
+    fn from(e: crate::ssh_agent::SshAgentError) -> Self {
+        // Every variant's Display text is already safe, user-facing validation text.
+        invalid_input_error(&e.to_string())
+    }
+}
+
+impl From<crate::biometric::BiometricError> for CommandError {
+    fn from(e: crate::biometric::BiometricError) -> Self {
+        use crate::biometric::BiometricError;
+        match e {
+            BiometricError::Unsupported => invalid_input_error("Biometric unlock isn't available on this device."),
+            BiometricError::VerificationFailed => {
+                CommandError::new("invalid_credentials", "Biometric verification failed or was cancelled.")
+            }
+            BiometricError::StorageFailed => internal_error(),
+        }
     }
 }
 

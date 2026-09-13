@@ -1,4 +1,6 @@
+mod biometric_provider;
 mod commands;
+mod ssh_agent_service;
 
 use pwmgr_core::paths::AppPaths;
 use pwmgr_core::state::AppState;
@@ -10,19 +12,40 @@ pub fn run() {
     app_paths.ensure_app_dirs().expect("failed to create ~/.pwmgr directories");
 
     let app_state = AppState::open(&app_paths).expect("failed to open registry database");
+    let ssh_agent_enabled_at_startup = app_state.config.lock().unwrap().ssh_agent_enabled;
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .manage(app_paths)
-        .setup(|app| {
+        .manage(ssh_agent_service::SshAgentHandle::default())
+        .setup(move |app| {
+            if ssh_agent_enabled_at_startup {
+                ssh_agent_service::start(&app.handle().clone());
+            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                let tick_interval = std::time::Duration::from_secs(2);
+                let mut last_tick = std::time::Instant::now();
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    tokio::time::sleep(tick_interval).await;
+                    let now = std::time::Instant::now();
+                    let elapsed = now.duration_since(last_tick);
+                    last_tick = now;
+
                     let state = handle.state::<AppState>();
-                    if pwmgr_core::autolock::tick(&state, &pwmgr_core::session::SystemClock) {
+                    // A suspend/resume gap forces an immediate lock regardless of the configured
+                    // idle timeout - tick() alone only catches ordinary idle expiry, which could
+                    // still be minutes away right after waking from sleep.
+                    let was_unlocked_before_suspend_check =
+                        !state.session.lock().unwrap().is_locked();
+                    let suspended = was_unlocked_before_suspend_check
+                        && pwmgr_core::autolock::suspend_gap_exceeds(elapsed, tick_interval);
+                    if suspended {
+                        pwmgr_core::commands::do_lock(&state);
+                    }
+                    if suspended || pwmgr_core::autolock::tick(&state, &pwmgr_core::session::SystemClock) {
                         if let Err(e) = handle.emit("vault-locked", ()) {
                             eprintln!("warning: failed to emit vault-locked event ({e})");
                         }
@@ -35,15 +58,34 @@ pub fn run() {
             commands::unlock_status,
             commands::register_user,
             commands::login,
+            commands::has_pin,
+            commands::unlock_with_pin,
+            commands::set_pin,
+            commands::clear_pin,
+            commands::has_biometric,
+            commands::unlock_with_biometric,
+            commands::set_biometric,
+            commands::clear_biometric,
+            commands::update_biometric_enabled,
+            commands::add_ssh_key,
+            commands::list_ssh_keys,
+            commands::delete_ssh_key,
+            commands::update_ssh_agent_enabled,
             commands::lock,
             commands::touch,
+            commands::verify_master_password,
             commands::list_sites,
             commands::add_site,
+            commands::update_site,
+            commands::soft_delete_site,
             commands::add_credential,
             commands::update_credential,
             commands::list_credentials_for_site,
             commands::search,
             commands::soft_delete_credential,
+            commands::set_totp_secret,
+            commands::clear_totp_secret,
+            commands::totp_code,
             commands::list_trash,
             commands::restore_credential,
             commands::purge_trash,

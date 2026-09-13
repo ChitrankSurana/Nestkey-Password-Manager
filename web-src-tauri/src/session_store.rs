@@ -69,6 +69,16 @@ impl SessionStore {
             .unwrap()
             .retain(|_, s| now.duration_since(*s.last_seen.lock().unwrap()) < PRUNE_AFTER);
     }
+
+    /// Forces every live session locked immediately - used when the host process itself appears to
+    /// have been suspended (`autolock::suspend_gap_exceeds` on the sweep loop's own tick interval),
+    /// rather than waiting for each session's own idle timeout to eventually catch up.
+    pub fn lock_all(&self) {
+        let map = self.inner.read().unwrap();
+        for session in map.values() {
+            pwmgr_core::commands::do_lock(&session.app_state);
+        }
+    }
 }
 
 /// 256-bit token from the OS CSPRNG (`rand::rngs::OsRng`), hex-encoded — same secure-randomness
@@ -168,7 +178,7 @@ mod tests {
         let store = SessionStore::new();
         let (us, _d) = test_session(&clock, Duration::from_secs(300));
         let key = pwmgr_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
-        us.app_state.session.lock().unwrap().unlock(key, &clock);
+        us.app_state.session.lock().unwrap().unlock(key, "alice", &clock);
         let token = store.insert(us);
         assert!(!store.get(&token).unwrap().app_state.session.lock().unwrap().is_locked());
 
@@ -177,6 +187,23 @@ mod tests {
 
         let s = store.get(&token).expect("entry must persist after auto-lock");
         assert!(s.app_state.session.lock().unwrap().is_locked());
+    }
+
+    #[test]
+    fn lock_all_locks_every_unlocked_session_immediately() {
+        let clock = FakeClock::new();
+        let store = SessionStore::new();
+        let (a, _da) = test_session(&clock, Duration::from_secs(300));
+        let (b, _db) = test_session(&clock, Duration::from_secs(300));
+        let key = pwmgr_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
+        a.app_state.session.lock().unwrap().unlock(key, "alice", &clock);
+        let ta = store.insert(a);
+        let tb = store.insert(b);
+
+        store.lock_all();
+
+        assert!(store.get(&ta).unwrap().app_state.session.lock().unwrap().is_locked());
+        assert!(store.get(&tb).unwrap().app_state.session.lock().unwrap().is_locked());
     }
 
     #[test]
@@ -199,7 +226,7 @@ mod tests {
         let (a, _da) = test_session(&clock, Duration::from_secs(300));
         let (b, _db) = test_session(&clock, Duration::from_secs(300));
         let key = pwmgr_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
-        a.app_state.session.lock().unwrap().unlock(key, &clock);
+        a.app_state.session.lock().unwrap().unlock(key, "alice", &clock);
         let ta = store.insert(a);
         let tb = store.insert(b);
 

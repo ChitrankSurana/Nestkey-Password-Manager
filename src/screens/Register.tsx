@@ -30,13 +30,13 @@ export function Register({
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center dark:bg-slate-900 dark:text-slate-100">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] text-[var(--fg)]">
       <form onSubmit={handleSubmit} className="w-80 space-y-4">
         <h1 className="text-xl font-semibold">Register</h1>
         <label className="block">
           <span className="text-sm">Choose a username</span>
           <input
-            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
+            className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoFocus
@@ -48,7 +48,7 @@ export function Register({
           <span className="text-sm">Choose a master password</span>
           <input
             type="password"
-            className="mt-1 w-full rounded border px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
+            className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, isCommandError } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
+import { Icon } from "../components/Icon";
 
 export function Backup({ onBack }: { onBack: () => void }) {
   const [status, setStatus] = useState<string | null>(null);
@@ -51,9 +52,9 @@ export function Backup({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-4">
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] p-4">
       <Tooltip text="Back to vault">
-        <button onClick={onBack} className="mb-4 underline text-sm">← Back</button>
+        <button onClick={onBack} className="mb-4 underline text-sm"><Icon name="arrow-left" /> Back</button>
       </Tooltip>
       <h1 className="text-xl font-semibold mb-4">Backup</h1>
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
@@ -61,12 +62,12 @@ export function Backup({ onBack }: { onBack: () => void }) {
       <div className="space-x-2">
         <Tooltip text="Write an encrypted backup of this vault to ~/.pwmgr/backups">
           <button onClick={handleCreate} disabled={busy} className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
-            Create Backup
+            <Icon name="floppy2-fill" /> Create Backup
           </button>
         </Tooltip>
         <Tooltip text="Restore from a .bak file (this device or another)">
-          <button onClick={handleRestore} disabled={busy} className="rounded bg-slate-700 px-3 py-1 disabled:opacity-50">
-            Restore Backup
+          <button onClick={handleRestore} disabled={busy} className="rounded bg-[var(--surface)] border border-[var(--border)] px-3 py-1 disabled:opacity-50">
+            <Icon name="arrow-counterclockwise" /> Restore Backup
           </button>
         </Tooltip>
       </div>

@@ -1,4 +1,4 @@
-use crate::vault::{Credential, SearchResult, Site, TrashedCredential};
+use crate::vault::{Credential, CustomField, SearchResult, Site, TrashedCredential};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use zeroize::Zeroizing;
@@ -70,6 +70,9 @@ pub struct CredentialDto {
     pub username: Option<String>,
     pub secret: Zeroizing<String>,
     pub remarks: Option<String>,
+    pub custom_fields: Vec<CustomField>,
+    pub reprompt: bool,
+    pub has_totp: bool,
 }
 
 // If you add a field to CredentialDto, add it here too - a manual Debug impl gets no compiler
@@ -82,6 +85,10 @@ impl std::fmt::Debug for CredentialDto {
             .field("username", &self.username)
             .field("secret", &"<redacted>")
             .field("remarks", &self.remarks)
+            // A Hidden-type custom field value is exactly as sensitive as `secret` - count only.
+            .field("custom_fields", &format!("<{} field(s)>", self.custom_fields.len()))
+            .field("reprompt", &self.reprompt)
+            .field("has_totp", &self.has_totp)
             .finish()
     }
 }
@@ -94,8 +101,18 @@ impl From<Credential> for CredentialDto {
             username: c.username,
             secret: Zeroizing::new(c.secret),
             remarks: c.remarks,
+            custom_fields: c.custom_fields,
+            reprompt: c.reprompt,
+            has_totp: c.has_totp,
         }
     }
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TotpCodeDto {
+    pub code: String,
+    pub seconds_remaining: u32,
 }
 
 // #[derive(Debug)] is safe here - neither field is secret (unlike CredentialDto above, which
@@ -111,6 +128,19 @@ pub struct ConfigDto {
     pub hibp_opt_in: bool,
     pub nav_collapsed: bool,
     pub mobile_nav_style: String,
+    pub biometric_enabled: bool,
+    pub ssh_agent_enabled: bool,
+}
+
+// #[derive(Debug)] is safe here - the private key never leaves the backend at all (unlike
+// CredentialDto's secret, which round-trips for editing); this DTO only ever carries the label
+// and the derived, non-secret public-key line.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SshKeyDto {
+    pub id: i64,
+    pub label: String,
+    pub public_key: String,
 }
 
 // No secret field here at all (matches `list_trash`'s core signature - nothing to redact).
@@ -167,6 +197,7 @@ pub struct HealthReportDto {
     pub weak: Vec<HealthEntryDto>,
     pub reused: Vec<ReusedGroupDto>,
     pub old: Vec<HealthEntryDto>,
+    pub unsecured: Vec<HealthEntryDto>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -211,6 +242,7 @@ impl std::fmt::Debug for ExportMode {
 pub enum ImportFormat {
     Chromium,
     Firefox,
+    LastPass,
     Generic { mapping: HashMap<String, String> },
 }
 
@@ -308,7 +340,7 @@ mod tests {
             site_id: 1,
             username: Some("alice".into()),
             secret: "extremely-unique-secret-xyz".into(),
-            remarks: None,
+            remarks: None, custom_fields: Vec::new(), reprompt: false, has_totp: false,
         };
         let dto = CredentialDto::from(cred);
         let debug_output = format!("{:?}", dto);
@@ -323,7 +355,7 @@ mod tests {
             site_id: 1,
             username: Some("alice".into()),
             secret: "s3cret".into(),
-            remarks: None,
+            remarks: None, custom_fields: Vec::new(), reprompt: false, has_totp: false,
         };
         let dto = CredentialDto::from(cred);
         // Zeroizing<String> derefs to &str, so equality/usage is transparent to callers - this test

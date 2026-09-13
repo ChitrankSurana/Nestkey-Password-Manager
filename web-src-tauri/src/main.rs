@@ -18,8 +18,19 @@ async fn main() {
         let store = ctx.store.clone();
         tokio::spawn(async move {
             let clock = SystemClock;
+            let tick_interval = Duration::from_secs(2);
+            let mut last_tick = std::time::Instant::now();
             loop {
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(tick_interval).await;
+                let now = std::time::Instant::now();
+                let elapsed = now.duration_since(last_tick);
+                last_tick = now;
+                // The host machine (not just one session) appears to have been suspended - force
+                // every live session locked immediately rather than waiting on each one's own
+                // idle timeout to eventually catch up.
+                if pwmgr_core::autolock::suspend_gap_exceeds(elapsed, tick_interval) {
+                    store.lock_all();
+                }
                 store.sweep(&clock);
             }
         });

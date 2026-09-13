@@ -9,10 +9,11 @@ use pwmgr_core::commands::*;
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
     HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
-    StrengthDto, TrashedCredentialDto,
+    StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
 use pwmgr_core::paths::AppPaths;
 use pwmgr_core::state::AppState;
+use pwmgr_core::vault::CustomField;
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -35,7 +36,35 @@ struct AuthRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct HasPinRequest {
+    username: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockWithPinRequest {
+    username: String,
+    pin: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetPinRequest {
+    pin: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AddSiteRequest {
+    name: String,
+    url: Option<String>,
+    notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateSiteRequest {
+    site_id: i64,
     name: String,
     url: Option<String>,
     notes: Option<String>,
@@ -48,6 +77,10 @@ struct AddCredentialRequest {
     username: Option<String>,
     secret: String,
     remarks: Option<String>,
+    #[serde(default)]
+    custom_fields: Vec<CustomField>,
+    #[serde(default)]
+    reprompt: bool,
 }
 
 #[derive(Deserialize)]
@@ -57,6 +90,10 @@ struct UpdateCredentialRequest {
     username: Option<String>,
     secret: String,
     remarks: Option<String>,
+    #[serde(default)]
+    custom_fields: Vec<CustomField>,
+    #[serde(default)]
+    reprompt: bool,
 }
 
 #[derive(Deserialize)]
@@ -72,8 +109,21 @@ struct SearchRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct VerifyMasterPasswordRequest {
+    master_password: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CredentialIdRequest {
     credential_id: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetTotpSecretRequest {
+    credential_id: i64,
+    secret: String,
 }
 
 #[derive(Deserialize)]
@@ -192,6 +242,31 @@ async fn register(State(ctx): State<AppContext>, Json(body): Json<AuthRequest>) 
     issue_session(&ctx, &body, true)
 }
 
+// Public (unauthenticated), like login/register - the login screen needs this before a session
+// exists, to decide whether to offer a "Unlock with PIN" option at all.
+async fn has_pin(State(ctx): State<AppContext>, Json(body): Json<HasPinRequest>) -> Result<Json<bool>, ApiError> {
+    let app_state = build_locked_state(&ctx.paths)?;
+    Ok(Json(do_has_pin(&app_state, &body.username)?))
+}
+
+async fn unlock_with_pin(
+    State(ctx): State<AppContext>,
+    Json(body): Json<UnlockWithPinRequest>,
+) -> Result<Response, ApiError> {
+    let app_state = build_locked_state(&ctx.paths)?;
+    do_unlock_with_pin(&app_state, &ctx.paths, &body.username, &body.pin)?;
+    let session = UserSession {
+        username: body.username.clone(),
+        app_state,
+        last_seen: Mutex::new(Instant::now()),
+    };
+    let token = ctx.store.insert(session);
+    let cookie = format!("session={token}; HttpOnly; SameSite=Strict; Path=/");
+    let mut res = Json(AuthSuccess { username: body.username.clone() }).into_response();
+    res.headers_mut().insert(header::SET_COOKIE, cookie.parse().unwrap());
+    Ok(res)
+}
+
 /// Fully terminates this browser's session (unlike `lock`, which just re-locks the vault and keeps
 /// the entry in the store): removes it from `SessionStore` outright, freeing its vault/registry
 /// connections, and clears the cookie client-side. Deliberately NOT behind `auth_middleware` — that
@@ -229,6 +304,26 @@ async fn touch(Extension(s): Extension<Arc<UserSession>>) -> StatusCode {
     StatusCode::OK
 }
 
+async fn verify_master_password(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<VerifyMasterPasswordRequest>,
+) -> Result<Json<bool>, ApiError> {
+    Ok(Json(do_verify_master_password(&s.app_state, &b.master_password)?))
+}
+
+async fn set_pin(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetPinRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_pin(&s.app_state, &b.pin)?;
+    Ok(StatusCode::OK)
+}
+
+async fn clear_pin(Extension(s): Extension<Arc<UserSession>>) -> Result<StatusCode, ApiError> {
+    do_clear_pin(&s.app_state)?;
+    Ok(StatusCode::OK)
+}
+
 async fn list_sites(Extension(s): Extension<Arc<UserSession>>) -> Result<Json<Vec<SiteDto>>, ApiError> {
     Ok(Json(do_list_sites(&s.app_state)?))
 }
@@ -240,18 +335,40 @@ async fn add_site(
     Ok(Json(do_add_site(&s.app_state, &b.name, b.url.as_deref(), b.notes.as_deref())?))
 }
 
+async fn update_site(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<UpdateSiteRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_update_site(&s.app_state, b.site_id, &b.name, b.url.as_deref(), b.notes.as_deref())?;
+    Ok(StatusCode::OK)
+}
+
+async fn soft_delete_site(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SiteIdRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_soft_delete_site(&s.app_state, b.site_id)?;
+    Ok(StatusCode::OK)
+}
+
 async fn add_credential(
     Extension(s): Extension<Arc<UserSession>>,
     Json(b): Json<AddCredentialRequest>,
 ) -> Result<Json<i64>, ApiError> {
-    Ok(Json(do_add_credential(&s.app_state, b.site_id, b.username.as_deref(), &b.secret, b.remarks.as_deref())?))
+    Ok(Json(do_add_credential(
+        &s.app_state, b.site_id, b.username.as_deref(), &b.secret, b.remarks.as_deref(),
+        &b.custom_fields, b.reprompt,
+    )?))
 }
 
 async fn update_credential(
     Extension(s): Extension<Arc<UserSession>>,
     Json(b): Json<UpdateCredentialRequest>,
 ) -> Result<StatusCode, ApiError> {
-    do_update_credential(&s.app_state, b.credential_id, b.username.as_deref(), &b.secret, b.remarks.as_deref())?;
+    do_update_credential(
+        &s.app_state, b.credential_id, b.username.as_deref(), &b.secret, b.remarks.as_deref(),
+        &b.custom_fields, b.reprompt,
+    )?;
     Ok(StatusCode::OK)
 }
 
@@ -275,6 +392,29 @@ async fn soft_delete_credential(
 ) -> Result<StatusCode, ApiError> {
     do_soft_delete_credential(&s.app_state, b.credential_id)?;
     Ok(StatusCode::OK)
+}
+
+async fn set_totp_secret(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetTotpSecretRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_totp_secret(&s.app_state, b.credential_id, &b.secret)?;
+    Ok(StatusCode::OK)
+}
+
+async fn clear_totp_secret(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<CredentialIdRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_clear_totp_secret(&s.app_state, b.credential_id)?;
+    Ok(StatusCode::OK)
+}
+
+async fn totp_code(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<CredentialIdRequest>,
+) -> Result<Json<Option<TotpCodeDto>>, ApiError> {
+    Ok(Json(do_totp_code(&s.app_state, b.credential_id)?))
 }
 
 async fn list_trash(
@@ -459,13 +599,21 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/unlock_status", post(unlock_status))
         .route("/api/lock", post(lock))
         .route("/api/touch", post(touch))
+        .route("/api/verify_master_password", post(verify_master_password))
+        .route("/api/set_pin", post(set_pin))
+        .route("/api/clear_pin", post(clear_pin))
         .route("/api/list_sites", post(list_sites))
         .route("/api/add_site", post(add_site))
+        .route("/api/update_site", post(update_site))
+        .route("/api/soft_delete_site", post(soft_delete_site))
         .route("/api/add_credential", post(add_credential))
         .route("/api/update_credential", post(update_credential))
         .route("/api/list_credentials_for_site", post(list_credentials_for_site))
         .route("/api/search", post(search))
         .route("/api/soft_delete_credential", post(soft_delete_credential))
+        .route("/api/set_totp_secret", post(set_totp_secret))
+        .route("/api/clear_totp_secret", post(clear_totp_secret))
+        .route("/api/totp_code", post(totp_code))
         .route("/api/list_trash", post(list_trash))
         .route("/api/restore_credential", post(restore_credential))
         .route("/api/purge_trash", post(purge_trash))
@@ -496,6 +644,8 @@ pub fn build_router(ctx: AppContext) -> Router {
     let public = Router::new()
         .route("/api/login", post(login))
         .route("/api/register_user", post(register))
+        .route("/api/has_pin", post(has_pin))
+        .route("/api/unlock_with_pin", post(unlock_with_pin))
         .route("/api/logout", post(logout));
 
     Router::new()

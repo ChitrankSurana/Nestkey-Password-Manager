@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use thiserror::Error;
 
@@ -33,6 +33,23 @@ pub fn open_registry(path: &Path) -> Result<Connection, RegistryError> {
             sentinel_ciphertext BLOB NOT NULL,
             sentinel_nonce BLOB NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        -- Deliberately its own table, not columns on `users`: PIN unlock is a local-device
+        -- convenience, not part of the account itself, and backup.rs's bundle format encodes
+        -- `UserRecord`'s fields individually rather than dumping tables - a separate table is
+        -- excluded from backup/restore for free, matching Bitwarden's own PIN-doesn't-sync model.
+        CREATE TABLE IF NOT EXISTS pin_unlock (
+            username TEXT PRIMARY KEY REFERENCES users(username),
+            pin_salt BLOB NOT NULL,
+            wrapped_key_enc BLOB NOT NULL,
+            wrapped_key_nonce BLOB NOT NULL
+        );
+        -- Same rationale as pin_unlock: a DPAPI-wrapped blob is tied to this specific Windows user
+        -- profile/machine and would never decrypt anywhere else anyway, so it's excluded from
+        -- backup/restore for free by living in its own table rather than on `users`.
+        CREATE TABLE IF NOT EXISTS biometric_unlock (
+            username TEXT PRIMARY KEY REFERENCES users(username),
+            wrapped_key BLOB NOT NULL
         );",
     )?;
     Ok(conn)
@@ -122,6 +139,80 @@ pub fn list_usernames(conn: &Connection) -> Result<Vec<String>, RegistryError> {
     Ok(out)
 }
 
+#[derive(Debug, Clone)]
+pub struct PinRecord {
+    pub username: String,
+    pub pin_salt: Vec<u8>,
+    pub wrapped_key_enc: Vec<u8>,
+    pub wrapped_key_nonce: Vec<u8>,
+}
+
+pub fn set_pin(conn: &Connection, rec: &PinRecord) -> Result<(), RegistryError> {
+    conn.execute(
+        "INSERT INTO pin_unlock (username, pin_salt, wrapped_key_enc, wrapped_key_nonce)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(username) DO UPDATE SET
+           pin_salt = excluded.pin_salt,
+           wrapped_key_enc = excluded.wrapped_key_enc,
+           wrapped_key_nonce = excluded.wrapped_key_nonce",
+        params![rec.username, rec.pin_salt, rec.wrapped_key_enc, rec.wrapped_key_nonce],
+    )?;
+    Ok(())
+}
+
+pub fn find_pin(conn: &Connection, username: &str) -> Result<Option<PinRecord>, RegistryError> {
+    conn.query_row(
+        "SELECT username, pin_salt, wrapped_key_enc, wrapped_key_nonce FROM pin_unlock WHERE username = ?1",
+        params![username],
+        |row| {
+            Ok(PinRecord {
+                username: row.get(0)?,
+                pin_salt: row.get(1)?,
+                wrapped_key_enc: row.get(2)?,
+                wrapped_key_nonce: row.get(3)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(RegistryError::from)
+}
+
+pub fn clear_pin(conn: &Connection, username: &str) -> Result<(), RegistryError> {
+    conn.execute("DELETE FROM pin_unlock WHERE username = ?1", params![username])?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct BiometricRecord {
+    pub username: String,
+    pub wrapped_key: Vec<u8>,
+}
+
+pub fn set_biometric(conn: &Connection, rec: &BiometricRecord) -> Result<(), RegistryError> {
+    conn.execute(
+        "INSERT INTO biometric_unlock (username, wrapped_key)
+         VALUES (?1, ?2)
+         ON CONFLICT(username) DO UPDATE SET wrapped_key = excluded.wrapped_key",
+        params![rec.username, rec.wrapped_key],
+    )?;
+    Ok(())
+}
+
+pub fn find_biometric(conn: &Connection, username: &str) -> Result<Option<BiometricRecord>, RegistryError> {
+    conn.query_row(
+        "SELECT username, wrapped_key FROM biometric_unlock WHERE username = ?1",
+        params![username],
+        |row| Ok(BiometricRecord { username: row.get(0)?, wrapped_key: row.get(1)? }),
+    )
+    .optional()
+    .map_err(RegistryError::from)
+}
+
+pub fn clear_biometric(conn: &Connection, username: &str) -> Result<(), RegistryError> {
+    conn.execute("DELETE FROM biometric_unlock WHERE username = ?1", params![username])?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +296,114 @@ mod tests {
         assert_eq!(found.verifier_hash, vec![99; 32]);
         // Still exactly one row for "alice" - an upsert must not leave a duplicate behind.
         assert_eq!(list_usernames(&conn).unwrap(), vec!["alice".to_string()]);
+    }
+
+    fn sample_pin(username: &str) -> PinRecord {
+        PinRecord {
+            username: username.to_string(),
+            pin_salt: vec![1, 2, 3, 4],
+            wrapped_key_enc: vec![5, 6, 7, 8],
+            wrapped_key_nonce: vec![9; 12],
+        }
+    }
+
+    #[test]
+    fn find_pin_returns_none_when_no_pin_is_set() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+
+        assert!(find_pin(&conn, "alice").unwrap().is_none());
+    }
+
+    #[test]
+    fn set_pin_then_find_pin_roundtrips() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+
+        set_pin(&conn, &sample_pin("alice")).unwrap();
+
+        let found = find_pin(&conn, "alice").unwrap().unwrap();
+        assert_eq!(found.pin_salt, vec![1, 2, 3, 4]);
+        assert_eq!(found.wrapped_key_enc, vec![5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn set_pin_twice_replaces_rather_than_duplicates() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+        set_pin(&conn, &sample_pin("alice")).unwrap();
+
+        let mut replacement = sample_pin("alice");
+        replacement.wrapped_key_enc = vec![99; 8];
+        set_pin(&conn, &replacement).unwrap();
+
+        let found = find_pin(&conn, "alice").unwrap().unwrap();
+        assert_eq!(found.wrapped_key_enc, vec![99; 8]);
+    }
+
+    #[test]
+    fn clear_pin_removes_it() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+        set_pin(&conn, &sample_pin("alice")).unwrap();
+
+        clear_pin(&conn, "alice").unwrap();
+
+        assert!(find_pin(&conn, "alice").unwrap().is_none());
+    }
+
+    fn sample_biometric(username: &str) -> BiometricRecord {
+        BiometricRecord { username: username.to_string(), wrapped_key: vec![1, 2, 3, 4] }
+    }
+
+    #[test]
+    fn find_biometric_returns_none_when_none_is_set() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+
+        assert!(find_biometric(&conn, "alice").unwrap().is_none());
+    }
+
+    #[test]
+    fn set_biometric_then_find_biometric_roundtrips() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+
+        set_biometric(&conn, &sample_biometric("alice")).unwrap();
+
+        let found = find_biometric(&conn, "alice").unwrap().unwrap();
+        assert_eq!(found.wrapped_key, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn set_biometric_twice_replaces_rather_than_duplicates() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+        set_biometric(&conn, &sample_biometric("alice")).unwrap();
+
+        let mut replacement = sample_biometric("alice");
+        replacement.wrapped_key = vec![99; 8];
+        set_biometric(&conn, &replacement).unwrap();
+
+        assert_eq!(find_biometric(&conn, "alice").unwrap().unwrap().wrapped_key, vec![99; 8]);
+    }
+
+    #[test]
+    fn clear_biometric_removes_it() {
+        let dir = tempdir().unwrap();
+        let conn = open_registry(&dir.path().join("registry.db")).unwrap();
+        create_user(&conn, &sample_record("alice")).unwrap();
+        set_biometric(&conn, &sample_biometric("alice")).unwrap();
+
+        clear_biometric(&conn, "alice").unwrap();
+
+        assert!(find_biometric(&conn, "alice").unwrap().is_none());
     }
 }

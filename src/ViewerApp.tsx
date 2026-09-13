@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Login } from "./screens/Login";
 import { ViewerVault } from "./screens/ViewerVault";
+import { ToastHost } from "./components/ToastHost";
 import { useActivityWatcher } from "./hooks/useActivityWatcher";
 import { api } from "./lib/api";
 import "./App.css";
@@ -39,16 +40,19 @@ export function ViewerApp() {
     };
   }, []);
 
-  if (screen === "login") {
-    return (
-      <Login
-        onSuccess={(u) => {
-          setUsername(u);
-          setScreen("vault");
-        }}
-      />
-    );
-  }
-
-  return <ViewerVault username={username!} />;
+  return (
+    <>
+      {screen === "login" ? (
+        <Login
+          onSuccess={(u) => {
+            setUsername(u);
+            setScreen("vault");
+          }}
+        />
+      ) : (
+        <ViewerVault username={username!} />
+      )}
+      <ToastHost />
+    </>
+  );
 }

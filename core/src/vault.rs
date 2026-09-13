@@ -1,6 +1,7 @@
 use crate::crypto::VaultKey;
 use crate::portio::ImportRecord;
 use rusqlite::{Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use thiserror::Error;
 use zeroize::Zeroizing;
@@ -70,10 +71,84 @@ fn init_schema(conn: &Connection) -> Result<(), VaultError> {
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             deleted_at TEXT
         );
+        CREATE TABLE IF NOT EXISTS ssh_keys (
+            id INTEGER PRIMARY KEY,
+            label TEXT NOT NULL,
+            private_key_enc BLOB NOT NULL,
+            private_key_nonce BLOB NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         CREATE INDEX IF NOT EXISTS idx_sites_name ON sites(name);
         CREATE INDEX IF NOT EXISTS idx_credentials_site ON credentials(site_id);",
     )?;
+    add_credential_columns_if_missing(conn)?;
     Ok(())
+}
+
+// `CREATE TABLE IF NOT EXISTS` above is a no-op against a vault file created before these columns
+// existed, so a real existing vault (not just fresh installs) needs them added explicitly or every
+// later INSERT/SELECT referencing them would fail with "no such column." No migrations table
+// exists in this schema yet - table_info + ADD COLUMN is the whole mechanism, and is itself
+// idempotent (checks before adding), so this runs unconditionally on every open.
+fn add_credential_columns_if_missing(conn: &Connection) -> Result<(), VaultError> {
+    let mut stmt = conn.prepare("PRAGMA table_info(credentials)")?;
+    let existing: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(1))?.collect::<Result<_, _>>()?;
+    drop(stmt);
+    if !existing.iter().any(|c| c == "reprompt") {
+        conn.execute("ALTER TABLE credentials ADD COLUMN reprompt INTEGER NOT NULL DEFAULT 0", [])?;
+    }
+    if !existing.iter().any(|c| c == "custom_fields_enc") {
+        conn.execute("ALTER TABLE credentials ADD COLUMN custom_fields_enc BLOB", [])?;
+        conn.execute("ALTER TABLE credentials ADD COLUMN custom_fields_nonce BLOB", [])?;
+    }
+    if !existing.iter().any(|c| c == "totp_secret_enc") {
+        conn.execute("ALTER TABLE credentials ADD COLUMN totp_secret_enc BLOB", [])?;
+        conn.execute("ALTER TABLE credentials ADD COLUMN totp_secret_nonce BLOB", [])?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CustomFieldType {
+    Text,
+    Hidden,
+    Boolean,
+}
+
+// Not `#[derive(Debug)]`'d as part of `Credential`'s manual redacting impl below - a `Hidden`
+// field's value is exactly as sensitive as the main secret, so it gets the same treatment.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomField {
+    pub label: String,
+    pub value: String,
+    pub field_type: CustomFieldType,
+}
+
+/// Serializes and encrypts a credential's custom fields as one blob, the same way the main secret
+/// is sealed - simplest way to keep `Hidden`-type values off the plaintext page, without the
+/// complexity of per-field encryption for a personal-vault-scale field list.
+fn seal_custom_fields(key: &VaultKey, fields: &[CustomField]) -> Result<(Vec<u8>, [u8; 12]), VaultError> {
+    let json = serde_json::to_vec(fields).map_err(|_| VaultError::UnlockFailed)?;
+    Ok(crate::crypto::seal(key, &json)?)
+}
+
+fn open_custom_fields(
+    key: &VaultKey,
+    enc: Option<Vec<u8>>,
+    nonce: Option<Vec<u8>>,
+) -> Result<Vec<CustomField>, VaultError> {
+    let (enc, nonce_bytes) = match (enc, nonce) {
+        (Some(e), Some(n)) => (e, n),
+        _ => return Ok(Vec::new()), // rows saved before this feature existed have neither column set
+    };
+    if nonce_bytes.len() != 12 {
+        return Err(VaultError::UnlockFailed);
+    }
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&nonce_bytes);
+    let json = crate::crypto::open(key, &enc, &nonce)?;
+    serde_json::from_slice(&json).map_err(|_| VaultError::UnlockFailed)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,6 +186,35 @@ pub fn list_sites(conn: &Connection) -> Result<Vec<Site>, VaultError> {
     Ok(out)
 }
 
+pub fn update_site(
+    conn: &Connection,
+    site_id: i64,
+    name: &str,
+    url: Option<&str>,
+    notes: Option<&str>,
+) -> Result<(), VaultError> {
+    let updated = conn.execute(
+        "UPDATE sites SET name = ?1, url = ?2, notes = ?3, updated_at = datetime('now')
+         WHERE id = ?4 AND deleted_at IS NULL",
+        rusqlite::params![name, url, notes, site_id],
+    )?;
+    if updated == 0 {
+        return Err(VaultError::NotFound);
+    }
+    Ok(())
+}
+
+// Cheap existence check for the "refuse to delete a non-empty site" business rule at the command
+// layer - deliberately not a decrypt (unlike list_credentials_for_site), since this only needs a
+// count, not the secrets.
+pub fn count_live_credentials_for_site(conn: &Connection, site_id: i64) -> Result<i64, VaultError> {
+    Ok(conn.query_row(
+        "SELECT count(*) FROM credentials WHERE site_id = ?1 AND deleted_at IS NULL",
+        rusqlite::params![site_id],
+        |row| row.get(0),
+    )?)
+}
+
 pub fn soft_delete_site(conn: &Connection, site_id: i64) -> Result<(), VaultError> {
     let updated = conn.execute(
         "UPDATE sites SET deleted_at = datetime('now') WHERE id = ?1 AND deleted_at IS NULL",
@@ -133,6 +237,11 @@ pub struct Credential {
     // Don't let this be forgotten when that phase is planned.
     pub secret: String,
     pub remarks: Option<String>,
+    pub custom_fields: Vec<CustomField>,
+    pub reprompt: bool,
+    // Presence only - the TOTP seed itself is never eagerly decrypted for a listing, only on
+    // demand by `get_totp_secret` (used solely to compute the current code).
+    pub has_totp: bool,
 }
 
 // Manual Debug impl (not derived) so a stray `{:?}`, `dbg!()`, or future log statement can never
@@ -147,6 +256,10 @@ impl std::fmt::Debug for Credential {
             .field("username", &self.username)
             .field("secret", &"<redacted>")
             .field("remarks", &self.remarks)
+            // A Hidden-type value here is exactly as sensitive as `secret` above - count only.
+            .field("custom_fields", &format!("<{} field(s)>", self.custom_fields.len()))
+            .field("reprompt", &self.reprompt)
+            .field("has_totp", &self.has_totp)
             .finish()
     }
 }
@@ -158,12 +271,19 @@ pub fn add_credential(
     username: Option<&str>,
     secret: &str,
     remarks: Option<&str>,
+    custom_fields: &[CustomField],
+    reprompt: bool,
 ) -> Result<i64, VaultError> {
     let (secret_enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
+    let (fields_enc, fields_nonce) = seal_custom_fields(key, custom_fields)?;
     conn.execute(
-        "INSERT INTO credentials (site_id, username, secret_enc, secret_nonce, remarks)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![site_id, username, secret_enc, nonce.to_vec(), remarks],
+        "INSERT INTO credentials
+            (site_id, username, secret_enc, secret_nonce, remarks, custom_fields_enc, custom_fields_nonce, reprompt)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![
+            site_id, username, secret_enc, nonce.to_vec(), remarks,
+            fields_enc, fields_nonce.to_vec(), reprompt,
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -174,7 +294,8 @@ pub fn list_credentials_for_site(
     site_id: i64,
 ) -> Result<Vec<Credential>, VaultError> {
     let mut stmt = conn.prepare(
-        "SELECT c.id, c.site_id, c.username, c.secret_enc, c.secret_nonce, c.remarks
+        "SELECT c.id, c.site_id, c.username, c.secret_enc, c.secret_nonce, c.remarks,
+                c.custom_fields_enc, c.custom_fields_nonce, c.reprompt, (c.totp_secret_enc IS NOT NULL)
          FROM credentials c
          JOIN sites s ON s.id = c.site_id
          WHERE c.site_id = ?1 AND c.deleted_at IS NULL AND s.deleted_at IS NULL
@@ -187,12 +308,16 @@ pub fn list_credentials_for_site(
         let secret_enc: Vec<u8> = row.get(3)?;
         let secret_nonce: Vec<u8> = row.get(4)?;
         let remarks: Option<String> = row.get(5)?;
-        Ok((id, site_id, username, secret_enc, secret_nonce, remarks))
+        let fields_enc: Option<Vec<u8>> = row.get(6)?;
+        let fields_nonce: Option<Vec<u8>> = row.get(7)?;
+        let reprompt: bool = row.get(8)?;
+        let has_totp: bool = row.get(9)?;
+        Ok((id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt, has_totp))
     })?;
 
     let mut out = Vec::new();
     for r in rows {
-        let (id, site_id, username, secret_enc, secret_nonce, remarks) = r?;
+        let (id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt, has_totp) = r?;
         // secret_nonce comes from the DB row - external input relative to this function, not
         // something this code controls. A malformed/corrupted row (bad migration, manual DB
         // surgery, future bug elsewhere) must not be able to crash the whole read path via an
@@ -204,9 +329,71 @@ pub fn list_credentials_for_site(
         nonce.copy_from_slice(&secret_nonce);
         let plaintext = crate::crypto::open(key, &secret_enc, &nonce)?;
         let secret = String::from_utf8(plaintext).map_err(|_| VaultError::UnlockFailed)?;
-        out.push(Credential { id, site_id, username, secret, remarks });
+        let custom_fields = open_custom_fields(key, fields_enc, fields_nonce)?;
+        out.push(Credential { id, site_id, username, secret, remarks, custom_fields, reprompt, has_totp });
     }
     Ok(out)
+}
+
+/// Sets (or replaces) a credential's TOTP seed - a dedicated command rather than a param on
+/// `add_credential`/`update_credential` so those two never risk silently wiping an existing TOTP
+/// seed on an unrelated field edit: their UPDATE statements simply never touch these two columns.
+pub fn set_totp_secret(
+    conn: &Connection,
+    key: &VaultKey,
+    credential_id: i64,
+    secret: &str,
+) -> Result<(), VaultError> {
+    let (enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
+    let updated = conn.execute(
+        "UPDATE credentials SET totp_secret_enc = ?1, totp_secret_nonce = ?2, updated_at = datetime('now')
+         WHERE id = ?3 AND deleted_at IS NULL",
+        rusqlite::params![enc, nonce.to_vec(), credential_id],
+    )?;
+    if updated == 0 {
+        return Err(VaultError::NotFound);
+    }
+    Ok(())
+}
+
+pub fn clear_totp_secret(conn: &Connection, credential_id: i64) -> Result<(), VaultError> {
+    let updated = conn.execute(
+        "UPDATE credentials SET totp_secret_enc = NULL, totp_secret_nonce = NULL, updated_at = datetime('now')
+         WHERE id = ?1 AND deleted_at IS NULL",
+        rusqlite::params![credential_id],
+    )?;
+    if updated == 0 {
+        return Err(VaultError::NotFound);
+    }
+    Ok(())
+}
+
+/// Decrypts a credential's TOTP seed on demand - the only reader is the current-code computation,
+/// polled roughly once a second while a TOTP row is expanded, so this is a targeted single-row
+/// fetch rather than something `list_credentials_for_site` decrypts eagerly for every row.
+pub fn get_totp_secret(
+    conn: &Connection,
+    key: &VaultKey,
+    credential_id: i64,
+) -> Result<Option<String>, VaultError> {
+    let row: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> = conn
+        .query_row(
+            "SELECT totp_secret_enc, totp_secret_nonce FROM credentials WHERE id = ?1 AND deleted_at IS NULL",
+            rusqlite::params![credential_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let (enc, nonce_bytes) = match row.ok_or(VaultError::NotFound)? {
+        (Some(e), Some(n)) => (e, n),
+        _ => return Ok(None),
+    };
+    if nonce_bytes.len() != 12 {
+        return Err(VaultError::UnlockFailed);
+    }
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&nonce_bytes);
+    let plaintext = crate::crypto::open(key, &enc, &nonce)?;
+    Ok(Some(String::from_utf8(plaintext).map_err(|_| VaultError::UnlockFailed)?))
 }
 
 pub fn update_credential(
@@ -216,6 +403,8 @@ pub fn update_credential(
     username: Option<&str>,
     secret: &str,
     remarks: Option<&str>,
+    custom_fields: &[CustomField],
+    reprompt: bool,
 ) -> Result<(), VaultError> {
     let existing: Option<(Vec<u8>, Vec<u8>)> = conn
         .query_row(
@@ -235,18 +424,27 @@ pub fn update_credential(
     let secret_changed = old_secret != secret;
 
     let (secret_enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
+    let (fields_enc, fields_nonce) = seal_custom_fields(key, custom_fields)?;
     let updated = if secret_changed {
         conn.execute(
             "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
+             custom_fields_enc = ?5, custom_fields_nonce = ?6, reprompt = ?7,
              updated_at = datetime('now'), password_updated_at = datetime('now')
-             WHERE id = ?5 AND deleted_at IS NULL",
-            rusqlite::params![username, secret_enc, nonce.to_vec(), remarks, credential_id],
+             WHERE id = ?8 AND deleted_at IS NULL",
+            rusqlite::params![
+                username, secret_enc, nonce.to_vec(), remarks,
+                fields_enc, fields_nonce.to_vec(), reprompt, credential_id,
+            ],
         )?
     } else {
         conn.execute(
             "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
-             updated_at = datetime('now') WHERE id = ?5 AND deleted_at IS NULL",
-            rusqlite::params![username, secret_enc, nonce.to_vec(), remarks, credential_id],
+             custom_fields_enc = ?5, custom_fields_nonce = ?6, reprompt = ?7,
+             updated_at = datetime('now') WHERE id = ?8 AND deleted_at IS NULL",
+            rusqlite::params![
+                username, secret_enc, nonce.to_vec(), remarks,
+                fields_enc, fields_nonce.to_vec(), reprompt, credential_id,
+            ],
         )?
     };
     if updated == 0 {
@@ -457,7 +655,7 @@ pub fn import_credentials(
             duplicates += 1;
             continue;
         }
-        add_credential(&tx, key, site_id, rec.username.as_deref(), &rec.secret, rec.remarks.as_deref())?;
+        add_credential(&tx, key, site_id, rec.username.as_deref(), &rec.secret, rec.remarks.as_deref(), &[], false)?;
         imported += 1;
     }
 
@@ -573,6 +771,46 @@ mod tests {
     }
 
     #[test]
+    fn update_site_changes_name_url_and_notes() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[30u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let id = add_site(&conn, "old.com", None, None).unwrap();
+
+        update_site(&conn, id, "new.com", Some("https://new.com"), Some("note")).unwrap();
+
+        let sites = list_sites(&conn).unwrap();
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].name, "new.com");
+        assert_eq!(sites[0].url.as_deref(), Some("https://new.com"));
+        assert_eq!(sites[0].notes.as_deref(), Some("note"));
+    }
+
+    #[test]
+    fn update_site_on_unknown_id_returns_not_found() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[31u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let err = update_site(&conn, 999, "x", None, None).unwrap_err();
+        assert!(matches!(err, VaultError::NotFound));
+    }
+
+    #[test]
+    fn count_live_credentials_for_site_ignores_soft_deleted() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[32u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+
+        assert_eq!(count_live_credentials_for_site(&conn, site_id).unwrap(), 1);
+
+        soft_delete_credential(&conn, cred_id).unwrap();
+        assert_eq!(count_live_credentials_for_site(&conn, site_id).unwrap(), 0);
+    }
+
+    #[test]
     fn soft_deleted_site_is_excluded_from_list_sites() {
         let dir = tempdir().unwrap();
         let key = derive_key("pw", &[5u8; 16]).unwrap();
@@ -592,7 +830,7 @@ mod tests {
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
 
-        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret!", Some("work login")).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret!", Some("work login"), &[], false).unwrap();
         let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
 
         assert_eq!(creds.len(), 1);
@@ -608,7 +846,7 @@ mod tests {
         let key = derive_key("pw", &[11u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        add_credential(&conn, &key, site_id, Some("alice"), "extremely-unique-secret-xyz", None).unwrap();
+        add_credential(&conn, &key, site_id, Some("alice"), "extremely-unique-secret-xyz", None, &[], false).unwrap();
         let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
 
         let debug_output = format!("{:?}", creds[0]);
@@ -622,9 +860,9 @@ mod tests {
         let key = derive_key("pw", &[20u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "old-secret", Some("old note")).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "old-secret", Some("old note"), &[], false).unwrap();
 
-        update_credential(&conn, &key, cred_id, Some("alice2"), "new-secret", Some("new note")).unwrap();
+        update_credential(&conn, &key, cred_id, Some("alice2"), "new-secret", Some("new note"), &[], false).unwrap();
 
         let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
         assert_eq!(creds.len(), 1);
@@ -639,7 +877,7 @@ mod tests {
         let key = derive_key("pw", &[21u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
 
-        let result = update_credential(&conn, &key, 9999, Some("x"), "y", None);
+        let result = update_credential(&conn, &key, 9999, Some("x"), "y", None, &[], false);
 
         assert!(matches!(result, Err(VaultError::NotFound)));
     }
@@ -650,10 +888,68 @@ mod tests {
         let key = derive_key("pw", &[22u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
         soft_delete_credential(&conn, cred_id).unwrap();
 
-        let result = update_credential(&conn, &key, cred_id, Some("alice2"), "new-secret", None);
+        let result = update_credential(&conn, &key, cred_id, Some("alice2"), "new-secret", None, &[], false);
+
+        assert!(matches!(result, Err(VaultError::NotFound)));
+    }
+
+    #[test]
+    fn new_credential_has_no_totp_by_default() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[23u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
+
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+
+        assert!(!creds.iter().find(|c| c.id == cred_id).unwrap().has_totp);
+        assert_eq!(get_totp_secret(&conn, &key, cred_id).unwrap(), None);
+    }
+
+    #[test]
+    fn set_totp_secret_then_get_totp_secret_roundtrips_and_flags_has_totp() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[24u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
+
+        set_totp_secret(&conn, &key, cred_id, "JBSWY3DPEHPK3PXP").unwrap();
+
+        assert_eq!(get_totp_secret(&conn, &key, cred_id).unwrap().as_deref(), Some("JBSWY3DPEHPK3PXP"));
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+        assert!(creds.iter().find(|c| c.id == cred_id).unwrap().has_totp);
+    }
+
+    #[test]
+    fn clear_totp_secret_removes_it_without_touching_the_main_secret() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[25u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
+        set_totp_secret(&conn, &key, cred_id, "JBSWY3DPEHPK3PXP").unwrap();
+
+        clear_totp_secret(&conn, cred_id).unwrap();
+
+        assert_eq!(get_totp_secret(&conn, &key, cred_id).unwrap(), None);
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+        let cred = creds.iter().find(|c| c.id == cred_id).unwrap();
+        assert!(!cred.has_totp);
+        assert_eq!(cred.secret, "secret");
+    }
+
+    #[test]
+    fn set_totp_secret_on_nonexistent_credential_returns_not_found() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[26u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let result = set_totp_secret(&conn, &key, 9999, "JBSWY3DPEHPK3PXP");
 
         assert!(matches!(result, Err(VaultError::NotFound)));
     }
@@ -664,10 +960,10 @@ mod tests {
         let key = derive_key("pw", &[40u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "same-secret", None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "same-secret", None, &[], false).unwrap();
         set_password_updated_at_sentinel(&conn, cred_id);
 
-        update_credential(&conn, &key, cred_id, Some("alice2"), "same-secret", Some("a note")).unwrap();
+        update_credential(&conn, &key, cred_id, Some("alice2"), "same-secret", Some("a note"), &[], false).unwrap();
 
         assert_eq!(get_password_updated_at(&conn, cred_id), "2000-01-01 00:00:00");
     }
@@ -678,10 +974,10 @@ mod tests {
         let key = derive_key("pw", &[41u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "old-secret", None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "old-secret", None, &[], false).unwrap();
         set_password_updated_at_sentinel(&conn, cred_id);
 
-        update_credential(&conn, &key, cred_id, Some("alice"), "new-secret", None).unwrap();
+        update_credential(&conn, &key, cred_id, Some("alice"), "new-secret", None, &[], false).unwrap();
 
         assert_ne!(get_password_updated_at(&conn, cred_id), "2000-01-01 00:00:00");
     }
@@ -692,7 +988,7 @@ mod tests {
         let key = derive_key("pw", &[7u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret!", None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret!", None, &[], false).unwrap();
 
         soft_delete_credential(&conn, cred_id).unwrap();
         assert!(list_credentials_for_site(&conn, &key, site_id).unwrap().is_empty());
@@ -707,7 +1003,7 @@ mod tests {
         let key = derive_key("pw", &[24u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret", None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
 
         assert!(list_trash(&conn).unwrap().is_empty());
 
@@ -725,8 +1021,8 @@ mod tests {
         let key = derive_key("pw", &[25u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        let kept_id = add_credential(&conn, &key, site_id, Some("alice"), "keep-me", None).unwrap();
-        let trashed_id = add_credential(&conn, &key, site_id, Some("bob"), "purge-me", None).unwrap();
+        let kept_id = add_credential(&conn, &key, site_id, Some("alice"), "keep-me", None, &[], false).unwrap();
+        let trashed_id = add_credential(&conn, &key, site_id, Some("bob"), "purge-me", None, &[], false).unwrap();
         soft_delete_credential(&conn, trashed_id).unwrap();
 
         let purged_count = purge_trash(&conn).unwrap();
@@ -747,9 +1043,9 @@ mod tests {
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_a = add_site(&conn, "a.com", None, None).unwrap();
         let site_b = add_site(&conn, "b.com", None, None).unwrap();
-        add_credential(&conn, &key, site_a, Some("alice"), "secret-a1", None).unwrap();
-        add_credential(&conn, &key, site_a, Some("alice2"), "secret-a2", None).unwrap();
-        add_credential(&conn, &key, site_b, Some("bob"), "secret-b", None).unwrap();
+        add_credential(&conn, &key, site_a, Some("alice"), "secret-a1", None, &[], false).unwrap();
+        add_credential(&conn, &key, site_a, Some("alice2"), "secret-a2", None, &[], false).unwrap();
+        add_credential(&conn, &key, site_b, Some("bob"), "secret-b", None, &[], false).unwrap();
 
         let creds_a = list_credentials_for_site(&conn, &key, site_a).unwrap();
         assert_eq!(creds_a.len(), 2);
@@ -765,7 +1061,7 @@ mod tests {
         let key = derive_key("pw", &[23u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        add_credential(&conn, &key, site_id, Some("alice"), "s3cret", None).unwrap();
+        add_credential(&conn, &key, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
 
         soft_delete_site(&conn, site_id).unwrap();
 
@@ -782,10 +1078,10 @@ mod tests {
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
 
         let site_a = add_site(&conn, "GitHub", None, None).unwrap();
-        add_credential(&conn, &key, site_a, Some("alice"), "secret1", Some("work account")).unwrap();
+        add_credential(&conn, &key, site_a, Some("alice"), "secret1", Some("work account"), &[], false).unwrap();
 
         let site_b = add_site(&conn, "example.com", None, None).unwrap();
-        add_credential(&conn, &key, site_b, Some("bob"), "secret2", None).unwrap();
+        add_credential(&conn, &key, site_b, Some("bob"), "secret2", None, &[], false).unwrap();
 
         let by_site_name = search(&conn, "github").unwrap();
         assert_eq!(by_site_name.len(), 1);
@@ -810,7 +1106,7 @@ mod tests {
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
 
         let site_id = add_site(&conn, "50% off deals", None, None).unwrap();
-        add_credential(&conn, &key, site_id, Some("jane_doe"), "secret", None).unwrap();
+        add_credential(&conn, &key, site_id, Some("jane_doe"), "secret", None, &[], false).unwrap();
 
         // A literal '%' in the query must match only the literal text, not act as a wildcard.
         assert_eq!(search(&conn, "50% off").unwrap().len(), 1);
@@ -827,7 +1123,7 @@ mod tests {
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
 
         let site_id = add_site(&conn, "deleteme.com", None, None).unwrap();
-        let cred_id = add_credential(&conn, &key, site_id, Some("carol"), "secret", None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("carol"), "secret", None, &[], false).unwrap();
         assert_eq!(search(&conn, "deleteme").unwrap().len(), 1);
 
         soft_delete_credential(&conn, cred_id).unwrap();
@@ -905,8 +1201,8 @@ mod tests {
         let key = derive_key("pw", &[42u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        let old_id = add_credential(&conn, &key, site_id, Some("alice"), "secret-a", None).unwrap();
-        let fresh_id = add_credential(&conn, &key, site_id, Some("bob"), "secret-b", None).unwrap();
+        let old_id = add_credential(&conn, &key, site_id, Some("alice"), "secret-a", None, &[], false).unwrap();
+        let fresh_id = add_credential(&conn, &key, site_id, Some("bob"), "secret-b", None, &[], false).unwrap();
         conn.execute(
             "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
             rusqlite::params![old_id],
@@ -929,7 +1225,7 @@ mod tests {
         let key = derive_key("pw", &[43u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
         conn.execute(
             "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
             rusqlite::params![cred_id],
@@ -949,7 +1245,7 @@ mod tests {
         let key = derive_key("pw", &[44u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
         let site_id = add_site(&conn, "example.com", None, None).unwrap();
-        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
         conn.execute(
             "UPDATE credentials SET password_updated_at = datetime('now', '-400 days') WHERE id = ?1",
             rusqlite::params![cred_id],

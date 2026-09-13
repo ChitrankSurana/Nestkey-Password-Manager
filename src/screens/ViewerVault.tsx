@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, isCommandError, CredentialDto, SearchResultDto, SiteDto } from "../lib/api";
+import { SecretField } from "../components/SecretField";
+import { Icon } from "../components/Icon";
 
 export function ViewerVault({ username }: { username: string }) {
   const [sites, setSites] = useState<SiteDto[]>([]);
@@ -7,7 +9,6 @@ export function ViewerVault({ username }: { username: string }) {
   const [searchResults, setSearchResults] = useState<SearchResultDto[] | null>(null);
   const [expandedSiteId, setExpandedSiteId] = useState<number | null>(null);
   const [credentials, setCredentials] = useState<CredentialDto[]>([]);
-  const [revealedId, setRevealedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function refreshSites() {
@@ -20,11 +21,10 @@ export function ViewerVault({ username }: { username: string }) {
   }
 
   async function runSearch(q: string) {
-    // A stale expanded/revealed site must not resurface just because the search query changed
-    // (e.g. clearing back to browse, or re-matching a previously-expanded site).
+    // A stale expanded site must not resurface just because the search query changed (e.g.
+    // clearing back to browse, or re-matching a previously-expanded site).
     setExpandedSiteId(null);
     setCredentials([]);
-    setRevealedId(null);
     if (q.trim() === "") {
       setSearchResults(null);
       return;
@@ -51,7 +51,6 @@ export function ViewerVault({ username }: { username: string }) {
     if (expandedSiteId === siteId) {
       setExpandedSiteId(null);
       setCredentials([]);
-      setRevealedId(null);
       return;
     }
     try {
@@ -60,7 +59,6 @@ export function ViewerVault({ username }: { username: string }) {
       // only when that site is clicked, never prefetched for the whole list.
       setCredentials(await api.listCredentialsForSite(siteId));
       setExpandedSiteId(siteId);
-      setRevealedId(null);
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     }
@@ -85,18 +83,18 @@ export function ViewerVault({ username }: { username: string }) {
     : sites.map((s) => ({ siteId: s.id, siteName: s.name }));
 
   return (
-    <div className="min-h-screen dark:bg-slate-900 dark:text-slate-100 p-6">
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] p-6">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold">Vault — {username} (read-only)</h1>
         <button onClick={handleLock} className="rounded bg-[var(--accent)] px-3 py-1.5 text-sm">
-          Lock
+          <Icon name="lock-fill" /> Lock
         </button>
       </div>
 
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
       <input
-        className="w-full rounded border px-2 py-1 mb-4 dark:bg-slate-800 dark:border-slate-600"
+        className="w-full rounded border px-2 py-1 mb-4 bg-[var(--surface)] border-[var(--border)]"
         placeholder="Search by site, username, or remarks..."
         value={query}
         onChange={(e) => setQuery(e.target.value)}
@@ -106,10 +104,10 @@ export function ViewerVault({ username }: { username: string }) {
 
       <ul className="space-y-1">
         {rows.map((row) => (
-          <li key={row.siteId} className="rounded border dark:border-slate-700">
+          <li key={row.siteId} className="rounded border border-[var(--border)]">
             <button
               type="button"
-              className="w-full text-left px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="w-full text-left px-2 py-1 hover:bg-[var(--surface)]"
               onClick={() => toggleExpand(row.siteId)}
             >
               {row.siteName}
@@ -119,25 +117,7 @@ export function ViewerVault({ username }: { username: string }) {
                 {credentials.map((c) => (
                   <li key={c.id} className="flex items-center gap-2 text-sm">
                     <span className="w-32 truncate">{c.username ?? "(no username)"}</span>
-                    <span className="flex-1 font-mono">
-                      {revealedId === c.id ? c.secret : "••••••••"}
-                    </span>
-                    <button
-                      type="button"
-                      title={revealedId === c.id ? "Hide password" : "Show password"}
-                      onClick={() => setRevealedId(revealedId === c.id ? null : c.id)}
-                      className="rounded px-2 py-0.5 border dark:border-slate-600"
-                    >
-                      {revealedId === c.id ? "🙈" : "👁"}
-                    </button>
-                    <button
-                      type="button"
-                      title="Copy password"
-                      onClick={() => api.copyToClipboard(c.secret)}
-                      className="rounded px-2 py-0.5 border dark:border-slate-600"
-                    >
-                      Copy
-                    </button>
+                    <SecretField secret={c.secret} />
                   </li>
                 ))}
               </ul>

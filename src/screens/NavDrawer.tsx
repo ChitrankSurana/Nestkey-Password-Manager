@@ -1,5 +1,6 @@
 import { NavDestination } from "./NavRail";
 import { Tooltip } from "../components/Tooltip";
+import { Icon } from "../components/Icon";
 
 export function NavDrawer({
   destinations,
@@ -20,7 +21,7 @@ export function NavDrawer({
   return (
     <div className="sm:hidden fixed inset-0 z-50 flex">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative flex flex-col w-40 shrink-0 gap-1 dark:bg-slate-900 border-r dark:border-slate-700 p-2">
+      <div className="relative flex flex-col w-40 shrink-0 gap-1 bg-[var(--bg)] border-r border-[var(--border)] p-2">
         {destinations.map((d) => (
           <Tooltip key={d.key} text={d.tooltip}>
             <button
@@ -29,10 +30,12 @@ export function NavDrawer({
                 onClose();
               }}
               className={`rounded px-2 py-1 text-left ${
-                d.key === activeKey ? "bg-[var(--accent)]" : "dark:hover:bg-slate-800"
+                d.key === activeKey
+                  ? "bg-[var(--accent-subtle-bg)] text-[var(--accent-subtle-fg)]"
+                  : "hover:bg-[var(--surface)]"
               }`}
             >
-              {d.icon} {d.label}
+              <Icon name={d.icon} /> {d.label}
             </button>
           </Tooltip>
         ))}
@@ -43,9 +46,9 @@ export function NavDrawer({
               onLock();
               onClose();
             }}
-            className="rounded px-2 py-1 text-left dark:hover:bg-slate-800"
+            className="rounded px-2 py-1 text-left hover:bg-[var(--surface)]"
           >
-            🔒 Lock
+            <Icon name="lock-fill" /> Lock
           </button>
         </Tooltip>
       </div>

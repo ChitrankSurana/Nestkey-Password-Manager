@@ -1,5 +1,5 @@
 use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
-use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::session::SystemClock;
@@ -22,7 +22,7 @@ pub fn do_login(
         crate::auth::login(&registry, &vault_path, username, master_password)?
     };
     let conn = crate::vault::open_vault(&vault_path, &key)?;
-    state.session.lock().unwrap().unlock(key, &SystemClock);
+    state.session.lock().unwrap().unlock(key, username, &SystemClock);
     state.set_vault(conn, vault_path);
     Ok(AuthSuccess { username: username.to_string() })
 }
@@ -34,6 +34,144 @@ pub fn do_lock(state: &AppState) {
 
 pub fn do_touch(state: &AppState) {
     state.session.lock().unwrap().touch(&SystemClock);
+}
+
+/// Re-auth gate for a per-item "require master password" (reprompt) field - the vault stays
+/// unlocked either way, this just answers "did they type the right master password right now."
+pub fn do_verify_master_password(state: &AppState, master_password: &str) -> Result<bool, CommandError> {
+    let username = {
+        let session = state.session.lock().unwrap();
+        session.username().ok_or_else(crate::error::locked_error)?.to_string()
+    };
+    let registry = state.registry.lock().unwrap();
+    Ok(crate::auth::verify_master_password(&registry, &username, master_password)?)
+}
+
+/// Whether `username` has PIN unlock configured - callable while locked (the login screen needs
+/// this before offering a "Unlock with PIN" option), so it only touches the registry, never
+/// `state.session`/`state.vault`.
+pub fn do_has_pin(state: &AppState, username: &str) -> Result<bool, CommandError> {
+    let registry = state.registry.lock().unwrap();
+    Ok(crate::auth::has_pin(&registry, username)?)
+}
+
+// Holds `session` while acquiring `registry` (needs the live vault key to seal, and the registry
+// connection to persist the result, at the same time) - the one place in this file that nests
+// those two locks. Safe: every other function touching both locks them sequentially (one dropped
+// before the other is acquired, see do_login/do_verify_master_password/do_clear_pin), so no path
+// exists that holds `registry` first and then waits on `session`, which is what would be needed
+// for this order to deadlock against it.
+pub fn do_set_pin(state: &AppState, pin: &str) -> Result<(), CommandError> {
+    let session = state.session.lock().unwrap();
+    let username = session.username().ok_or_else(crate::error::locked_error)?;
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let registry = state.registry.lock().unwrap();
+    Ok(crate::auth::set_pin(&registry, username, pin, key)?)
+}
+
+pub fn do_clear_pin(state: &AppState) -> Result<(), CommandError> {
+    let username = {
+        let session = state.session.lock().unwrap();
+        session.username().ok_or_else(crate::error::locked_error)?.to_string()
+    };
+    let registry = state.registry.lock().unwrap();
+    Ok(crate::auth::clear_pin(&registry, &username)?)
+}
+
+pub fn do_unlock_with_pin(
+    state: &AppState,
+    paths: &AppPaths,
+    username: &str,
+    pin: &str,
+) -> Result<AuthSuccess, CommandError> {
+    let vault_path = paths.vault_path(username);
+    let key = {
+        let registry = state.registry.lock().unwrap();
+        crate::auth::unlock_with_pin(&registry, username, pin)?
+    };
+    let conn = crate::vault::open_vault(&vault_path, &key)?;
+    state.session.lock().unwrap().unlock(key, username, &SystemClock);
+    state.set_vault(conn, vault_path);
+    Ok(AuthSuccess { username: username.to_string() })
+}
+
+/// Whether `username` has biometric unlock configured - callable while locked (the login screen
+/// needs this before offering the option), and gated on the config toggle: a disabled feature
+/// never reports as available even if a record happens to still exist from before it was turned
+/// off.
+pub fn do_has_biometric(state: &AppState, username: &str, provider: &dyn crate::biometric::BiometricProvider) -> bool {
+    if !state.config.lock().unwrap().biometric_enabled || !provider.is_supported() {
+        return false;
+    }
+    let registry = state.registry.lock().unwrap();
+    crate::registry::find_biometric(&registry, username).ok().flatten().is_some()
+}
+
+pub fn do_set_biometric(
+    state: &AppState,
+    provider: &dyn crate::biometric::BiometricProvider,
+) -> Result<(), CommandError> {
+    if !state.config.lock().unwrap().biometric_enabled {
+        return Err(crate::error::invalid_input_error("Enable biometric unlock in Settings first."));
+    }
+    let session = state.session.lock().unwrap();
+    let username = session.username().ok_or_else(crate::error::locked_error)?;
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    if !provider.verify()? {
+        return Err(crate::biometric::BiometricError::VerificationFailed.into());
+    }
+    let wrapped_key = provider.protect(key.as_bytes())?;
+    let registry = state.registry.lock().unwrap();
+    crate::registry::set_biometric(&registry, &crate::registry::BiometricRecord {
+        username: username.to_string(),
+        wrapped_key,
+    })?;
+    Ok(())
+}
+
+pub fn do_clear_biometric(state: &AppState) -> Result<(), CommandError> {
+    let username = {
+        let session = state.session.lock().unwrap();
+        session.username().ok_or_else(crate::error::locked_error)?.to_string()
+    };
+    let registry = state.registry.lock().unwrap();
+    Ok(crate::registry::clear_biometric(&registry, &username)?)
+}
+
+pub fn do_unlock_with_biometric(
+    state: &AppState,
+    paths: &AppPaths,
+    username: &str,
+    provider: &dyn crate::biometric::BiometricProvider,
+) -> Result<AuthSuccess, CommandError> {
+    if !state.config.lock().unwrap().biometric_enabled {
+        return Err(crate::error::invalid_input_error("Biometric unlock is disabled in Settings."));
+    }
+    if !provider.is_supported() {
+        return Err(crate::biometric::BiometricError::Unsupported.into());
+    }
+    let wrapped_key = {
+        let registry = state.registry.lock().unwrap();
+        crate::registry::find_biometric(&registry, username)?
+            .ok_or(crate::biometric::BiometricError::VerificationFailed)?
+            .wrapped_key
+    };
+    if !provider.verify()? {
+        return Err(crate::biometric::BiometricError::VerificationFailed.into());
+    }
+    let raw = zeroize::Zeroizing::new(provider.unprotect(&wrapped_key)?);
+    if raw.len() != 32 {
+        return Err(crate::biometric::BiometricError::StorageFailed.into());
+    }
+    let mut key_bytes = [0u8; 32];
+    key_bytes.copy_from_slice(&raw);
+    let key = crate::crypto::VaultKey::from_bytes(key_bytes);
+
+    let vault_path = paths.vault_path(username);
+    let conn = crate::vault::open_vault(&vault_path, &key)?;
+    state.session.lock().unwrap().unlock(key, username, &SystemClock);
+    state.set_vault(conn, vault_path);
+    Ok(AuthSuccess { username: username.to_string() })
 }
 
 pub fn do_list_sites(state: &AppState) -> Result<Vec<SiteDto>, CommandError> {
@@ -73,6 +211,8 @@ pub fn do_get_config(state: &AppState) -> ConfigDto {
         hibp_opt_in: config.hibp_opt_in,
         nav_collapsed: config.nav_collapsed,
         mobile_nav_style: config.mobile_nav_style.clone(),
+        biometric_enabled: config.biometric_enabled,
+        ssh_agent_enabled: config.ssh_agent_enabled,
     }
 }
 
@@ -88,7 +228,7 @@ pub fn do_register(
         crate::auth::register_user(&registry, &vault_path, username, master_password)?
     };
     let conn = crate::vault::open_vault(&vault_path, &key)?;
-    state.session.lock().unwrap().unlock(key, &SystemClock);
+    state.session.lock().unwrap().unlock(key, username, &SystemClock);
     state.set_vault(conn, vault_path);
     Ok(AuthSuccess { username: username.to_string() })
 }
@@ -104,18 +244,49 @@ pub fn do_add_site(
     Ok(crate::vault::add_site(conn, name, url, notes)?)
 }
 
+pub fn do_update_site(
+    state: &AppState,
+    site_id: i64,
+    name: &str,
+    url: Option<&str>,
+    notes: Option<&str>,
+) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::update_site(conn, site_id, name, url, notes)?)
+}
+
+pub fn do_soft_delete_site(state: &AppState, site_id: i64) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    // Business rule enforced here, not in vault::soft_delete_site itself: that lower-level
+    // function is also used to cascade-delete a site's credentials from every read path, and
+    // several existing tests rely on it doing so unconditionally. The command layer is the right
+    // place to refuse the destructive action instead - there's no restore-site UI, so an orphaned
+    // site's credentials would otherwise become permanently unreachable.
+    let live = crate::vault::count_live_credentials_for_site(conn, site_id)?;
+    if live > 0 {
+        return Err(crate::error::invalid_input_error(
+            "This site still has credentials. Delete them first, then delete the site.",
+        ));
+    }
+    Ok(crate::vault::soft_delete_site(conn, site_id)?)
+}
+
 pub fn do_add_credential(
     state: &AppState,
     site_id: i64,
     username: Option<&str>,
     secret: &str,
     remarks: Option<&str>,
+    custom_fields: &[crate::vault::CustomField],
+    reprompt: bool,
 ) -> Result<i64, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
-    Ok(crate::vault::add_credential(conn, key, site_id, username, secret, remarks)?)
+    Ok(crate::vault::add_credential(conn, key, site_id, username, secret, remarks, custom_fields, reprompt)?)
 }
 
 pub fn do_update_credential(
@@ -124,18 +295,57 @@ pub fn do_update_credential(
     username: Option<&str>,
     secret: &str,
     remarks: Option<&str>,
+    custom_fields: &[crate::vault::CustomField],
+    reprompt: bool,
 ) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
-    Ok(crate::vault::update_credential(conn, key, credential_id, username, secret, remarks)?)
+    Ok(crate::vault::update_credential(conn, key, credential_id, username, secret, remarks, custom_fields, reprompt)?)
 }
 
 pub fn do_soft_delete_credential(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     Ok(crate::vault::soft_delete_credential(conn, credential_id)?)
+}
+
+pub fn do_set_totp_secret(state: &AppState, credential_id: i64, secret: &str) -> Result<(), CommandError> {
+    // Fail fast on a bad secret before persisting it - generate_code's own base32 decode is the
+    // validation; the timestamp passed here is irrelevant to whether decoding succeeds.
+    crate::totp::generate_code(secret, 0)?;
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::set_totp_secret(conn, key, credential_id, secret)?)
+}
+
+pub fn do_clear_totp_secret(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::clear_totp_secret(conn, credential_id)?)
+}
+
+pub fn do_totp_code(state: &AppState, credential_id: i64) -> Result<Option<TotpCodeDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let secret = crate::vault::get_totp_secret(conn, key, credential_id)?;
+    drop(session);
+    match secret {
+        None => Ok(None),
+        Some(s) => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let code = crate::totp::generate_code(&s, now)?;
+            Ok(Some(TotpCodeDto { code, seconds_remaining: crate::totp::seconds_remaining(now) }))
+        }
+    }
 }
 
 pub fn do_list_trash(state: &AppState) -> Result<Vec<TrashedCredentialDto>, CommandError> {
@@ -237,6 +447,55 @@ pub fn do_update_hibp_opt_in(state: &AppState, paths: &AppPaths, enabled: bool) 
     updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
     *config = updated;
     Ok(())
+}
+
+pub fn do_update_biometric_enabled(state: &AppState, paths: &AppPaths, enabled: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.biometric_enabled = enabled;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_ssh_agent_enabled(state: &AppState, paths: &AppPaths, enabled: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.ssh_agent_enabled = enabled;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_add_ssh_key(state: &AppState, label: &str, private_key_openssh: &str) -> Result<i64, CommandError> {
+    // Fail fast on an unparsable/encrypted key before ever persisting it.
+    crate::ssh_agent::public_key_line(private_key_openssh)?;
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::ssh_keys::add_ssh_key(conn, key, label, private_key_openssh)?)
+}
+
+pub fn do_list_ssh_keys(state: &AppState) -> Result<Vec<crate::dto::SshKeyDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let entries = crate::ssh_keys::list_ssh_keys(conn, key)?;
+    entries
+        .into_iter()
+        .map(|e| {
+            let public_key = crate::ssh_agent::public_key_line(&e.private_key_openssh)?;
+            Ok(crate::dto::SshKeyDto { id: e.id, label: e.label, public_key })
+        })
+        .collect()
+}
+
+pub fn do_delete_ssh_key(state: &AppState, id: i64) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::ssh_keys::delete_ssh_key(conn, id)?)
 }
 
 pub fn do_update_nav_collapsed(state: &AppState, paths: &AppPaths, collapsed: bool) -> Result<(), CommandError> {
@@ -478,6 +737,7 @@ pub fn do_import_csv_preview(
     let records = match format {
         ImportFormat::Chromium => crate::portio::parse_chromium_csv(&text)?,
         ImportFormat::Firefox => crate::portio::parse_firefox_csv(&text)?,
+        ImportFormat::LastPass => crate::portio::parse_lastpass_csv(&text)?,
         ImportFormat::Generic { mapping } => crate::portio::parse_generic_csv(&text, mapping)?,
     };
     Ok(records.into_iter().map(ImportRecordDto::from).collect())
@@ -504,6 +764,7 @@ struct HealthRow {
     credential_id: i64,
     site_id: i64,
     site_name: String,
+    site_url: Option<String>,
     username: Option<String>,
     secret: String,
 }
@@ -520,6 +781,7 @@ fn build_health_rows(
                 credential_id: c.id,
                 site_id: site.id,
                 site_name: site.name.clone(),
+                site_url: site.url.clone(),
                 username: c.username,
                 secret: c.secret,
             });
@@ -581,7 +843,18 @@ pub fn do_health_report(state: &AppState) -> Result<HealthReportDto, CommandErro
         })
         .collect();
 
-    Ok(HealthReportDto { weak, reused, old })
+    let unsecured: Vec<HealthEntryDto> = rows
+        .iter()
+        .filter(|r| r.site_url.as_deref().is_some_and(crate::health::is_unsecured_url))
+        .map(|r| HealthEntryDto {
+            credential_id: r.credential_id,
+            site_id: r.site_id,
+            site_name: r.site_name.clone(),
+            username: r.username.clone(),
+        })
+        .collect();
+
+    Ok(HealthReportDto { weak, reused, old, unsecured })
 }
 
 pub fn do_check_breach(state: &AppState, hibp_base_url: &str) -> Result<BreachReportDto, CommandError> {
@@ -741,7 +1014,7 @@ mod tests {
             let session = state.session.lock().unwrap();
             let key = session.key().unwrap();
             let site_id = crate::vault::add_site(conn, "example.com", None, None).unwrap();
-            crate::vault::add_credential(conn, key, site_id, Some("alice"), "s3cret", None).unwrap();
+            crate::vault::add_credential(conn, key, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
             site_id
         };
         let sites = do_list_sites(&state).unwrap();
@@ -770,7 +1043,7 @@ mod tests {
             let session = state.session.lock().unwrap();
             let key = session.key().unwrap();
             let site_id = crate::vault::add_site(conn, "example.com", None, None).unwrap();
-            crate::vault::add_credential(conn, key, site_id, Some("alice"), "secret", None).unwrap();
+            crate::vault::add_credential(conn, key, site_id, Some("alice"), "secret", None, &[], false).unwrap();
         }
         let results = do_search(&state, "example").unwrap();
         assert_eq!(results.len(), 1);
@@ -903,13 +1176,51 @@ mod tests {
     }
 
     #[test]
+    fn update_site_then_list_sites_reflects_the_update() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+
+        do_update_site(&state, site_id, "new-name.com", Some("https://new-name.com"), None).unwrap();
+        let sites = do_list_sites(&state).unwrap();
+
+        assert_eq!(sites[0].name, "new-name.com");
+    }
+
+    #[test]
+    fn soft_delete_site_refuses_when_site_still_has_a_live_credential() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        do_add_credential(&state, site_id, Some("bob"), "s3cret", None, &[], false).unwrap();
+
+        let err = do_soft_delete_site(&state, site_id).unwrap_err();
+
+        assert_eq!(err.code(), "invalid_input");
+        assert_eq!(do_list_sites(&state).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn soft_delete_site_succeeds_once_its_credential_is_gone() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None, &[], false).unwrap();
+        do_soft_delete_credential(&state, cred_id).unwrap();
+
+        do_soft_delete_site(&state, site_id).unwrap();
+
+        assert!(do_list_sites(&state).unwrap().is_empty());
+    }
+
+    #[test]
     fn add_credential_update_then_list_reflects_the_update() {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
 
-        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None).unwrap();
-        do_update_credential(&state, cred_id, Some("bob2"), "new-secret", Some("updated")).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None, &[], false).unwrap();
+        do_update_credential(&state, cred_id, Some("bob2"), "new-secret", Some("updated"), &[], false).unwrap();
         let creds = do_list_credentials_for_site(&state, site_id).unwrap();
 
         assert_eq!(creds.len(), 1);
@@ -922,7 +1233,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "GitHub", None, None).unwrap();
-        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
 
         assert_eq!(do_search(&state, "github").unwrap().len(), 1);
 
@@ -936,7 +1247,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("bob"), "s3cret", None, &[], false).unwrap();
 
         do_soft_delete_credential(&state, cred_id).unwrap();
         let trash = do_list_trash(&state).unwrap();
@@ -1097,6 +1408,15 @@ mod tests {
         assert_eq!(do_get_config(&state).hibp_opt_in, true);
         let reloaded = Config::load(&paths.config_path()).unwrap();
         assert_eq!(reloaded.hibp_opt_in, true);
+    }
+
+    #[test]
+    fn update_biometric_enabled_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        assert_eq!(do_get_config(&state).biometric_enabled, true);
+        let reloaded = Config::load(&paths.config_path()).unwrap();
+        assert_eq!(reloaded.biometric_enabled, true);
     }
 
     #[test]
@@ -1285,7 +1605,7 @@ mod tests {
         let (state, paths, dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("alice"), "s3cret!", None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "s3cret!", None, &[], false).unwrap();
         (state, paths, dir)
     }
 
@@ -1432,6 +1752,23 @@ mod tests {
     }
 
     #[test]
+    fn import_csv_preview_parses_a_lastpass_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lastpass.csv");
+        std::fs::write(
+            &path,
+            "url,username,password,totp,extra,name,grouping,fav\nhttps://example.com,alice,s3cret,,,My Login,,0\n",
+        )
+        .unwrap();
+
+        let records = do_import_csv_preview(path.to_str().unwrap(), &ImportFormat::LastPass).unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].site_name, "My Login");
+        assert_eq!(&*records[0].secret, "s3cret");
+    }
+
+    #[test]
     fn import_csv_preview_surfaces_a_header_mismatch_as_invalid_input() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("bad.csv");
@@ -1494,7 +1831,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("alice"), "password", None).unwrap(); // weak
+        do_add_credential(&state, site_id, Some("alice"), "password", None, &[], false).unwrap(); // weak
 
         let report = do_health_report(&state).unwrap();
 
@@ -1507,7 +1844,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
 
         assert!(do_health_report(&state).unwrap().weak.is_empty());
     }
@@ -1517,8 +1854,8 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
-        do_add_credential(&state, site_id, Some("bob"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
+        do_add_credential(&state, site_id, Some("bob"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
 
         let report = do_health_report(&state).unwrap();
 
@@ -1527,11 +1864,26 @@ mod tests {
     }
 
     #[test]
+    fn health_report_flags_an_unsecured_http_site() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let http_site = do_add_site(&state, "insecure.example", Some("http://insecure.example"), None).unwrap();
+        let https_site = do_add_site(&state, "secure.example", Some("https://secure.example"), None).unwrap();
+        do_add_credential(&state, http_site, Some("alice"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
+        do_add_credential(&state, https_site, Some("alice"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
+
+        let report = do_health_report(&state).unwrap();
+
+        assert_eq!(report.unsecured.len(), 1);
+        assert_eq!(report.unsecured[0].site_name, "insecure.example");
+    }
+
+    #[test]
     fn health_report_flags_an_old_password() {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        let cred_id = do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "7#kLp!qZ2r@Vx9W", None, &[], false).unwrap();
         {
             let vault_guard = state.vault.lock().unwrap();
             let (conn, _) = vault_guard.as_ref().unwrap();
@@ -1551,6 +1903,221 @@ mod tests {
     fn health_report_when_locked_returns_locked_error() {
         let (state, _paths, _dir) = test_state_and_paths();
         assert_eq!(do_health_report(&state).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn totp_code_is_none_when_no_secret_is_configured() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+
+        assert_eq!(do_totp_code(&state, cred_id).unwrap(), None);
+    }
+
+    #[test]
+    fn set_totp_secret_then_totp_code_returns_a_six_digit_code() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+
+        do_set_totp_secret(&state, cred_id, "JBSWY3DPEHPK3PXP").unwrap();
+        let totp = do_totp_code(&state, cred_id).unwrap().unwrap();
+
+        assert_eq!(totp.code.len(), 6);
+        assert!(totp.code.chars().all(|c| c.is_ascii_digit()));
+        assert!(totp.seconds_remaining >= 1 && totp.seconds_remaining <= 30);
+    }
+
+    #[test]
+    fn set_totp_secret_rejects_an_invalid_base32_secret() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+
+        let result = do_set_totp_secret(&state, cred_id, "not valid base32 !!!");
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn clear_totp_secret_makes_totp_code_none_again() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+        do_set_totp_secret(&state, cred_id, "JBSWY3DPEHPK3PXP").unwrap();
+
+        do_clear_totp_secret(&state, cred_id).unwrap();
+
+        assert_eq!(do_totp_code(&state, cred_id).unwrap(), None);
+    }
+
+    #[test]
+    fn totp_commands_require_an_unlocked_session() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_set_totp_secret(&state, 1, "JBSWY3DPEHPK3PXP").unwrap_err().code(), "locked");
+        assert_eq!(do_totp_code(&state, 1).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn has_pin_is_false_then_true_after_set_pin() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        assert_eq!(do_has_pin(&state, "alice").unwrap(), false);
+
+        do_set_pin(&state, "1234").unwrap();
+
+        assert_eq!(do_has_pin(&state, "alice").unwrap(), true);
+    }
+
+    #[test]
+    fn unlock_with_pin_logs_in_without_the_master_password() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_set_pin(&state, "1234").unwrap();
+        do_lock(&state);
+
+        let result = do_unlock_with_pin(&state, &paths, "alice", "1234");
+
+        assert!(result.is_ok());
+        assert!(do_unlock_status(&state));
+    }
+
+    #[test]
+    fn unlock_with_pin_rejects_a_wrong_pin_and_leaves_session_locked() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_set_pin(&state, "1234").unwrap();
+        do_lock(&state);
+
+        let result = do_unlock_with_pin(&state, &paths, "alice", "0000");
+
+        assert_eq!(result.unwrap_err().code(), "invalid_credentials");
+        assert!(state.session.lock().unwrap().is_locked());
+    }
+
+    #[test]
+    fn clear_pin_then_unlock_with_pin_fails() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_set_pin(&state, "1234").unwrap();
+        do_clear_pin(&state).unwrap();
+        do_lock(&state);
+
+        let result = do_unlock_with_pin(&state, &paths, "alice", "1234");
+
+        assert_eq!(result.unwrap_err().code(), "invalid_credentials");
+    }
+
+    #[test]
+    fn set_pin_and_clear_pin_require_an_unlocked_session() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_set_pin(&state, "1234").unwrap_err().code(), "locked");
+        assert_eq!(do_clear_pin(&state).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn has_biometric_is_false_when_the_feature_is_disabled_even_if_a_record_exists() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        let provider = FakeProvider::new(true, true);
+        do_set_biometric(&state, &provider).unwrap();
+
+        do_update_biometric_enabled(&state, &paths, false).unwrap();
+
+        assert_eq!(do_has_biometric(&state, "alice", &provider), false);
+    }
+
+    #[test]
+    fn set_biometric_requires_the_feature_enabled_and_a_successful_verify() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        // Feature not yet enabled in Settings.
+        let provider = FakeProvider::new(true, true);
+        assert_eq!(do_set_biometric(&state, &provider).unwrap_err().code(), "invalid_input");
+
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+
+        // User cancels/fails the OS prompt.
+        let cancelling_provider = FakeProvider::new(true, false);
+        assert_eq!(
+            do_set_biometric(&state, &cancelling_provider).unwrap_err().code(),
+            "invalid_credentials"
+        );
+
+        do_set_biometric(&state, &provider).unwrap();
+        assert!(do_has_biometric(&state, "alice", &provider));
+    }
+
+    #[test]
+    fn unlock_with_biometric_recovers_the_session_without_the_master_password() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        let provider = FakeProvider::new(true, true);
+        do_set_biometric(&state, &provider).unwrap();
+        do_lock(&state);
+
+        let result = do_unlock_with_biometric(&state, &paths, "alice", &provider);
+
+        assert!(result.is_ok());
+        assert!(do_unlock_status(&state));
+    }
+
+    #[test]
+    fn unlock_with_biometric_fails_when_verification_is_cancelled() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        let setup_provider = FakeProvider::new(true, true);
+        do_set_biometric(&state, &setup_provider).unwrap();
+        do_lock(&state);
+
+        let cancelling_provider = FakeProvider::new(true, false);
+        let result = do_unlock_with_biometric(&state, &paths, "alice", &cancelling_provider);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_credentials");
+        assert!(state.session.lock().unwrap().is_locked());
+    }
+
+    #[test]
+    fn unlock_with_biometric_rejects_when_no_record_is_configured() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        do_lock(&state);
+
+        let provider = FakeProvider::new(true, true);
+        let result = do_unlock_with_biometric(&state, &paths, "alice", &provider);
+
+        assert_eq!(result.unwrap_err().code(), "invalid_credentials");
+    }
+
+    #[test]
+    fn clear_biometric_then_unlock_with_biometric_fails() {
+        use crate::biometric::fake::FakeProvider;
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        do_update_biometric_enabled(&state, &paths, true).unwrap();
+        let provider = FakeProvider::new(true, true);
+        do_set_biometric(&state, &provider).unwrap();
+
+        do_clear_biometric(&state).unwrap();
+        do_lock(&state);
+
+        let result = do_unlock_with_biometric(&state, &paths, "alice", &provider);
+        assert_eq!(result.unwrap_err().code(), "invalid_credentials");
     }
 
     #[test]
@@ -1579,7 +2146,7 @@ mod tests {
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         do_update_hibp_opt_in(&state, &paths, true).unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
-        do_add_credential(&state, site_id, Some("alice"), "password", None).unwrap();
+        do_add_credential(&state, site_id, Some("alice"), "password", None, &[], false).unwrap();
 
         let full_hash = crate::hibp::sha1_hex_upper("password");
         let suffix = &full_hash[5..];
@@ -1589,5 +2156,62 @@ mod tests {
         let report = do_check_breach(&state, &base_url).unwrap();
 
         assert_eq!(report.breached.len(), 1);
+    }
+
+    fn sample_ed25519_openssh_key() -> String {
+        use ssh_key::{Algorithm, PrivateKey};
+        let key = PrivateKey::random(&mut rand::rngs::OsRng, Algorithm::Ed25519).unwrap();
+        key.to_openssh(ssh_key::LineEnding::LF).unwrap().to_string()
+    }
+
+    #[test]
+    fn add_ssh_key_then_list_ssh_keys_exposes_label_and_public_key_but_never_the_private_key() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let openssh = sample_ed25519_openssh_key();
+
+        do_add_ssh_key(&state, "laptop key", &openssh).unwrap();
+
+        let keys = do_list_ssh_keys(&state).unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].label, "laptop key");
+        assert!(keys[0].public_key.starts_with("ssh-ed25519 "));
+    }
+
+    #[test]
+    fn add_ssh_key_rejects_a_key_that_does_not_parse() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let result = do_add_ssh_key(&state, "bad", "not an ssh key");
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn delete_ssh_key_removes_it_from_the_list() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let id = do_add_ssh_key(&state, "temp", &sample_ed25519_openssh_key()).unwrap();
+
+        do_delete_ssh_key(&state, id).unwrap();
+
+        assert!(do_list_ssh_keys(&state).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ssh_key_commands_require_an_unlocked_session() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_add_ssh_key(&state, "x", &sample_ed25519_openssh_key()).unwrap_err().code(), "locked");
+        assert_eq!(do_list_ssh_keys(&state).unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn update_ssh_agent_enabled_persists() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_ssh_agent_enabled(&state, &paths, true).unwrap();
+        assert_eq!(do_get_config(&state).ssh_agent_enabled, true);
+        let reloaded = Config::load(&paths.config_path()).unwrap();
+        assert_eq!(reloaded.ssh_agent_enabled, true);
     }
 }

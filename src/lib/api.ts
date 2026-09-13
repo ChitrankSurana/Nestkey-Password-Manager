@@ -21,12 +21,28 @@ export interface SiteDto {
   notes: string | null;
 }
 
+export type CustomFieldType = "text" | "hidden" | "boolean";
+
+export interface CustomField {
+  label: string;
+  value: string;
+  fieldType: CustomFieldType;
+}
+
 export interface CredentialDto {
   id: number;
   siteId: number;
   username: string | null;
   secret: string;
   remarks: string | null;
+  customFields: CustomField[];
+  reprompt: boolean;
+  hasTotp: boolean;
+}
+
+export interface TotpCodeDto {
+  code: string;
+  secondsRemaining: number;
 }
 
 export interface SearchResultDto {
@@ -53,6 +69,14 @@ export interface ConfigDto {
   hibpOptIn: boolean;
   navCollapsed: boolean;
   mobileNavStyle: string;
+  biometricEnabled: boolean;
+  sshAgentEnabled: boolean;
+}
+
+export interface SshKeyDto {
+  id: number;
+  label: string;
+  publicKey: string;
 }
 
 export type GenerateRequest =
@@ -71,6 +95,7 @@ export type ExportMode =
 export type ImportFormat =
   | { format: "chromium" }
   | { format: "firefox" }
+  | { format: "lastPass" }
   | { format: "generic"; mapping: Record<string, string> };
 
 export interface ImportRecordDto {
@@ -97,14 +122,16 @@ export interface HealthReportDto {
   weak: HealthEntryDto[];
   reused: ReusedGroupDto[];
   old: HealthEntryDto[];
+  unsecured: HealthEntryDto[];
 }
 
 export interface BreachReportDto { breached: HealthEntryDto[]; }
 
 // Tauri v2 always injects window.__TAURI_INTERNALS__ (that is how `invoke` reaches the backend);
 // withGlobalTauri is off in this app, so window.__TAURI__ is NOT present - detect via the internals
-// marker (see the plan's Finding 2).
-const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+// marker (see the plan's Finding 2). Exported so screens can gate desktop-only features (e.g.
+// biometric unlock, which has no web-mode route - Windows Hello can't run server-side).
+export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 async function httpPost<T>(command: string, args: Record<string, unknown>): Promise<T> {
   const res = await fetch(`/api/${command}`, {
@@ -137,21 +164,56 @@ export const api = {
     call<AuthSuccess>("register_user", { username, masterPassword }),
   login: (username: string, masterPassword: string) =>
     call<AuthSuccess>("login", { username, masterPassword }),
+  hasPin: (username: string) => call<boolean>("has_pin", { username }),
+  unlockWithPin: (username: string, pin: string) =>
+    call<AuthSuccess>("unlock_with_pin", { username, pin }),
+  setPin: (pin: string) => call<void>("set_pin", { pin }),
+  clearPin: () => call<void>("clear_pin"),
+  hasBiometric: (username: string) => call<boolean>("has_biometric", { username }),
+  unlockWithBiometric: (username: string) =>
+    call<AuthSuccess>("unlock_with_biometric", { username }),
+  setBiometric: () => call<void>("set_biometric"),
+  clearBiometric: () => call<void>("clear_biometric"),
+  addSshKey: (label: string, privateKey: string) =>
+    call<number>("add_ssh_key", { label, privateKey }),
+  listSshKeys: () => call<SshKeyDto[]>("list_ssh_keys"),
+  deleteSshKey: (id: number) => call<void>("delete_ssh_key", { id }),
   lock: () => call<void>("lock"),
   touch: () => call<void>("touch"),
+  verifyMasterPassword: (masterPassword: string) =>
+    call<boolean>("verify_master_password", { masterPassword }),
   unlockStatus: () => call<boolean>("unlock_status"),
   listSites: () => call<SiteDto[]>("list_sites"),
   addSite: (name: string, url: string | null, notes: string | null) =>
     call<number>("add_site", { name, url, notes }),
-  addCredential: (siteId: number, username: string | null, secret: string, remarks: string | null) =>
-    call<number>("add_credential", { siteId, username, secret, remarks }),
-  updateCredential: (credentialId: number, username: string | null, secret: string, remarks: string | null) =>
-    call<void>("update_credential", { credentialId, username, secret, remarks }),
+  updateSite: (siteId: number, name: string, url: string | null, notes: string | null) =>
+    call<void>("update_site", { siteId, name, url, notes }),
+  softDeleteSite: (siteId: number) => call<void>("soft_delete_site", { siteId }),
+  addCredential: (
+    siteId: number,
+    username: string | null,
+    secret: string,
+    remarks: string | null,
+    customFields: CustomField[] = [],
+    reprompt: boolean = false,
+  ) => call<number>("add_credential", { siteId, username, secret, remarks, customFields, reprompt }),
+  updateCredential: (
+    credentialId: number,
+    username: string | null,
+    secret: string,
+    remarks: string | null,
+    customFields: CustomField[] = [],
+    reprompt: boolean = false,
+  ) => call<void>("update_credential", { credentialId, username, secret, remarks, customFields, reprompt }),
   listCredentialsForSite: (siteId: number) =>
     call<CredentialDto[]>("list_credentials_for_site", { siteId }),
   search: (query: string) => call<SearchResultDto[]>("search", { query }),
   softDeleteCredential: (credentialId: number) =>
     call<void>("soft_delete_credential", { credentialId }),
+  setTotpSecret: (credentialId: number, secret: string) =>
+    call<void>("set_totp_secret", { credentialId, secret }),
+  clearTotpSecret: (credentialId: number) => call<void>("clear_totp_secret", { credentialId }),
+  totpCode: (credentialId: number) => call<TotpCodeDto | null>("totp_code", { credentialId }),
   listTrash: () => call<TrashedCredentialDto[]>("list_trash"),
   restoreCredential: (credentialId: number) => call<void>("restore_credential", { credentialId }),
   purgeTrash: () => call<number>("purge_trash"),
@@ -181,5 +243,7 @@ export const api = {
   healthReport: () => call<HealthReportDto>("health_report"),
   checkBreach: () => call<BreachReportDto>("check_breach"),
   updateHibpOptIn: (enabled: boolean) => call<void>("update_hibp_opt_in", { enabled }),
+  updateBiometricEnabled: (enabled: boolean) => call<void>("update_biometric_enabled", { enabled }),
+  updateSshAgentEnabled: (enabled: boolean) => call<void>("update_ssh_agent_enabled", { enabled }),
   updateOldPasswordDays: (days: number) => call<void>("update_old_password_days", { days }),
 };

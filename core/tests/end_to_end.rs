@@ -19,7 +19,7 @@ fn full_lifecycle_register_use_lock_reopen() {
 
     // Add.
     let site_id = vault::add_site(&vault_conn, "github.com", Some("https://github.com"), None).unwrap();
-    let cred_id = vault::add_credential(&vault_conn, &key, site_id, Some("alice"), "s3cret!", Some("work")).unwrap();
+    let cred_id = vault::add_credential(&vault_conn, &key, site_id, Some("alice"), "s3cret!", Some("work"), &[], false).unwrap();
 
     // Search finds it.
     let results = vault::search(&vault_conn, "github").unwrap();
@@ -33,7 +33,7 @@ fn full_lifecycle_register_use_lock_reopen() {
 
     // Lock (simulated via Session, not just dropping the connection).
     let mut sess = session::Session::new(Duration::from_secs(300));
-    sess.unlock(key, &session::SystemClock);
+    sess.unlock(key, "alice", &session::SystemClock);
     drop(vault_conn);
     sess.lock();
     assert!(sess.is_locked());
@@ -63,7 +63,7 @@ fn vault_file_on_disk_contains_no_plaintext_secrets() {
     let key = auth::register_user(&registry_conn, &vault_path, "bob", "another master password").unwrap();
     let vault_conn = vault::open_vault(&vault_path, &key).unwrap();
     let site_id = vault::add_site(&vault_conn, "very-unique-site-name.example", None, None).unwrap();
-    vault::add_credential(&vault_conn, &key, site_id, Some("bob"), "extremely-unique-secret-xyz", None).unwrap();
+    vault::add_credential(&vault_conn, &key, site_id, Some("bob"), "extremely-unique-secret-xyz", None, &[], false).unwrap();
 
     // Positive control: confirm the write actually round-trips BEFORE trusting the absence check
     // below. Without this, a silently-failed or wrong-table write would still correctly show no
