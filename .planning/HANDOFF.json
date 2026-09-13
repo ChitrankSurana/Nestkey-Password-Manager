@@ -1,58 +1,49 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-13T12:15:52Z",
-  "phase": null,
-  "phase_name": null,
-  "phase_dir": null,
-  "plan": null,
-  "task": null,
-  "total_tasks": null,
+  "timestamp": "2026-09-13T18:35:19.481Z",
+  "phase": "08",
+  "phase_name": "New Vault UI (Figma Port)",
+  "phase_dir": ".planning/phases/08-new-vault-ui-figma-port",
+  "plan": 1,
+  "task": 1,
+  "total_tasks": 3,
   "status": "paused",
-  "context": "research",
-  "workflow": "/gsd-onboard -> /gsd-ingest-docs (mode=new)",
   "completed_tasks": [
-    {"id": 1, "name": "gsd-map-codebase (complete map, 7 files)", "status": "done"},
-    {"id": 2, "name": "gsd-onboard: routed to ingest-docs (14+ doc candidates detected)", "status": "done"},
-    {"id": 3, "name": "gsd-ingest-docs: discovery (39 docs found under docs/, .worktrees/ excluded)", "status": "done"},
-    {"id": 4, "name": "gsd-ingest-docs: classify_parallel (all 39 docs classified -> .planning/intel/classifications/*.json)", "status": "done"},
-    {"id": 5, "name": "gsd-ingest-docs: synthesize (attempt 1) -> found 2 BLOCKERS (cross-ref cycles) + 1 WARNING + 5 INFO", "status": "done"},
-    {"id": 6, "name": "Manually cleared cyclic cross_refs in 7 classification JSONs (equivalent to --manifest override)", "status": "done"},
-    {"id": 7, "name": "gsd-ingest-docs: synthesize (attempt 2, retry after rate-limit failure on attempt 2a) - IN PROGRESS", "status": "in_progress", "progress": "background subagent a95bfa9d425a49ccf running ~10min as of pause"}
+    {"id": 1, "name": "Stand up newui.html + src/newui-main.tsx entry point", "status": "in_progress", "progress": "newui.html and src/newui-main.tsx written and uncommitted; src/newui/NewApp.tsx not yet created; vite.config.ts, core/src/config.rs, core/src/dto.rs, core/src/commands.rs, src-tauri/src/lib.rs, src-tauri/tauri.conf.json not yet wired"}
   ],
   "remaining_tasks": [
-    {"id": 8, "name": "Wait for re-synthesis subagent to complete, verify 0 blockers in fresh INGEST-CONFLICTS.md", "status": "not_started"},
-    {"id": 9, "name": "Resolve WARNING: item-type expansion scope (FIGMA doc says 'Closing/scheduled', bitwarden-compare docs say 'skip') via approve-revise-abort gate with user", "status": "not_started"},
-    {"id": 10, "name": "route_new_mode: gather PROJECT.md fields not derivable from intel (project name, success metric, target runtime) via AskUserQuestion", "status": "not_started"},
-    {"id": 11, "name": "Routing gate: 'create planning setup now?' approve-revise-abort", "status": "not_started"},
-    {"id": 12, "name": "Delegate to gsd-roadmapper -> produce PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md", "status": "not_started"},
-    {"id": 13, "name": "finalize: commit ingest results, display completion banner", "status": "not_started"},
-    {"id": 14, "name": "Return to /gsd-onboard: rerun to write .planning/onboarding/SUMMARY.md and final status", "status": "not_started"}
+    {"id": 1, "name": "Finish Task 1: create src/newui/NewApp.tsx, wire vite/core/tauri files", "status": "in_progress"},
+    {"id": 2, "name": "08-01 Task 2 (see 08-01-PLAN.md)", "status": "not_started"},
+    {"id": 3, "name": "08-01 Task 3 (see 08-01-PLAN.md)", "status": "not_started"},
+    {"id": 4, "name": "Wave 2: plan 08-02 (frontend selector toggle)", "status": "not_started"},
+    {"id": 5, "name": "Wave 2: plan 08-03 (three-pane vault shell)", "status": "not_started"},
+    {"id": 6, "name": "Wave 3: plan 08-04 (detail column)", "status": "not_started"},
+    {"id": 7, "name": "Wave 4: plan 08-05 (full CRUD wiring)", "status": "not_started"},
+    {"id": 8, "name": "Wave 5: plan 08-06 (responsive tiers + parity tests)", "status": "not_started"},
+    {"id": 9, "name": "Phase 8 verify_phase_goal + update_roadmap", "status": "not_started"}
   ],
-  "blockers": [],
+  "blockers": [
+    {"description": "Worktree parallel execution auto-degraded to sequential because local HEAD (da30acc2) diverged from origin/HEAD (6ecbda6a) on feature/bitwarden-port-phase1 (#48/#3659)", "type": "technical", "workaround": "Continue sequentially (no correctness impact, just slower for multi-plan waves); parallel returns once branch is merged/pushed to match origin/HEAD"}
+  ],
   "async_jobs": [],
-  "background_processes": [
-    {
-      "type": "in-process subagent (not a tracked async job)",
-      "agent_id": "a95bfa9d425a49ccf",
-      "subagent_type": "gsd-doc-synthesizer",
-      "started": "~2026-09-13T12:05Z (approx, ~10min before pause)",
-      "purpose": "Re-synthesize all 39 classifications into .planning/intel/{decisions,requirements,constraints,context}.md, SYNTHESIS.md, and .planning/INGEST-CONFLICTS.md, now that the 2 cross-ref-cycle blockers have been fixed",
-      "note": "This subagent belongs to the session that paused. A fresh session CANNOT resume/attach to it. On resume, check .planning/INGEST-CONFLICTS.md mtime -- if still old (pre-pause), the retry did not survive and synthesis must be re-launched from scratch.",
-      "prior_failed_attempt": "agentId aafa50d8d764c4b30 failed with HTTP 429 rate_limit mid-run (no output written) before this retry was launched"
-    }
-  ],
-  "human_actions_pending": [
-    {"action": "Decide item-type expansion scope (Card/Secure Note/Identity vault item types)", "context": "FIGMA_UI_VS_CURRENT_FEATURES.md marks it 'Closing -- scheduled'; docs/bitwarden_compare_ideas/00-summary.md and 02-vault-and-cli.md recommend skipping it (autofill-only rationale, PRD non-goal). PRD.md itself is silent. Needs a decision before roadmapping.", "blocking": false}
-  ],
+  "human_actions_pending": [],
   "decisions": [
-    {"decision": "Treated MODE as 'new' for /gsd-ingest-docs despite init's planning_exists=true", "rationale": "planning_exists only reflects that .planning/codebase/ exists (from prior gsd-map-codebase run); project_exists/requirements_exists/roadmap_exists/state_exists are all false. The literal spec rule (planning_exists:true -> MODE=merge) would misroute into route_merge_mode, which expects an existing ROADMAP.md/PROJECT.md/REQUIREMENTS.md to load -- none exist. Used project_exists as the real signal instead.", "phase": null},
-    {"decision": "Fixed the 2 cross-ref-cycle BLOCKERS by directly editing cross_refs in the 7 affected classification JSON files (cleared cyclic entries: HOW_TO_USE_MAIN_APP.md, HOW_TO_USE_VIEWER_APP.md, HOW_TO_USE_WEB_PORTAL.md, HOW_TO_TEST_MAIN_APP.md, HOW_TO_TEST_VIEWER_APP.md, HOW_TO_TEST_WEB_PORTAL.md, KNOWN_LIMITATIONS.md) rather than re-running full discovery+classification via --manifest", "rationale": "User chose 'Re-run with --manifest' when asked how to handle the blockers. A true --manifest re-run would re-classify all 39 docs from scratch (expensive, ~15-20min). Since the cross_refs are confirmed navigational 'See also' links between parallel user guides (verified by reading all 7 JSONs), directly clearing the cyclic cross_refs entries achieves the same intent (breaking the cycle) without redoing classification.", "phase": null}
+    {"decision": "Stashed pre-existing uncommitted core/src/config.rs scaffolding (VALID_UI_VARIANTS, default_ui_variant()) as stash@{0} instead of discarding or committing it", "rationale": "It overlapped plan 08-02's declared files_modified; worktree-isolated execution checks out from committed HEAD, so leaving it in the working tree risked a merge conflict at wave-2 merge time", "phase": "08"},
+    {"decision": "Let ISOLATION auto-degrade to none/sequential rather than overriding it", "rationale": "Fail-safe design (#48/#3659) for a diverged HEAD; correctness unaffected, only speed", "phase": "08"}
   ],
   "uncommitted_files": [
-    "?? .planning/INGEST-CONFLICTS.md",
-    "?? .planning/intel/",
-    "?? docs/FIGMA_UI_VS_CURRENT_FEATURES.md (pre-existing untracked file, unrelated to this session's work -- was present at session start per original git status)"
+    " D .planning/.continue-here.md",
+    " D .planning/HANDOFF.json",
+    " M .planning/STATE.md",
+    "?? .gsd/",
+    "?? .planning/milestone.lock",
+    "?? .planning/state.json",
+    "?? 2026-09-13-174724-local-command-caveatcaveat-the-messages-below.txt",
+    "?? docs/FIGMA_UI_VS_CURRENT_FEATURES.md",
+    "?? docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md",
+    "?? newui.html",
+    "?? src/newui-main.tsx"
   ],
-  "next_action": "Check `ls -la .planning/intel/*.md .planning/INGEST-CONFLICTS.md` for fresh mtimes (after 2026-09-13T12:05Z). If fresh: read INGEST-CONFLICTS.md, run the conflict_gate step (count BLOCKERS/WARNINGS/INFO per gsd-core/references/doc-conflict-engine.md). If 0 blockers, render the report, then resolve the item-type-expansion WARNING with the user via approve-revise-abort before proceeding to route_new_mode. If INGEST-CONFLICTS.md is still stale (old content, 2 blockers), the background subagent did not survive the pause -- relaunch gsd-doc-synthesizer with the same prompt used before (CLASSIFICATIONS_DIR/INTEL_DIR/CONFLICTS_PATH/MODE=new/PRECEDENCE as in .planning/intel/classifications/, noting the 7 JSONs already have cross_refs cleared).",
-  "context_notes": "This is a brownfield onboarding session (/gsd-onboard -> /gsd-ingest-docs) for an existing password-manager repo. Codebase map was already complete before this session started. 39 docs (31 DOC, 7 SPEC, 1 PRD, 0 ADR) were discovered under docs/ and classified. First synthesis attempt correctly found 2 structural blockers (cross-ref cycles among parallel how-to-use/how-to-test guides) which were fixed by clearing the offending cross_refs fields directly. A re-synthesis was launched, failed once on a session rate limit (no partial writes), and was relaunched -- that relaunch was still running in the background when the user asked to pause. The synthesizer's own output files (intel/*.md, INGEST-CONFLICTS.md) are the single source of truth for what happened to that job -- check their mtimes/content on resume before assuming anything."
+  "next_action": "Run /gsd-execute-phase 8 again — it will find plan 08-01 incomplete (no commits, no SUMMARY.md) and re-dispatch it; the fresh executor should recognize newui.html/src/newui-main.tsx already exist and finish Task 1 by creating src/newui/NewApp.tsx and wiring the remaining files.",
+  "context_notes": "Mid-wave-1 of a 5-wave, 6-plan phase execution. Executor was stopped cleanly via TaskStop before any commit, so nothing is lost. git stash@{0} holds unrelated pre-existing config.rs WIP relevant to plan 08-02 — check it before that plan runs."
 }
