@@ -4,39 +4,11 @@ import { Login } from "../screens/Login";
 import { Register } from "../screens/Register";
 import { ToastHost } from "../components/ToastHost";
 import { useActivityWatcher } from "../hooks/useActivityWatcher";
-import { api, isCommandError, type SiteDto } from "../lib/api";
+import { api } from "../lib/api";
+import { NewShell } from "./NewShell";
 import "../App.css";
 
 type Screen = "login" | "register" | "vault";
-
-function VaultTracer({ username }: { username: string }) {
-  const [sites, setSites] = useState<SiteDto[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .listSites()
-      .then((s) => setSites(s))
-      .catch((err) => {
-        setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
-      });
-  }, []);
-
-  return (
-    <main className="bg-[var(--bg)] text-[var(--fg)] min-h-screen p-4">
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4">
-        <h1 className="text-xl font-semibold">Vault — {username}</h1>
-        {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
-        <p className="text-sm opacity-70">{sites.length} site{sites.length === 1 ? "" : "s"}</p>
-        <ul>
-          {sites.map((s) => (
-            <li key={s.id}>{s.name}</li>
-          ))}
-        </ul>
-      </div>
-    </main>
-  );
-}
 
 function NewApp() {
   const [screen, setScreen] = useState<Screen>("login");
@@ -91,9 +63,7 @@ function NewApp() {
       />
     );
   } else {
-    // Tracer proof that this root reaches the real backend through src/lib/api.ts.
-    // Plan 08-03 replaces this with <NewShell username={username!} />.
-    content = <VaultTracer username={username!} />;
+    content = <NewShell username={username!} />;
   }
 
   return (
