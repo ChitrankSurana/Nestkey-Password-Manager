@@ -19,6 +19,7 @@ export function DetailPanel({
   onAddCredential,
   onEditCredential,
   onCredentialDeleted,
+  onOpenHealth,
 }: {
   site: SiteDto | null;
   credentials: CredentialDto[] | null;
@@ -28,6 +29,7 @@ export function DetailPanel({
   onAddCredential: () => void;
   onEditCredential: (credential: CredentialDto) => void;
   onCredentialDeleted: () => void;
+  onOpenHealth: () => void;
 }) {
   const [othersOpen, setOthersOpen] = useState(false);
   const [expandedOthers, setExpandedOthers] = useState<Set<number>>(new Set());
@@ -83,6 +85,7 @@ export function DetailPanel({
           onToggle={() => {}}
           onEdit={() => onEditCredential(primary)}
           onDeleted={onCredentialDeleted}
+          onOpenHealth={onOpenHealth}
         />
         {others.length > 0 && (
           <>
@@ -104,6 +107,7 @@ export function DetailPanel({
                   onToggle={() => toggleOther(c.id)}
                   onEdit={() => onEditCredential(c)}
                   onDeleted={onCredentialDeleted}
+                  onOpenHealth={onOpenHealth}
                 />
               ))}
           </>

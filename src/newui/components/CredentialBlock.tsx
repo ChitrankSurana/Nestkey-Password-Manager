@@ -27,12 +27,14 @@ export function CredentialBlock({
   onToggle,
   onEdit,
   onDeleted,
+  onOpenHealth,
 }: {
   credential: CredentialDto;
   expanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onDeleted: () => void;
+  onOpenHealth: () => void;
 }) {
   const [strength, setStrength] = useState<StrengthDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -147,6 +149,15 @@ export function CredentialBlock({
                 })}
               </div>
               <span className="text-xs opacity-70">{strength.label}</span>
+              <Tooltip text="Open the full password health dashboard">
+                <button
+                  type="button"
+                  onClick={onOpenHealth}
+                  className="text-xs text-[var(--accent)] hover:underline"
+                >
+                  View full health
+                </button>
+              </Tooltip>
             </div>
           )}
         </div>

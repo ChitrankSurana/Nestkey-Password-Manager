@@ -6,6 +6,11 @@ import { ItemList } from "./components/ItemList";
 import { DetailPanel } from "./components/DetailPanel";
 import { SiteEditor } from "../screens/SiteEditor";
 import { CredentialEditor } from "../screens/CredentialEditor";
+import { GeneratorPane } from "./screens/GeneratorPane";
+import { HealthPane } from "./screens/HealthPane";
+import { DataPane } from "./screens/DataPane";
+import { TrashPane } from "./screens/TrashPane";
+import { SettingsPane } from "./screens/SettingsPane";
 import type { NavDestination } from "../screens/NavRail";
 
 type Screen = "vault" | "health" | "generator" | "trash" | "data" | "settings";
@@ -61,6 +66,10 @@ export function NewShell({ username }: { username: string }) {
     }
   }
 
+  function goVault() {
+    setScreen("vault");
+  }
+
   // Copied verbatim from AppShell.tsx's destinations array (D-10 - exactly these six keys,
   // never extended - no favourites/folders/item-type/sync/history entry, not even as a disabled
   // stub). Each destination now dispatches into the `screen` slice, matching AppShell.tsx's own
@@ -101,6 +110,7 @@ export function NewShell({ username }: { username: string }) {
               onAddCredential={() => setEditingCredential("new")}
               onEditCredential={(credential) => setEditingCredential(credential)}
               onCredentialDeleted={refreshAfterSave}
+              onOpenHealth={() => setScreen("health")}
             />
           ) : (
             <div className="flex flex-1 items-center justify-center bg-[var(--bg)] p-4 text-center">
@@ -110,6 +120,19 @@ export function NewShell({ username }: { username: string }) {
               </div>
             </div>
           ))}
+        {screen === "health" && (
+          <HealthPane
+            onBack={goVault}
+            onNavigateToSite={(siteId) => {
+              setScreen("vault");
+              vault.selectSite(siteId);
+            }}
+          />
+        )}
+        {screen === "generator" && <GeneratorPane onBack={goVault} />}
+        {screen === "trash" && <TrashPane onBack={goVault} />}
+        {screen === "data" && <DataPane onBack={goVault} />}
+        {screen === "settings" && <SettingsPane onBack={goVault} username={username} />}
       </div>
 
       {addingSite && (
