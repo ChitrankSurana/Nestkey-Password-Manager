@@ -71,6 +71,7 @@ export interface ConfigDto {
   mobileNavStyle: string;
   biometricEnabled: boolean;
   sshAgentEnabled: boolean;
+  uiVariant: string;
 }
 
 export interface SshKeyDto {
@@ -223,6 +224,7 @@ export const api = {
     call<void>("update_strength_algorithm", { algorithm }),
   updateNavCollapsed: (collapsed: boolean) => call<void>("update_nav_collapsed", { collapsed }),
   updateMobileNavStyle: (style: string) => call<void>("update_mobile_nav_style", { style }),
+  updateUiVariant: (variant: string) => call<void>("update_ui_variant", { variant }),
   updateTheme: (theme: string) => call<void>("update_theme", { theme }),
   updateAccentColor: (color: string) => call<void>("update_accent_color", { color }),
   generatePassword: (request: GenerateRequest) => call<string>("generate_password", { request }),

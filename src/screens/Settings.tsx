@@ -20,6 +20,10 @@ const MOBILE_NAV_STYLE_OPTIONS = [
   { value: "bottom-tabs", label: "Bottom tab bar" },
   { value: "drawer", label: "Hamburger menu" },
 ] as const;
+const UI_VARIANT_OPTIONS = [
+  { value: "classic", label: "Classic" },
+  { value: "new", label: "New" },
+] as const;
 const OLD_PASSWORD_DAYS_OPTIONS = [90, 180, 365] as const;
 
 export function Settings({ onBack, username }: { onBack: () => void; username: string }) {
@@ -30,6 +34,8 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   const [oldPasswordDays, setOldPasswordDays] = useState<number | null>(null);
   const [hibpOptIn, setHibpOptIn] = useState<boolean | null>(null);
   const [mobileNavStyle, setMobileNavStyle] = useState<string | null>(null);
+  const [uiVariant, setUiVariant] = useState<string | null>(null);
+  const bootUiVariantRef = useRef<string | null>(null);
   const [pinSet, setPinSet] = useState<boolean | null>(null);
   const [pinInput, setPinInput] = useState("");
   const [biometricEnabled, setBiometricEnabled] = useState<boolean | null>(null);
@@ -62,6 +68,10 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
           setMobileNavStyle(c.mobileNavStyle);
           setBiometricEnabled(c.biometricEnabled);
           setSshAgentEnabled(c.sshAgentEnabled);
+          setUiVariant(c.uiVariant);
+        }
+        if (bootUiVariantRef.current === null) {
+          bootUiVariantRef.current = c.uiVariant;
         }
       })
       .catch((err) => {
@@ -280,6 +290,20 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
       setError(null);
       await api.updateMobileNavStyle(value);
       setMobileNavStyle(value);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleUiVariantChange(value: string) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateUiVariant(value);
+      setUiVariant(value);
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -559,6 +583,41 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
               </select>
             </Tooltip>
           </label>
+        </div>
+      </details>
+
+      <details open className="max-w-xs mt-4">
+        <summary className="cursor-pointer font-medium mb-2">Interface</summary>
+        <div className="space-y-4 pl-1">
+          <label className="block">
+            <span className="text-sm">Interface</span>
+            <Tooltip
+              text="Which vault interface this app opens - takes effect on next launch"
+              className="w-full"
+            >
+              <select
+                className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)] disabled:opacity-50"
+                value={uiVariant ?? ""}
+                onChange={(e) => handleUiVariantChange(e.target.value)}
+                disabled={submitting}
+              >
+                {UI_VARIANT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </Tooltip>
+          </label>
+
+          {bootUiVariantRef.current !== null && bootUiVariantRef.current !== uiVariant && (
+            <p className="text-sm rounded border px-2 py-1 border-[var(--border)]">
+              Interface changed to {UI_VARIANT_OPTIONS.find((o) => o.value === uiVariant)?.label}.{" "}
+              {isTauri
+                ? "Restart the app to see it."
+                : "Open /newui.html in this browser to use it."}
+            </p>
+          )}
         </div>
       </details>
 
