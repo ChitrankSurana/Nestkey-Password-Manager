@@ -15,9 +15,12 @@ import type { NavDestination } from "../screens/NavRail";
 
 type Screen = "vault" | "health" | "generator" | "trash" | "data" | "settings";
 
-// Sole breakpoint owner (D-18). This task delivers the >=1024px tier: full Sidebar + 280px
-// ItemList + flex-1 detail column, now rendering DetailPanel for the current selection. Plan
-// 08-06 adds the two narrower responsive tiers.
+// Sole breakpoint owner (D-18). No other file under src/newui/ branches on viewport width -
+// every sm:/lg: prefix that controls layout lives here. >=1024px (lg:): full Sidebar, honouring
+// the saved navCollapsed preference. 640-1023px (sm: to lg:): the same Sidebar forced into its
+// icon-rail form (collapsed=true, showToggle=false) - a layout consequence of width, not a user
+// choice, so it never calls api.updateNavCollapsed and never overwrites what the user actually
+// chose. Below 640px the sidebar is replaced entirely (see the mobileNavStyle branch below).
 export function NewShell({ username }: { username: string }) {
   const [collapsed, setCollapsed] = useState(false);
   const [addingSite, setAddingSite] = useState(false);
@@ -86,14 +89,28 @@ export function NewShell({ username }: { username: string }) {
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] flex">
-      <Sidebar
-        destinations={destinations}
-        activeKey={screen}
-        collapsed={collapsed}
-        onToggleCollapsed={toggleCollapsed}
-        onLock={handleLock}
-        username={username}
-      />
+      <div className="hidden lg:flex">
+        <Sidebar
+          destinations={destinations}
+          activeKey={screen}
+          collapsed={collapsed}
+          onToggleCollapsed={toggleCollapsed}
+          onLock={handleLock}
+          username={username}
+        />
+      </div>
+
+      <div className="hidden sm:flex lg:hidden">
+        <Sidebar
+          destinations={destinations}
+          activeKey={screen}
+          collapsed={true}
+          onToggleCollapsed={() => {}}
+          onLock={handleLock}
+          username={username}
+          showToggle={false}
+        />
+      </div>
 
       <ItemList vault={vault} onAddSite={() => setAddingSite(true)} />
 
