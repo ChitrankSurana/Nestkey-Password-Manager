@@ -3,16 +3,23 @@ import { api, isCommandError } from "../lib/api";
 import { useVault } from "./hooks/useVault";
 import { Sidebar } from "./components/Sidebar";
 import { ItemList } from "./components/ItemList";
+import { DetailPanel } from "./components/DetailPanel";
 import { SiteEditor } from "../screens/SiteEditor";
 import type { NavDestination } from "../screens/NavRail";
 
+type Screen = "vault" | "health" | "generator" | "trash" | "data" | "settings";
+
 // Sole breakpoint owner (D-18). This task delivers the >=1024px tier: full Sidebar + 280px
-// ItemList + flex-1 detail column. Plan 08-04 replaces the detail column's contents with
-// DetailPanel; plan 08-06 adds the two narrower responsive tiers.
+// ItemList + flex-1 detail column, now rendering DetailPanel for the current selection. Plan
+// 08-06 adds the two narrower responsive tiers.
 export function NewShell({ username }: { username: string }) {
   const [collapsed, setCollapsed] = useState(false);
   const [addingSite, setAddingSite] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Owns which pane occupies the detail column. Only "vault" renders content this plan - the
+  // other five destinations dispatch into this same slice once plan 08-05 builds their
+  // *Pane.tsx wrappers (GeneratorPane etc.), so this state exists now for them to switch on.
+  const [screen, setScreen] = useState<Screen>("vault");
   const vault = useVault();
 
   useEffect(() => {
@@ -44,23 +51,23 @@ export function NewShell({ username }: { username: string }) {
 
   // Copied verbatim from AppShell.tsx's destinations array (D-10 - exactly these six keys,
   // never extended - no favourites/folders/item-type/sync/history entry, not even as a disabled
-  // stub). Secondary-screen navigation (health/generator/trash/data/settings panes) is out of
-  // this plan's scope - a later plan wires real content behind these keys; for now the buttons
-  // render and are tooltip-reachable (UX-01) alongside the vault view this plan builds.
+  // stub). Each destination now dispatches into the `screen` slice, matching AppShell.tsx's own
+  // setScreen pattern - only "vault" has a rendered pane this plan, but the buttons are already
+  // tooltip-reachable (UX-01) and wired for plan 08-05 to give the other five real content.
   const destinations: NavDestination[] = [
-    { key: "vault", label: "Vault", icon: "house", tooltip: "Your sites and credentials", onClick: () => {} },
-    { key: "health", label: "Health", icon: "heart-pulse", tooltip: "Password health dashboard", onClick: () => {} },
-    { key: "generator", label: "Generator", icon: "dice-5", tooltip: "Generate a password", onClick: () => {} },
-    { key: "trash", label: "Trash", icon: "trash", tooltip: "View trash", onClick: () => {} },
-    { key: "data", label: "Data", icon: "box-seam", tooltip: "Backup, export, and import", onClick: () => {} },
-    { key: "settings", label: "Settings", icon: "gear", tooltip: "Open settings", onClick: () => {} },
+    { key: "vault", label: "Vault", icon: "house", tooltip: "Your sites and credentials", onClick: () => setScreen("vault") },
+    { key: "health", label: "Health", icon: "heart-pulse", tooltip: "Password health dashboard", onClick: () => setScreen("health") },
+    { key: "generator", label: "Generator", icon: "dice-5", tooltip: "Generate a password", onClick: () => setScreen("generator") },
+    { key: "trash", label: "Trash", icon: "trash", tooltip: "View trash", onClick: () => setScreen("trash") },
+    { key: "data", label: "Data", icon: "box-seam", tooltip: "Backup, export, and import", onClick: () => setScreen("data") },
+    { key: "settings", label: "Settings", icon: "gear", tooltip: "Open settings", onClick: () => setScreen("settings") },
   ];
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] flex">
       <Sidebar
         destinations={destinations}
-        activeKey="vault"
+        activeKey={screen}
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
         onLock={handleLock}
@@ -69,16 +76,27 @@ export function NewShell({ username }: { username: string }) {
 
       <ItemList vault={vault} onAddSite={() => setAddingSite(true)} />
 
-      <div className="flex-1 p-4">
-        {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-        {vault.selectedSite ? (
-          <h2 className="text-base font-semibold">{vault.selectedSite.name}</h2>
-        ) : (
-          <div>
-            <p className="text-base font-semibold">Select a site to view its details</p>
-            <p className="text-sm opacity-70">Your vault is encrypted locally</p>
-          </div>
-        )}
+      <div className="flex flex-1 flex-col">
+        {error && <p className="p-4 pb-0 text-sm text-red-400">{error}</p>}
+        {screen === "vault" &&
+          (vault.selectedSiteId !== null ? (
+            <DetailPanel
+              site={vault.selectedSite}
+              credentials={vault.credentials}
+              credentialsLoading={vault.credentialsLoading}
+              error={null}
+              // CredentialEditor wiring (add/edit credential) is CRUD-wiring scope, a later plan
+              // per CONTEXT.md's phasing - this plan only builds the read/reveal/copy column.
+              onAddCredential={() => {}}
+            />
+          ) : (
+            <div className="flex flex-1 items-center justify-center bg-[var(--bg)] p-4 text-center">
+              <div>
+                <p className="text-base font-semibold">Select a site to view its details</p>
+                <p className="text-sm opacity-70">Your vault is encrypted locally</p>
+              </div>
+            </div>
+          ))}
       </div>
 
       {addingSite && (
