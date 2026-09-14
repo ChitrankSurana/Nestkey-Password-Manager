@@ -14,8 +14,10 @@ export function CopyButton({ text, tooltip }: { text: string; tooltip: string })
       <button
         type="button"
         onClick={() => {
-          api.copyToClipboard(text);
-          toast("Copied. It will clear from the clipboard in 30s.");
+          api
+            .copyToClipboard(text)
+            .then(() => toast("Copied. It will clear from the clipboard in 30s."))
+            .catch(() => toast("Couldn't copy to the clipboard. Please try again."));
         }}
         className="rounded px-2 py-0.5 border border-[var(--border)]"
       >

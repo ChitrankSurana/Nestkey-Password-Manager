@@ -16,6 +16,12 @@ import NewApp from "./newui/NewApp";
 // broken.
 let fallbackShown = false;
 
+// CR-02: these listeners exist to catch failures during import/first-mount only (see comment
+// above). Once the initial mount succeeds, `bootstrapped` flips to true and later, unrelated,
+// recoverable runtime errors anywhere in the running app (e.g. a transient clipboard-copy
+// rejection) no longer tear down the whole vault UI.
+let bootstrapped = false;
+
 function showClassicFallback(message: string) {
   if (fallbackShown) return;
   fallbackShown = true;
@@ -66,9 +72,11 @@ function showClassicFallback(message: string) {
 }
 
 window.addEventListener("error", (e) => {
+  if (bootstrapped) return;
   showClassicFallback(e.message || "An unexpected error occurred.");
 });
 window.addEventListener("unhandledrejection", (e) => {
+  if (bootstrapped) return;
   const reason = e.reason;
   showClassicFallback(reason instanceof Error ? reason.message : "An unexpected error occurred.");
 });
@@ -79,6 +87,7 @@ try {
       <NewApp />
     </React.StrictMode>,
   );
+  bootstrapped = true;
 } catch (e) {
   showClassicFallback(e instanceof Error ? e.message : "An unexpected error occurred.");
 }
