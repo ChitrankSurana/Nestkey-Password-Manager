@@ -167,6 +167,11 @@ struct MobileNavStyleRequest {
 }
 
 #[derive(Deserialize)]
+struct UiVariantRequest {
+    variant: String,
+}
+
+#[derive(Deserialize)]
 struct GeneratePasswordRequest {
     request: GenerateRequest,
 }
@@ -511,6 +516,15 @@ async fn update_mobile_nav_style(
     Ok(StatusCode::OK)
 }
 
+async fn update_ui_variant(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<UiVariantRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_update_ui_variant(&s.app_state, &ctx.paths, &b.variant)?;
+    Ok(StatusCode::OK)
+}
+
 async fn generate_password(
     Extension(_s): Extension<Arc<UserSession>>,
     Json(b): Json<GeneratePasswordRequest>,
@@ -626,6 +640,7 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/update_hibp_opt_in", post(update_hibp_opt_in))
         .route("/api/update_nav_collapsed", post(update_nav_collapsed))
         .route("/api/update_mobile_nav_style", post(update_mobile_nav_style))
+        .route("/api/update_ui_variant", post(update_ui_variant))
         .route("/api/generate_password", post(generate_password))
         .route("/api/analyze_strength", post(analyze_strength))
         .route("/api/create_backup", post(create_backup))
