@@ -33,7 +33,12 @@ export function useVault() {
     }
   }, []);
 
+  // Guards against out-of-order responses (WR-01): if a later keystroke's search resolves
+  // before an earlier one, only the response matching the currently-typed query is committed.
+  const latestQuery = useRef("");
+
   const runSearch = useCallback(async (q: string) => {
+    latestQuery.current = q;
     if (q.trim() === "") {
       setResults(null);
       return;
@@ -42,9 +47,14 @@ export function useVault() {
       setError(null);
       // Real-time search (TRD NFR-3: results update within one UI frame of keystroke) - no debounce,
       // this is a local IPC call against a SQLite index, not a network request.
-      setResults(await api.search(q));
+      const searchResults = await api.search(q);
+      if (latestQuery.current === q) {
+        setResults(searchResults);
+      }
     } catch (err) {
-      setError(isCommandError(err) ? err.message : FALLBACK_ERROR);
+      if (latestQuery.current === q) {
+        setError(isCommandError(err) ? err.message : FALLBACK_ERROR);
+      }
     }
   }, []);
 
