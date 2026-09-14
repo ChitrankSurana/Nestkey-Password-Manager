@@ -7,6 +7,7 @@ pub const VALID_STRENGTH_ALGORITHMS: [&str; 2] = ["simple", "zxcvbn"];
 pub const VALID_ACCENT_COLORS: [&str; 5] = ["indigo", "sky", "teal", "purple", "pink"];
 pub const VALID_OLD_PASSWORD_DAYS: [u32; 3] = [90, 180, 365];
 pub const VALID_MOBILE_NAV_STYLES: [&str; 3] = ["icon-rail", "bottom-tabs", "drawer"];
+pub const VALID_UI_VARIANTS: [&str; 2] = ["classic", "new"];
 
 fn default_theme() -> String {
     "dark".to_string()
@@ -38,6 +39,10 @@ fn default_nav_collapsed() -> bool {
 
 fn default_mobile_nav_style() -> String {
     "icon-rail".to_string()
+}
+
+fn default_ui_variant() -> String {
+    "classic".to_string()
 }
 
 fn default_biometric_enabled() -> bool {
@@ -77,6 +82,11 @@ pub struct Config {
     // an explicit opt-in switch.
     #[serde(default = "default_ssh_agent_enabled")]
     pub ssh_agent_enabled: bool,
+    // Selects which frontend entry the desktop window builds from at boot (Phase 8, D-02/D-03):
+    // "classic" -> index.html (today's UI, unchanged), "new" -> newui.html (Figma port). Read
+    // once at startup in src-tauri/src/lib.rs, applied on next launch after a Settings change.
+    #[serde(default = "default_ui_variant")]
+    pub ui_variant: String,
 }
 
 impl Default for Config {
@@ -92,6 +102,7 @@ impl Default for Config {
             mobile_nav_style: default_mobile_nav_style(),
             biometric_enabled: default_biometric_enabled(),
             ssh_agent_enabled: default_ssh_agent_enabled(),
+            ui_variant: default_ui_variant(),
         }
     }
 }
@@ -144,6 +155,11 @@ impl Config {
         } else {
             parsed
         };
+        let parsed = if !VALID_UI_VARIANTS.contains(&parsed.ui_variant.as_str()) {
+            Config { ui_variant: default_ui_variant(), ..parsed }
+        } else {
+            parsed
+        };
         Ok(parsed)
     }
 
@@ -184,6 +200,7 @@ mod tests {
             mobile_nav_style: default_mobile_nav_style(),
             biometric_enabled: default_biometric_enabled(),
             ssh_agent_enabled: default_ssh_agent_enabled(),
+            ui_variant: default_ui_variant(),
         };
 
         config.save(&path).unwrap();
@@ -273,6 +290,7 @@ mod tests {
             mobile_nav_style: default_mobile_nav_style(),
             biometric_enabled: default_biometric_enabled(),
             ssh_agent_enabled: default_ssh_agent_enabled(),
+            ui_variant: default_ui_variant(),
         };
 
         config.save(&path).unwrap();
@@ -362,5 +380,32 @@ mod tests {
         let config = Config::load(&path).unwrap();
         assert_eq!(config.hibp_opt_in, true);
         assert_eq!(config.accent_color, "indigo"); // untouched field still defaults correctly
+    }
+
+    #[test]
+    fn load_defaults_ui_variant_to_classic() {
+        let dir = tempdir().unwrap();
+        let config = Config::load(&dir.path().join("config.json")).unwrap();
+        assert_eq!(config.ui_variant, "classic");
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_ui_variant() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let config = Config { ui_variant: "new".to_string(), ..Config::default() };
+
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+
+        assert_eq!(loaded.ui_variant, "new");
+    }
+
+    #[test]
+    fn load_rejects_invalid_ui_variant_by_falling_back_to_default() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"ui_variant":"figma-preview"}"#).unwrap();
+        assert_eq!(Config::load(&path).unwrap().ui_variant, "classic");
     }
 }

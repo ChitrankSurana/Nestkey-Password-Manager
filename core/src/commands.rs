@@ -1,4 +1,4 @@
-use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
+use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS, VALID_UI_VARIANTS};
 use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
@@ -213,6 +213,7 @@ pub fn do_get_config(state: &AppState) -> ConfigDto {
         mobile_nav_style: config.mobile_nav_style.clone(),
         biometric_enabled: config.biometric_enabled,
         ssh_agent_enabled: config.ssh_agent_enabled,
+        ui_variant: config.ui_variant.clone(),
     }
 }
 
@@ -514,6 +515,18 @@ pub fn do_update_mobile_nav_style(state: &AppState, paths: &AppPaths, style: &st
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.mobile_nav_style = style.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_ui_variant(state: &AppState, paths: &AppPaths, variant: &str) -> Result<(), CommandError> {
+    if !VALID_UI_VARIANTS.contains(&variant) {
+        return Err(crate::error::invalid_input_error("Unknown UI variant."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.ui_variant = variant.to_string();
     updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
     *config = updated;
     Ok(())
@@ -2213,5 +2226,29 @@ mod tests {
         assert_eq!(do_get_config(&state).ssh_agent_enabled, true);
         let reloaded = Config::load(&paths.config_path()).unwrap();
         assert_eq!(reloaded.ssh_agent_enabled, true);
+    }
+
+    #[test]
+    fn update_ui_variant_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_ui_variant(&state, &paths, "new").unwrap();
+        assert_eq!(do_get_config(&state).ui_variant, "new");
+        assert_eq!(do_update_ui_variant(&state, &paths, "figma-preview").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn get_config_includes_ui_variant_default() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_get_config(&state).ui_variant, "classic");
+    }
+
+    #[test]
+    fn update_ui_variant_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+        let before = do_get_config(&state).ui_variant;
+        let result = do_update_ui_variant(&state, &bad_paths, "new");
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).ui_variant, before, "state.config must not change when the save fails");
     }
 }

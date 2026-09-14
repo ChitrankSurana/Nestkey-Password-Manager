@@ -13,6 +13,7 @@ pub fn run() {
 
     let app_state = AppState::open(&app_paths).expect("failed to open registry database");
     let ssh_agent_enabled_at_startup = app_state.config.lock().unwrap().ssh_agent_enabled;
+    let ui_variant = app_state.config.lock().unwrap().ui_variant.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -21,6 +22,38 @@ pub fn run() {
         .manage(app_paths)
         .manage(ssh_agent_service::SshAgentHandle::default())
         .setup(move |app| {
+            // D-03: the window is no longer declared in tauri.conf.json's static `windows` array
+            // (emptied below) - it is built here from the persisted ui_variant preference instead.
+            // The config value is matched against the fixed allowlist below and mapped to one of
+            // two compiled-in filenames - never interpolated into a path (T-08-01).
+            let entry = match ui_variant.as_str() {
+                "new" => {
+                    // Checkpoint decision (Task 2, 08-01-PLAN.md): "asset-guard, extended". Before
+                    // pointing the window at the New UI's entry, confirm the bundled asset actually
+                    // exists - a missing/stale build must never produce a blank window (T-08-03).
+                    // AssetResolver::get() reads the embedded production bundle, or `dist/` directly
+                    // in dev mode (requires at least one `npm run build`, same caveat Tauri's own
+                    // docs state for this API in dev mode).
+                    if app.asset_resolver().get("newui.html".to_string()).is_some() {
+                        "newui.html"
+                    } else {
+                        eprintln!(
+                            "warning: ui_variant is \"new\" but the newui.html asset is missing; falling back to Classic"
+                        );
+                        "index.html"
+                    }
+                }
+                // Catch-all: "classic", empty/absent (already snapped by Config::load), or any
+                // value that slipped past validation resolves to Classic - never a dead window.
+                _ => "index.html",
+            };
+            // Window label MUST stay "main" - src-tauri/capabilities/default.json scopes the
+            // clipboard-manager and dialog permissions to that label (D-04/T-08-02).
+            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App(entry.into()))
+                .title("tauri-app")
+                .inner_size(800.0, 600.0)
+                .build()?;
+
             if ssh_agent_enabled_at_startup {
                 ssh_agent_service::start(&app.handle().clone());
             }
@@ -98,6 +131,7 @@ pub fn run() {
             commands::update_hibp_opt_in,
             commands::update_nav_collapsed,
             commands::update_mobile_nav_style,
+            commands::update_ui_variant,
             commands::generate_password,
             commands::analyze_strength,
             commands::copy_to_clipboard,
