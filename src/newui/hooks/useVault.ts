@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api, isCommandError, type CredentialDto, type SearchResultDto, type SiteDto } from "../../lib/api";
 import { sitesForResults } from "../lib/vaultSelectors";
@@ -56,16 +56,29 @@ export function useVault() {
     setSelectedSiteId(siteId);
   }, []);
 
+  // Guards against out-of-order responses (CR-01): if the user switches sites while a
+  // credential fetch for a previous site is still in flight, only the response matching the
+  // currently selected site is committed to state.
+  const latestRequestedSiteId = useRef<number | null>(null);
+
   // The lazy-decryption invariant's one call site (D-09).
   const refreshCredentials = useCallback(async (siteId: number) => {
+    latestRequestedSiteId.current = siteId;
     try {
       setError(null);
       setCredentialsLoading(true);
-      setCredentials(await api.listCredentialsForSite(siteId));
+      const creds = await api.listCredentialsForSite(siteId);
+      if (latestRequestedSiteId.current === siteId) {
+        setCredentials(creds);
+      }
     } catch (err) {
-      setError(isCommandError(err) ? err.message : FALLBACK_ERROR);
+      if (latestRequestedSiteId.current === siteId) {
+        setError(isCommandError(err) ? err.message : FALLBACK_ERROR);
+      }
     } finally {
-      setCredentialsLoading(false);
+      if (latestRequestedSiteId.current === siteId) {
+        setCredentialsLoading(false);
+      }
     }
   }, []);
 
@@ -87,6 +100,7 @@ export function useVault() {
       clearCredentials();
       return;
     }
+    clearCredentials(); // never show a stale site's credentials under the new site's header
     refreshCredentials(selectedSiteId);
   }, [selectedSiteId, refreshCredentials, clearCredentials]);
 
