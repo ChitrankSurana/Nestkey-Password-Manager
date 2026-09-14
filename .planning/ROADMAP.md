@@ -159,7 +159,7 @@ found unresolved file-path, rate-limiting, and header gaps.
   3. A user can create folders, assign an item to at most one folder, and filter the vault by folder.
   4. A user can view a per-item health card (strength meter, breach status, reuse status) directly in that item's detail panel, without triggering a full vault-wide health sweep.
 
-**Plans**: 4/6 plans executed
+**Plans**: 5/6 plans executed
 
 Plans:
 
@@ -167,7 +167,7 @@ Plans:
 - [x] 08-02-PLAN.md — Interface toggle in Settings: setter command, web route, API wrapper, persistent restart banner
 - [x] 08-03-PLAN.md — Three-pane shell, sidebar, searchable site list over the lazy-decryption `useVault` hook
 - [x] 08-04-PLAN.md — Detail panel: credential repeater, reprompt-gated secrets, TOTP, custom fields, per-item strength meter
-- [ ] 08-05-PLAN.md — CRUD wiring to the existing editors, five secondary panes, sidebar nav dispatch
+- [x] 08-05-PLAN.md — CRUD wiring to the existing editors, five secondary panes, sidebar nav dispatch
 - [ ] 08-06-PLAN.md — Three responsive tiers and the standing invariant gate over `src/newui/`
 
 **Scope note (2026-09-13)**: the Goal and Success Criteria above describe the ORIGINAL scope and
@@ -213,5 +213,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Read-Only Viewer | v1.0 | N/A (pre-GSD) | Complete | 2026-07-16 |
 | 6. Localhost Web Mode | v1.0 | N/A (pre-GSD) | Complete | 2026-07-19 |
 | 7. Platform Integrations | v1.1 | N/A (pre-GSD) | Complete | 2026-09 (approx.) |
-| 8. New Vault UI (Figma Port) | v2.0 | 4/6 | In Progress|  |
+| 8. New Vault UI (Figma Port) | v2.0 | 5/6 | In Progress|  |
 | 9. Web Mode Security Hardening | v2.0 | 0/TBD | Not started | - |
