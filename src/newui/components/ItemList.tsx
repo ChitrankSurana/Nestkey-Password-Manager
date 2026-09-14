@@ -6,13 +6,18 @@ import type { useVault } from "../hooks/useVault";
 
 // List pane: header, count, add-site button, search box, rows and empty states. Reads
 // visibleSites/query/error/selection from useVault() instead of owning its own fetch effects
-// (D-09) - the hook is the single owner of vault fetch state.
+// (D-09) - the hook is the single owner of vault fetch state. `className` supplies the display
+// and width classes (defaulting to today's `flex w-[280px]`) so NewShell - the sole breakpoint
+// owner (D-18) - can switch this pane to full width and conditional visibility at the narrow
+// tier without ItemList itself branching on viewport width.
 export function ItemList({
   vault,
   onAddSite,
+  className = "flex w-[280px]",
 }: {
   vault: ReturnType<typeof useVault>;
   onAddSite: () => void;
+  className?: string;
 }) {
   const { visibleSites, query, setQuery, results, error, selectedSiteId, selectSite, sitesLoading } = vault;
 
@@ -23,7 +28,7 @@ export function ItemList({
       : null;
 
   return (
-    <div className="flex w-[280px] shrink-0 flex-col border-r border-[var(--border)] p-2">
+    <div className={`${className} shrink-0 flex-col border-r border-[var(--border)] p-2`}>
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-baseline gap-2">
           <h2 className="text-base font-semibold">Vault</h2>

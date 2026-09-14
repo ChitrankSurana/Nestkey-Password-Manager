@@ -11,6 +11,9 @@ import { HealthPane } from "./screens/HealthPane";
 import { DataPane } from "./screens/DataPane";
 import { TrashPane } from "./screens/TrashPane";
 import { SettingsPane } from "./screens/SettingsPane";
+import { BottomTabBar } from "../screens/BottomTabBar";
+import { NavDrawer } from "../screens/NavDrawer";
+import { Icon } from "../components/Icon";
 import type { NavDestination } from "../screens/NavRail";
 
 type Screen = "vault" | "health" | "generator" | "trash" | "data" | "settings";
@@ -23,6 +26,8 @@ type Screen = "vault" | "health" | "generator" | "trash" | "data" | "settings";
 // chose. Below 640px the sidebar is replaced entirely (see the mobileNavStyle branch below).
 export function NewShell({ username }: { username: string }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavStyle, setMobileNavStyle] = useState<string>("icon-rail");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [addingSite, setAddingSite] = useState(false);
   const [editingSite, setEditingSite] = useState(false);
   const [editingCredential, setEditingCredential] = useState<CredentialDto | "new" | null>(null);
@@ -45,7 +50,10 @@ export function NewShell({ username }: { username: string }) {
   useEffect(() => {
     api
       .getConfig()
-      .then((c) => setCollapsed(c.navCollapsed))
+      .then((c) => {
+        setCollapsed(c.navCollapsed);
+        setMobileNavStyle(c.mobileNavStyle);
+      })
       .catch(() => {});
   }, []);
 
@@ -112,31 +120,88 @@ export function NewShell({ username }: { username: string }) {
         />
       </div>
 
-      <ItemList vault={vault} onAddSite={() => setAddingSite(true)} />
+      {/* Below 640px the sidebar is replaced entirely (D-18/D-11), copying AppShell's own
+          three-way mobileNavStyle branch verbatim, default case included: neither bottom-tabs
+          nor drawer falls back to the same icon-rail Sidebar shape the mid tier already uses. */}
+      {mobileNavStyle !== "bottom-tabs" && mobileNavStyle !== "drawer" && (
+        <div className="sm:hidden">
+          <Sidebar
+            destinations={destinations}
+            activeKey={screen}
+            collapsed={true}
+            onToggleCollapsed={() => {}}
+            onLock={handleLock}
+            username={username}
+            showToggle={false}
+          />
+        </div>
+      )}
 
-      <div className="flex flex-1 flex-col">
+      {mobileNavStyle === "bottom-tabs" && (
+        <BottomTabBar destinations={destinations} activeKey={screen} onLock={handleLock} />
+      )}
+
+      {mobileNavStyle === "drawer" && (
+        <NavDrawer
+          destinations={destinations}
+          activeKey={screen}
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          onLock={handleLock}
+        />
+      )}
+
+      <ItemList
+        vault={vault}
+        onAddSite={() => setAddingSite(true)}
+        className={`${screen === "vault" && vault.selectedSiteId === null ? "flex" : "hidden"} sm:flex w-full sm:w-[280px]`}
+      />
+
+      <div
+        className={`flex flex-1 flex-col ${mobileNavStyle === "bottom-tabs" ? "pb-16 sm:pb-0" : ""}`}
+      >
+        {mobileNavStyle === "drawer" && (
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="sm:hidden self-start m-2 rounded px-2 py-1 hover:bg-[var(--surface)]"
+            aria-label="Open menu"
+          >
+            <Icon name="list" />
+          </button>
+        )}
+
         {error && <p className="p-4 pb-0 text-sm text-red-400">{error}</p>}
-        {screen === "vault" &&
-          (vault.selectedSiteId !== null ? (
-            <DetailPanel
-              site={vault.selectedSite}
-              credentials={vault.credentials}
-              credentialsLoading={vault.credentialsLoading}
-              error={null}
-              onEditSite={() => setEditingSite(true)}
-              onAddCredential={() => setEditingCredential("new")}
-              onEditCredential={(credential) => setEditingCredential(credential)}
-              onCredentialDeleted={refreshAfterSave}
-              onOpenHealth={() => setScreen("health")}
-            />
-          ) : (
-            <div className="flex flex-1 items-center justify-center bg-[var(--bg)] p-4 text-center">
-              <div>
-                <p className="text-base font-semibold">Select a site to view its details</p>
-                <p className="text-sm opacity-70">Your vault is encrypted locally</p>
+        {screen === "vault" && (
+          // Below 640px exactly one of ItemList/this pane is visible, switched purely by
+          // selectedSiteId !== null (D-18) - hidden here when nothing is selected so the list
+          // above can occupy the full width instead; always visible from sm: up, where both
+          // panes show side by side (unaffected by this tier).
+          <div
+            className={`${vault.selectedSiteId !== null ? "flex" : "hidden"} sm:flex flex-1 flex-col`}
+          >
+            {vault.selectedSiteId !== null ? (
+              <DetailPanel
+                site={vault.selectedSite}
+                credentials={vault.credentials}
+                credentialsLoading={vault.credentialsLoading}
+                error={null}
+                onEditSite={() => setEditingSite(true)}
+                onAddCredential={() => setEditingCredential("new")}
+                onEditCredential={(credential) => setEditingCredential(credential)}
+                onCredentialDeleted={refreshAfterSave}
+                onOpenHealth={() => setScreen("health")}
+                onBack={() => vault.selectSite(null)}
+              />
+            ) : (
+              <div className="flex flex-1 items-center justify-center bg-[var(--bg)] p-4 text-center">
+                <div>
+                  <p className="text-base font-semibold">Select a site to view its details</p>
+                  <p className="text-sm opacity-70">Your vault is encrypted locally</p>
+                </div>
               </div>
-            </div>
-          ))}
+            )}
+          </div>
+        )}
         {screen === "health" && (
           <HealthPane
             onBack={goVault}

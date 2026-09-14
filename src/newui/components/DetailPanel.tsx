@@ -20,6 +20,7 @@ export function DetailPanel({
   onEditCredential,
   onCredentialDeleted,
   onOpenHealth,
+  onBack,
 }: {
   site: SiteDto | null;
   credentials: CredentialDto[] | null;
@@ -30,6 +31,7 @@ export function DetailPanel({
   onEditCredential: (credential: CredentialDto) => void;
   onCredentialDeleted: () => void;
   onOpenHealth: () => void;
+  onBack: () => void;
 }) {
   const [othersOpen, setOthersOpen] = useState(false);
   const [expandedOthers, setExpandedOthers] = useState<Set<number>>(new Set());
@@ -118,6 +120,19 @@ export function DetailPanel({
 
   return (
     <div className="flex-1 overflow-y-auto p-4">
+      {/* Below 640px the detail column is the only thing on screen (D-18), so it needs a way
+          back to the list - meaningless at the two wider tiers where both panes are already
+          visible, hence sm:hidden. */}
+      <Tooltip text="Back to your vault list">
+        <button
+          type="button"
+          onClick={onBack}
+          className="sm:hidden mb-3 flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-[var(--surface)]"
+        >
+          <Icon name="chevron-left" /> Back
+        </button>
+      </Tooltip>
+
       <div className="mb-4">
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-xl font-semibold">{site.name}</h2>
