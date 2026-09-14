@@ -5,16 +5,16 @@ milestone_name: New Vault UI & Security Hardening (Phases 8-9) — Planned
 current_phase: 08
 current_phase_name: New Vault UI (Figma Port)
 status: executing
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-09-14T15:24:14.306Z"
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-09-14T15:33:51.511Z"
 last_activity: 2026-09-14
 last_activity_desc: Phase 08 execution resumed (wave continue)
-state_head: 31b60967e957bdea9e8efd36830901a7106f42f0
+state_head: 39a6ce950d2575afbe8ed7cdbb6d57db9e6a3538
 progress:
   total_phases: 2
   completed_phases: 0
   total_plans: 6
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ zero-knowledge and local-only by default, with no path to recover a forgotten ma
 ## Current Position
 
 Phase: 08 (New Vault UI (Figma Port)) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-09-14 — Phase 08 execution resumed (wave continue)
 PROJECT.md/REQUIREMENTS.md/ROADMAP.md/STATE.md. Phases 1-7 (PRD milestones M1-M6 plus biometric
@@ -67,6 +67,7 @@ pre-GSD phases)
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 08 P01 | 47min | 3 tasks | 11 files |
+| Phase 08 P02 | 20min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ Recent decisions affecting current work:
   of the `strength_algorithm` Settings toggle — confirmed intentional; doc-vs-behavior mismatch
   tracked as a todo, not a functional defect.
 - [Phase 08]: Checkpoint decision: window-failure recovery is 'asset-guard, extended' (Rust asset-guard + frontend runtime-failure escape hatch), keybind-escape ruled out — Coordinator resolved 08-01 Task 2 checkpoint mid-execution: no recovery path may require manual config-file editing
+- [Phase 08]: Phase 08 Plan 02: dropped git stash@{0} (pre-existing ui_variant scaffolding) as fully superseded by 08-01's own implementation
+- [Phase 08]: Phase 08 Plan 02: Task 1 scoped to only the web-portal /api/update_ui_variant route, since 08-01 already shipped the desktop Tauri command ahead of schedule
 
 ### Pending Todos
 
@@ -116,8 +119,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-14T15:24:14.284Z
-Stopped at: Completed 08-01-PLAN.md
+Last session: 2026-09-14T15:33:51.489Z
+Stopped at: Completed 08-02-PLAN.md
 (`.planning/intel/SYNTHESIS.md`) plus the existing codebase map (`.planning/codebase/`); ready for
 the orchestrator to present the roadmap for approval and finalize the ingest workflow.
 Resume file: None
