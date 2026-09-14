@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { api, isCommandError } from "../lib/api";
+import { api, isCommandError, type CredentialDto } from "../lib/api";
 import { useVault } from "./hooks/useVault";
 import { Sidebar } from "./components/Sidebar";
 import { ItemList } from "./components/ItemList";
 import { DetailPanel } from "./components/DetailPanel";
 import { SiteEditor } from "../screens/SiteEditor";
+import { CredentialEditor } from "../screens/CredentialEditor";
 import type { NavDestination } from "../screens/NavRail";
 
 type Screen = "vault" | "health" | "generator" | "trash" | "data" | "settings";
@@ -15,12 +16,23 @@ type Screen = "vault" | "health" | "generator" | "trash" | "data" | "settings";
 export function NewShell({ username }: { username: string }) {
   const [collapsed, setCollapsed] = useState(false);
   const [addingSite, setAddingSite] = useState(false);
+  const [editingSite, setEditingSite] = useState(false);
+  const [editingCredential, setEditingCredential] = useState<CredentialDto | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Owns which pane occupies the detail column. Only "vault" renders content this plan - the
   // other five destinations dispatch into this same slice once plan 08-05 builds their
   // *Pane.tsx wrappers (GeneratorPane etc.), so this state exists now for them to switch on.
   const [screen, setScreen] = useState<Screen>("vault");
   const vault = useVault();
+
+  // A rename/new-credential must show up without the user reselecting - refreshes the list and,
+  // when a site is selected, its credentials too. Both editors' onSaved route here.
+  function refreshAfterSave() {
+    vault.refreshSites();
+    if (vault.selectedSiteId !== null) {
+      vault.refreshCredentials(vault.selectedSiteId);
+    }
+  }
 
   useEffect(() => {
     api
@@ -85,9 +97,10 @@ export function NewShell({ username }: { username: string }) {
               credentials={vault.credentials}
               credentialsLoading={vault.credentialsLoading}
               error={null}
-              // CredentialEditor wiring (add/edit credential) is CRUD-wiring scope, a later plan
-              // per CONTEXT.md's phasing - this plan only builds the read/reveal/copy column.
-              onAddCredential={() => {}}
+              onEditSite={() => setEditingSite(true)}
+              onAddCredential={() => setEditingCredential("new")}
+              onEditCredential={(credential) => setEditingCredential(credential)}
+              onCredentialDeleted={refreshAfterSave}
             />
           ) : (
             <div className="flex flex-1 items-center justify-center bg-[var(--bg)] p-4 text-center">
@@ -104,7 +117,35 @@ export function NewShell({ username }: { username: string }) {
           onClose={() => setAddingSite(false)}
           onSaved={() => {
             setAddingSite(false);
+            refreshAfterSave();
+          }}
+        />
+      )}
+
+      {editingSite && vault.selectedSite && (
+        <SiteEditor
+          existing={vault.selectedSite}
+          onClose={() => setEditingSite(false)}
+          onSaved={() => {
+            setEditingSite(false);
+            refreshAfterSave();
+          }}
+          onDeleted={() => {
+            setEditingSite(false);
+            vault.selectSite(null);
             vault.refreshSites();
+          }}
+        />
+      )}
+
+      {editingCredential !== null && vault.selectedSiteId !== null && (
+        <CredentialEditor
+          siteId={vault.selectedSiteId}
+          existing={editingCredential === "new" ? null : editingCredential}
+          onClose={() => setEditingCredential(null)}
+          onSaved={() => {
+            setEditingCredential(null);
+            refreshAfterSave();
           }}
         />
       )}

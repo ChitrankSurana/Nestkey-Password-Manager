@@ -15,13 +15,19 @@ export function DetailPanel({
   credentials,
   credentialsLoading,
   error,
+  onEditSite,
   onAddCredential,
+  onEditCredential,
+  onCredentialDeleted,
 }: {
   site: SiteDto | null;
   credentials: CredentialDto[] | null;
   credentialsLoading: boolean;
   error: string | null;
+  onEditSite: () => void;
   onAddCredential: () => void;
+  onEditCredential: (credential: CredentialDto) => void;
+  onCredentialDeleted: () => void;
 }) {
   const [othersOpen, setOthersOpen] = useState(false);
   const [expandedOthers, setExpandedOthers] = useState<Set<number>>(new Set());
@@ -71,7 +77,13 @@ export function DetailPanel({
 
     return (
       <div className="space-y-2">
-        <CredentialBlock credential={primary} expanded onToggle={() => {}} />
+        <CredentialBlock
+          credential={primary}
+          expanded
+          onToggle={() => {}}
+          onEdit={() => onEditCredential(primary)}
+          onDeleted={onCredentialDeleted}
+        />
         {others.length > 0 && (
           <>
             <Tooltip text={othersOpen ? "Hide other logins" : "Show other logins"}>
@@ -90,6 +102,8 @@ export function DetailPanel({
                   credential={c}
                   expanded={expandedOthers.has(c.id)}
                   onToggle={() => toggleOther(c.id)}
+                  onEdit={() => onEditCredential(c)}
+                  onDeleted={onCredentialDeleted}
                 />
               ))}
           </>
@@ -101,7 +115,27 @@ export function DetailPanel({
   return (
     <div className="flex-1 overflow-y-auto p-4">
       <div className="mb-4">
-        <h2 className="text-xl font-semibold">{site.name}</h2>
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="text-xl font-semibold">{site.name}</h2>
+          <div className="flex shrink-0 items-center gap-1">
+            <Tooltip text="Edit site">
+              <button
+                onClick={onEditSite}
+                className="rounded px-2 py-1 text-sm hover:bg-[var(--surface)]"
+              >
+                <Icon name="pencil-fill" /> Edit site
+              </button>
+            </Tooltip>
+            <Tooltip text="Add a credential to this site">
+              <button
+                onClick={onAddCredential}
+                className="rounded bg-[var(--accent)] px-2 py-1 text-sm"
+              >
+                <Icon name="plus-lg" /> Add credential
+              </button>
+            </Tooltip>
+          </div>
+        </div>
         <div className="mt-1 flex items-center gap-2 text-sm">
           {site.url ? (
             <>

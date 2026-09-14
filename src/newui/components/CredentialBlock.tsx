@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type CredentialDto, type StrengthDto } from "../../lib/api";
+import { api, isCommandError, type CredentialDto, type StrengthDto } from "../../lib/api";
 import { SecretField } from "../../components/SecretField";
 import { TotpDisplay } from "../../components/TotpDisplay";
 import { Tooltip } from "../../components/Tooltip";
@@ -25,12 +25,30 @@ export function CredentialBlock({
   credential,
   expanded,
   onToggle,
+  onEdit,
+  onDeleted,
 }: {
   credential: CredentialDto;
   expanded: boolean;
   onToggle: () => void;
+  onEdit: () => void;
+  onDeleted: () => void;
 }) {
   const [strength, setStrength] = useState<StrengthDto | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Deliberately no confirmation dialog here - the delete is a soft delete, fully restorable
+  // from Trash, matching SiteDetail.tsx's existing behaviour exactly (immediate action on
+  // click). Site deletion keeps its own window.confirm inside SiteEditor - not duplicated here.
+  async function handleDelete() {
+    try {
+      setError(null);
+      await api.softDeleteCredential(credential.id);
+      onDeleted();
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    }
+  }
 
   useEffect(() => {
     if (!expanded) return;
@@ -58,6 +76,24 @@ export function CredentialBlock({
             <Icon name="lock-fill" /> Reprompt
           </span>
         )}
+        <Tooltip text="Edit this credential">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="rounded px-1 py-0.5 hover:bg-[var(--surface)]"
+          >
+            <Icon name="pencil-fill" />
+          </button>
+        </Tooltip>
+        <Tooltip text="Move this credential to Trash">
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="rounded px-1 py-0.5 text-[var(--danger)] hover:bg-[var(--surface)]"
+          >
+            <Icon name="trash" />
+          </button>
+        </Tooltip>
         <Tooltip text={expanded ? "Collapse this credential" : "Expand this credential"}>
           <button
             type="button"
@@ -68,6 +104,8 @@ export function CredentialBlock({
           </button>
         </Tooltip>
       </div>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       {expanded && (
         <div className="space-y-2">
