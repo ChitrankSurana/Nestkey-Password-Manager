@@ -1,45 +1,55 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-14T16:20:00.927Z",
+  "timestamp": "2026-09-15T18:42:38.010Z",
   "phase": "08",
-  "phase_name": "New Vault UI (Figma Port)",
+  "phase_name": "new-vault-ui-figma-port",
   "phase_dir": ".planning/phases/08-new-vault-ui-figma-port",
-  "plan": 6,
-  "task": 3,
-  "total_tasks": 3,
+  "plan": "verify-work",
+  "task": 6,
+  "total_tasks": 6,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "Mid tier — icon-rail sidebar between 640px and 1023px", "status": "done", "commit": "a1cb36c"},
-    {"id": 2, "name": "Narrow tier — mobile nav swap and single visible pane below 640px", "status": "done", "commit": "904e428"},
-    {"id": 3, "name": "Standing invariant gate over the new UI's sources (parity.test.ts)", "status": "in_progress", "progress": "src/newui/lib/parity.test.ts written and on disk, uncommitted. Plan-level <verification> (cargo test --workspace, likely npm run build/npm test) not yet run to completion — stopped before that step finished."}
+    {"id": "08-01..08-06", "name": "All 6 execution plans", "status": "done", "commit": "see 08-*-SUMMARY.md files"},
+    {"id": "code-review", "name": "Code review + fixes (CR-01, CR-02, WR-01)", "status": "done", "commit": "b79213b, e0e1f2d, 970a975"},
+    {"id": "verify-phase-goal", "name": "Phase-goal verification (15/15 automated must-haves)", "status": "done", "commit": "89d82bd"},
+    {"id": "uat-1", "name": "UAT Test 1: Full desktop launch and Classic/New UI switch parity", "status": "done", "progress": "issue (2 gaps: backup location picker G-08-1, reprompt-mode setting G-08-2)"},
+    {"id": "uat-2", "name": "UAT Test 2: Settings Interface section toggle and persistence", "status": "done", "progress": "pass (web-mode sub-check deferred by user until desktop considered complete)"},
+    {"id": "uat-3", "name": "UAT Test 3: Three-pane desktop view rendering", "status": "done", "progress": "pass, all 6 sub-points confirmed"},
+    {"id": "uat-4", "name": "UAT Test 4: Detail column walkthrough - reprompt gate, repeater, auto-lock", "status": "done", "progress": "issue (1 gap: G-08-3 add-custom-field throws 'Something went wrong' error, blocker)"},
+    {"id": "uat-5", "name": "UAT Test 5: CRUD round-trip and navigation", "status": "done", "progress": "issue (4 gaps: G-08-4 delete button placement, G-08-5 missing site-delete confirm dialog, G-08-6 blocked cascade delete, G-08-7 loading animations) + login/reprompt-delay audit completed and logged in UAT.md Audit Notes"}
   ],
   "remaining_tasks": [
-    {"id": 3, "name": "Finish plan 08-06 Task 3: verify/commit parity.test.ts, run plan-level verification, write 08-06-SUMMARY.md", "status": "in_progress"},
-    {"id": 4, "name": "Phase 8 tail gates: aggregate_results, code_review_gate, close_parent_artifacts, regression_gate, verify_phase_goal, update_roadmap", "status": "not_started"}
+    {"id": "uat-6", "name": "UAT Test 6: Responsive tiers, full 18-flow capability checklist, 6 cross-cutting behaviors, Classic regression check", "status": "presented, awaiting user's live walkthrough and response"},
+    {"id": "complete-session", "name": "Finalize UAT.md status (partial/complete), commit", "status": "not_started"},
+    {"id": "diagnose-issues", "name": "Diagnose root causes for 7 open gaps (G-08-1 through G-08-7)", "status": "not_started"},
+    {"id": "plan-gap-closure", "name": "Spawn gsd-planner --gaps mode to create gap-closure plans", "status": "not_started"},
+    {"id": "verify-gap-plans", "name": "gsd-plan-checker verification of gap-closure plans", "status": "not_started"},
+    {"id": "fix-requirements-md", "name": "One-line fix: REQUIREMENTS.md marks VAULT-03 [x] Complete, contradicts 08-01/08-06-PLAN.md's explicit note it should stay open (deferred scope, not delivered). Flagged by verifier, not yet fixed.", "status": "not_started"},
+    {"id": "figma-visual-fidelity", "name": "Separate, larger follow-on (explicitly deferred by user until functional UAT + gap closure finishes): redo New UI visuals to closely match the original Figma design (user says current result 'looks nothing like Figma... too bland'). Use figma-design-to-code skill when starting this.", "status": "deferred, not started"}
   ],
   "blockers": [
-    {"description": "Worktree parallel execution stayed degraded to sequential (ISOLATION=none) for the entire phase run because local HEAD diverged from origin/HEAD on feature/bitwarden-port-phase1 (#48/#3659)", "type": "technical", "workaround": "Ran sequentially throughout, including wave 2's two-plan wave (08-02 + 08-03); no correctness impact, only speed. Parallel returns once branch is merged/pushed to match origin/HEAD"},
-    {"description": "One-off HEAD-drift anomaly during plan 08-04's execution: repo was found externally checked out to main mid-session, cause outside executor visibility", "type": "technical", "workaround": "Recovered cleanly (git checkout feature/bitwarden-port-phase1) before any files were written; did not recur during 08-05 or 08-06. Advisory only, not blocking."}
+    {"description": "UAT Test 6 requires the user to actually run the live desktop app through a resize + full capability walkthrough", "type": "human_action", "workaround": "none - inherent to UAT"}
   ],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "End-of-phase UAT: live npm run tauri dev walkthrough covering all <human-check> items deferred across plans 08-01 through 08-06 (UI switch persistence, restart-into-chosen-UI, responsive tier behavior at all three breakpoints, CRUD flows, asset-guard/error-boundary recovery paths)", "context": "workflow.human_verify_mode=end-of-phase (default, no config override) deferred every plan's human-check items to be done once at the end of the phase rather than per-plan", "blocking": false}
+    {"action": "Perform UAT Test 6: resize through all 3 D-18 tiers, walk all 18 checklist flows in New UI, confirm 6 cross-cutting behaviors, then set ui_variant=classic and re-walk the 18 flows to confirm no regression", "context": "Last of 6 UAT tests for phase 8; already presented to user, awaiting their response", "blocking": true}
   ],
   "decisions": [
-    {"decision": "Checkpoint (08-01 Task 2, blocking-human): chose 'asset-guard, extended' — Rust-side asset-existence check falling back to Classic UI if the New UI bundle is missing, PLUS a new in-app vanilla-DOM error-boundary escape hatch (independent of React tree) with a 'Switch to Classic' button calling a new update_ui_variant Tauri command. Explicitly ruled out keybind-escape (global OS shortcut).", "rationale": "User does not want any manual config-file editing as a recovery path for ANY New UI failure mode (missing file OR runtime JS error), not just the missing-asset case asset-guard alone would cover.", "phase": "08"},
-    {"decision": "Let ISOLATION auto-degrade to none/sequential for the whole phase rather than overriding it", "rationale": "Fail-safe design (#48/#3659) for a diverged HEAD; correctness unaffected, only speed", "phase": "08"},
-    {"decision": "Dropped git stash@{0} (pre-existing uncommitted core/src/config.rs scaffolding: VALID_UI_VARIANTS + default_ui_variant()) during plan 08-02", "rationale": "Confirmed via git stash show -p to be a strict subset already superseded by 08-01's complete fresh implementation of the same field (6 steps + 3 tests). Nothing needed merging.", "phase": "08"}
+    {"decision": "New Settings field 'Reprompt mode': Global | Per-credential. Global = every credential's reveal/copy requires master password, cached for a configurable grace window (default 30s), then re-locks. Per-credential = today's existing per-credential 'Require reprompt' flag, no grace window, asks every time.", "rationale": "User wants a universal reprompt option but the existing per-credential flag design should remain available for credentials that should never get a grace window. A single settings toggle lets the user choose the model without losing either.", "phase": "08"},
+    {"decision": "Login/reprompt master-password delay: do NOT reduce Argon2id KDF cost (m=64MiB t=3 p=4, core/src/crypto.rs:48) as part of this phase's gap closure. Add a loading animation instead (G-08-7).", "rationale": "Audited: measured 1961ms per derive_key call in a DEBUG build (npm run tauri dev always uses debug). Login calls it twice (~4s), reprompt once (~2s) - matches user's complaint. The KDF params are intentional and already reviewed as correct in SECURITY_CONCERNS.md (flagged there only for missing web-mode rate-limiting, not for being mistuned). Could not empirically confirm release-build timing - release build fails in this environment for an unrelated pre-existing reason (rusqlite's bundled-sqlcipher-vendored-openssl feature needs a Perl module, Locale::Maketext::Simple, not installed here). Unoptimized-vs-optimized Rust for tight crypto loops is a well-documented 5-20x gap, so real (release) delay is expected to be a few hundred ms. User explicitly deferred the KDF-cost decision to later, after a real release-build measurement.", "phase": "08"},
+    {"decision": "A site with saved credentials should be deletable (cascading to its credentials) behind a confirmation popup, not blocked outright as it is today.", "rationale": "User wants one clear cascade-delete action with a safety confirmation, not a forced one-by-one credential deletion first.", "phase": "08"},
+    {"decision": "Visual Figma-fidelity redesign (new UI 'looks nothing like Figma, too bland') is a separate, larger track from this phase's functional UAT gaps. User chose: finish functional UAT + gap closure first, then start a dedicated visual-parity pass using the figma-design-to-code skill.", "rationale": "User's own choice when asked to compare 'finish functional UAT first, then redesign' vs 'stop UAT now, fix visuals first' — picked the former.", "phase": "08"}
   ],
   "uncommitted_files": [
-    " M .planning/phases/08-new-vault-ui-figma-port/.continue-here.md",
+    "M .planning/phases/08-new-vault-ui-figma-port/08-UAT.md",
+    "M src-tauri/Cargo.toml (no-op line-ending touch only, git diff shows zero content change)",
     "?? .gsd/",
     "?? .planning/milestone.lock",
     "?? .planning/state.json",
     "?? 2026-09-13-174724-local-command-caveatcaveat-the-messages-below.txt",
     "?? docs/FIGMA_UI_VS_CURRENT_FEATURES.md",
-    "?? docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md",
-    "?? src/newui/lib/parity.test.ts"
+    "?? docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md"
   ],
-  "next_action": "Run /gsd-execute-phase 8 again — it will find plan 08-06 incomplete (2/3 tasks committed, no SUMMARY.md) and re-dispatch it; the fresh executor should recognize Tasks 1-2 are done, inspect the on-disk src/newui/lib/parity.test.ts before rewriting it, finish Task 3's verification and commit, write 08-06-SUMMARY.md, then the orchestrator proceeds to phase-level verification and update_roadmap.",
-  "context_notes": "5 of 6 plans in phase 08 are fully complete. Final plan 08-06 has 2 of 3 tasks committed; Task 3's test file is written but unverified/uncommitted. Executor was stopped cleanly via TaskStop mid-verification (about to run cargo test --workspace), so nothing is lost — no partial or broken commit exists. Resuming should be a short final push: finish one task, run phase-level verification, update the roadmap."
+  "next_action": "Run /gsd-verify-work 08 to resume. It will find 08-UAT.md with Tests 1-5 answered and Test 6 pending, and re-present Test 6's checkpoint. Walk the user through the live resize + 18-flow + 6-behavior + Classic-regression walkthrough, record the response, then proceed to complete_session (status will be 'partial' or 'complete' depending on Test 6's outcome, but issues>0 already guaranteed by the 7 open gaps) -> diagnose_issues -> plan_gap_closure -> verify_gap_plans.",
+  "context_notes": "Phase 8 code/tests/build are all done and clean (npm run build, npm test 25/25, cargo test --workspace, parity.test.ts 7/7 all pass). This session is purely in the human-UAT stage. 5 of 6 UAT tests are answered; every answered issue test produced real, well-defined gaps (see UAT.md ## Gaps, G-08-1 through G-08-7) - none were dismissed or auto-fixed inline, all deferred to the standard diagnose -> plan -> execute --gaps-only pipeline once Test 6 finishes. Also note: a fresh, separate large ask surfaced mid-UAT (full Figma visual redesign) that is intentionally NOT part of this phase's gap set - it was explicitly deferred by the user to after gap closure. Do not fold it into the gap-closure plans; it needs its own planning pass (likely /gsd-explore or a new phase) using figma-design-to-code."
 }
