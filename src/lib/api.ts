@@ -23,6 +23,10 @@ export interface SiteDto {
 
 export type CustomFieldType = "text" | "hidden" | "boolean";
 
+// A union rather than `string` so the reprompt gate (plan 08-12) cannot typo a mode and silently
+// fall through to the permissive branch.
+export type RepromptMode = "perCredential" | "global";
+
 export interface CustomField {
   label: string;
   value: string;
@@ -72,6 +76,8 @@ export interface ConfigDto {
   biometricEnabled: boolean;
   sshAgentEnabled: boolean;
   uiVariant: string;
+  repromptMode: RepromptMode;
+  repromptGraceSeconds: number;
 }
 
 export interface SshKeyDto {
@@ -225,6 +231,9 @@ export const api = {
   updateNavCollapsed: (collapsed: boolean) => call<void>("update_nav_collapsed", { collapsed }),
   updateMobileNavStyle: (style: string) => call<void>("update_mobile_nav_style", { style }),
   updateUiVariant: (variant: string) => call<void>("update_ui_variant", { variant }),
+  updateRepromptMode: (mode: RepromptMode) => call<void>("update_reprompt_mode", { mode }),
+  updateRepromptGraceSeconds: (seconds: number) =>
+    call<void>("update_reprompt_grace_seconds", { seconds }),
   updateTheme: (theme: string) => call<void>("update_theme", { theme }),
   updateAccentColor: (color: string) => call<void>("update_accent_color", { color }),
   generatePassword: (request: GenerateRequest) => call<string>("generate_password", { request }),
