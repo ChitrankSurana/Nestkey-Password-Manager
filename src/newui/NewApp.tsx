@@ -5,6 +5,7 @@ import { Register } from "../screens/Register";
 import { ToastHost } from "../components/ToastHost";
 import { useActivityWatcher } from "../hooks/useActivityWatcher";
 import { api } from "../lib/api";
+import { clearRepromptGrace } from "../lib/reprompt";
 import { NewShell } from "./NewShell";
 import "../App.css";
 
@@ -35,6 +36,7 @@ function NewApp() {
     const unlistenPromise = listen("vault-locked", () => {
       setScreen("login");
       setUsername(null);
+      clearRepromptGrace();
     });
     return () => {
       unlistenPromise.then((unlisten) => unlisten());
