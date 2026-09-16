@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, isCommandError } from "../lib/api";
+import { confirmDialog } from "../lib/confirm";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
@@ -35,7 +36,7 @@ export function Backup({ onBack }: { onBack: () => void }) {
       setStatus("Backup restored. Log in with that account's master password.");
     } catch (err) {
       if (isCommandError(err) && err.code === "confirm_required") {
-        if (window.confirm(err.message)) {
+        if (await confirmDialog(err.message)) {
           try {
             await api.restoreBackup(picked, true);
             setStatus("Backup restored. Log in with that account's master password.");

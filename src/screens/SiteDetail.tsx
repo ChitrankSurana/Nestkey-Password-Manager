@@ -136,6 +136,7 @@ export function SiteDetail({ siteId, onBack }: { siteId: number; onBack: () => v
         {editingSite && site && (
           <SiteEditor
             existing={site}
+            credentialCount={credentials.length}
             onClose={() => setEditingSite(false)}
             onSaved={() => {
               setEditingSite(false);
