@@ -191,6 +191,10 @@ export function NewShell({ username }: { username: string }) {
                 onCredentialDeleted={refreshAfterSave}
                 onOpenHealth={() => setScreen("health")}
                 onBack={() => vault.selectSite(null)}
+                onSiteDeleted={() => {
+                  vault.selectSite(null);
+                  vault.refreshSites();
+                }}
               />
             ) : (
               <div className="flex flex-1 items-center justify-center bg-[var(--bg)] p-4 text-center">
@@ -230,6 +234,7 @@ export function NewShell({ username }: { username: string }) {
       {editingSite && vault.selectedSite && (
         <SiteEditor
           existing={vault.selectedSite}
+          credentialCount={vault.credentials?.length ?? null}
           onClose={() => setEditingSite(false)}
           onSaved={() => {
             setEditingSite(false);

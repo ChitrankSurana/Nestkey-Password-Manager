@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { CredentialDto, SiteDto } from "../../lib/api";
+import { api, isCommandError, type CredentialDto, type SiteDto } from "../../lib/api";
+import { confirmDialog, siteDeleteMessage } from "../../lib/confirm";
 import { PaneSurface } from "./PaneSurface";
 import { CredentialBlock } from "./CredentialBlock";
 import { CopyButton } from "./CopyButton";
@@ -21,6 +22,7 @@ export function DetailPanel({
   onCredentialDeleted,
   onOpenHealth,
   onBack,
+  onSiteDeleted,
 }: {
   site: SiteDto | null;
   credentials: CredentialDto[] | null;
@@ -32,11 +34,29 @@ export function DetailPanel({
   onCredentialDeleted: () => void;
   onOpenHealth: () => void;
   onBack: () => void;
+  onSiteDeleted: () => void;
 }) {
   const [othersOpen, setOthersOpen] = useState(false);
   const [expandedOthers, setExpandedOthers] = useState<Set<number>>(new Set());
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (!site) return null;
+
+  // Same isCommandError/generic-fallback convention CredentialBlock's own handleDelete uses -
+  // credentials?.length ?? null makes "still loading" the honest "unknown" branch rather than
+  // lying about a count of zero.
+  async function handleDeleteSite() {
+    if (!site) return;
+    const message = siteDeleteMessage(site.name, credentials?.length ?? null);
+    if (!(await confirmDialog(message))) return;
+    try {
+      setDeleteError(null);
+      await api.softDeleteSite(site.id);
+      onSiteDeleted();
+    } catch (err) {
+      setDeleteError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    }
+  }
 
   function toggleOther(id: number) {
     setExpandedOthers((prev) => {
@@ -153,6 +173,14 @@ export function DetailPanel({
                 <Icon name="plus-lg" /> Add credential
               </button>
             </Tooltip>
+            <Tooltip text="Delete this site and any credentials saved for it">
+              <button
+                onClick={handleDeleteSite}
+                className="rounded bg-[var(--danger)] hover:bg-[var(--danger-hover)] px-2 py-1 text-sm"
+              >
+                <Icon name="trash" /> Delete site
+              </button>
+            </Tooltip>
           </div>
         </div>
         <div className="mt-1 flex items-center gap-2 text-sm">
@@ -182,6 +210,7 @@ export function DetailPanel({
       )}
 
       {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+      {deleteError && <p className="mb-4 text-sm text-red-400">{deleteError}</p>}
 
       {renderBody()}
     </div>
