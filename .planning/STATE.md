@@ -5,17 +5,17 @@ milestone_name: New Vault UI & Security Hardening (Phases 8-9) — Planned
 current_phase: 08
 current_phase_name: New Vault UI (Figma Port)
 status: executing
-stopped_at: Completed 08-07-PLAN.md
-last_updated: "2026-09-16T17:06:10.368Z"
+stopped_at: Completed 08-08-PLAN.md
+last_updated: "2026-09-16T17:11:59.120Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 08 execution started
-state_head: 7067d5393f470fe886797d39bf75b0a138ac7531
+state_head: 56f77f38975a24603c1cd169c1ab74246f4ada8d
 progress:
   total_phases: 2
   completed_phases: 7
   total_plans: 12
-  completed_plans: 7
-  percent: 58
+  completed_plans: 8
+  percent: 67
 ---
 
 # Project State
@@ -31,14 +31,14 @@ zero-knowledge and local-only by default, with no path to recover a forgotten ma
 ## Current Position
 
 Phase: 08 (New Vault UI (Figma Port)) — EXECUTING
-Plan: 2 of 12
+Plan: 3 of 12
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 08 execution started
 PROJECT.md/REQUIREMENTS.md/ROADMAP.md/STATE.md. Phases 1-7 (PRD milestones M1-M6 plus biometric
 unlock/SSH agent) retroactively marked Complete based on shipped code, git history, and manual
 test checklists — none were executed through GSD plan-phase/execute-phase.
 
-Progress: [██████░░░░] 58% (7/9 phases complete; plan-level tracking not applicable to
+Progress: [███████░░░] 67% (7/9 phases complete; plan-level tracking not applicable to
 pre-GSD phases)
 
 ## Performance Metrics
@@ -72,6 +72,7 @@ pre-GSD phases)
 | Phase 08 P04 | ~20min | 3 tasks | 7 files |
 | Phase 08 P05 | ~8min | 3 tasks | 8 files |
 | Phase 08 P07 | ~15min | 2 tasks | 1 files |
+| Phase 08 P08 | 12min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,7 @@ Recent decisions affecting current work:
 - [Phase 08]: Phase 08 Plan 05: CredentialBlock gained its own local error state to surface a failed softDeleteCredential call, using the same isCommandError/generic-fallback convention used elsewhere
 - [Phase 08]: Phase 08 Plan 05: Edit/Delete/onOpenHealth callbacks threaded through DetailPanel as props rather than CredentialBlock reaching into shell state or importing editors directly
 - [Phase 08]: Phase 08 Plan 07: Used #[serde(alias = "field_type")] rather than a one-time data migration - the encrypted blob is opaque at rest, so accepting both spellings on read is simpler and safer than trying to migrate ciphertext
+- [Phase 08]: Phase 08 Plan 08: Spinner routes the bootstrap-icons glyph through the existing Icon component (not an inline <i class="bi bi-...">), preserving the project's single-choke-point rule for the icon font
 
 ### Pending Todos
 
@@ -132,8 +134,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T17:06:10.321Z
-Stopped at: Completed 08-07-PLAN.md
+Last session: 2026-09-16T17:11:59.073Z
+Stopped at: Completed 08-08-PLAN.md
 (`.planning/intel/SYNTHESIS.md`) plus the existing codebase map (`.planning/codebase/`); ready for
 the orchestrator to present the roadmap for approval and finalize the ingest workflow.
 Resume file: None
