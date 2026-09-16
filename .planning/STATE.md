@@ -5,17 +5,17 @@ milestone_name: New Vault UI & Security Hardening (Phases 8-9) — Planned
 current_phase: 08
 current_phase_name: New Vault UI (Figma Port)
 status: executing
-stopped_at: Completed 08-10-PLAN.md
-last_updated: "2026-09-16T17:42:43.557Z"
+stopped_at: Completed 08-11-PLAN.md
+last_updated: "2026-09-16T17:57:44.363Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 08 execution started
-state_head: 826ae4b1828871482691ef05eef94188c9368c68
+state_head: ec3166ab58171416d3170c6bdfedc916515394a7
 progress:
   total_phases: 2
   completed_phases: 7
   total_plans: 12
-  completed_plans: 10
-  percent: 83
+  completed_plans: 11
+  percent: 92
 ---
 
 # Project State
@@ -31,14 +31,14 @@ zero-knowledge and local-only by default, with no path to recover a forgotten ma
 ## Current Position
 
 Phase: 08 (New Vault UI (Figma Port)) — EXECUTING
-Plan: 5 of 12
+Plan: 12 of 12 (11/12 complete; 08-11 just finished, 08-12 remains)
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 08 execution started
 PROJECT.md/REQUIREMENTS.md/ROADMAP.md/STATE.md. Phases 1-7 (PRD milestones M1-M6 plus biometric
 unlock/SSH agent) retroactively marked Complete based on shipped code, git history, and manual
 test checklists — none were executed through GSD plan-phase/execute-phase.
 
-Progress: [████████░░] 83% (7/9 phases complete; plan-level tracking not applicable to
+Progress: [█████████░] 92% (7/9 phases complete; plan-level tracking not applicable to
 pre-GSD phases)
 
 ## Performance Metrics
@@ -75,6 +75,7 @@ pre-GSD phases)
 | Phase 08 P08 | 12min | 2 tasks | 5 files |
 | Phase 08 P09 | ~25min | 4 tasks | 9 files |
 | Phase 08 P10 | ~15min | 3 tasks | 7 files |
+| Phase 08 P11 | ~15min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,9 @@ Recent decisions affecting current work:
 - [Phase 08]: [Phase 08]: Phase 08 Plan 10: Task 1 (tracer, tdd=true) executed as real production-quality code from the start, per plan convention - nothing throwaway written or discarded
 - [Phase 08]: [Phase 08]: Phase 08 Plan 10: web-src-tauri create_backup handler stays request-body-free rather than adding an ignored destinationPath field, to avoid misleadingly suggesting the web route accepts a destination
 - [Phase 08]: [Phase 08]: Phase 08 Plan 10: G-08-1 closed - destination path threaded through do_create_backup/src-tauri create_backup/Backup.tsx save() dialog on desktop only; web create_backup provably still passes None (grep gate + HTTP integration test)
+- [Phase 08]: [Phase 08]: Phase 08 Plan 11: Task 1 (tracer, tdd=true) executed as real production-quality code from the start, RED/GREEN done in-session but committed as one feat commit per this phase's established convention
+- [Phase 08]: [Phase 08]: Phase 08 Plan 11: Task 2's HTTP integration tests written fresh in web-src-tauri/tests/http_integration.rs (no existing get_config test to mirror despite the plan's read_first pointer), following the file's own established conventions instead
+- [Phase 08]: [Phase 08]: Phase 08 Plan 11: G-08-2 backend closed - repromptMode/repromptGraceSeconds persisted, validated, defaulted to today's perCredential/30s behavior, and reachable over both transports; the gate logic and Settings controls remain plan 08-12's scope
 
 ### Pending Todos
 
@@ -142,8 +146,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T17:42:43.504Z
-Stopped at: Completed 08-10-PLAN.md
+Last session: 2026-09-16T17:57:44.314Z
+Stopped at: Completed 08-11-PLAN.md
 (`.planning/intel/SYNTHESIS.md`) plus the existing codebase map (`.planning/codebase/`); ready for
 the orchestrator to present the roadmap for approval and finalize the ingest workflow.
 Resume file: None
