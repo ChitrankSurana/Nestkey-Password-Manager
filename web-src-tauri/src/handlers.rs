@@ -539,11 +539,16 @@ async fn analyze_strength(
     Json(do_analyze_strength(&b.password))
 }
 
+// Deliberately does not accept a client-supplied destination, unlike the desktop `create_backup`
+// Tauri command. On desktop the path comes from a native save dialog the user personally drove;
+// in web mode it would be an arbitrary attacker-controlled string. SECURITY_CONCERNS.md H1 is the
+// still-open finding about exactly that class of parameter on four other handlers — this route
+// must not become a fifth. Phase 9 SEC-01 is chartered to confine the existing four.
 async fn create_backup(
     Extension(s): Extension<Arc<UserSession>>,
     State(ctx): State<AppContext>,
 ) -> Result<Json<String>, ApiError> {
-    Ok(Json(do_create_backup(&s.app_state, &ctx.paths)?))
+    Ok(Json(do_create_backup(&s.app_state, &ctx.paths, None)?))
 }
 
 async fn restore_backup(

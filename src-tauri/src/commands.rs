@@ -359,8 +359,12 @@ pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), Comm
 }
 
 #[tauri::command]
-pub fn create_backup(state: State<AppState>, paths: State<AppPaths>) -> Result<String, CommandError> {
-    do_create_backup(&state, &paths)
+pub fn create_backup(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    destination_path: Option<String>,
+) -> Result<String, CommandError> {
+    do_create_backup(&state, &paths, destination_path.as_deref())
 }
 
 #[tauri::command]

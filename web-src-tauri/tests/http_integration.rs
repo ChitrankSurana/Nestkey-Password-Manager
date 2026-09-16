@@ -185,3 +185,41 @@ async fn two_browser_sessions_over_real_connections_stay_isolated() {
         .unwrap();
     assert!(bob_unlocked, "locking alice's session must not lock bob's");
 }
+
+#[tokio::test]
+async fn create_backup_route_ignores_a_client_supplied_destination() {
+    let (base, dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    // A destination the server's paths (backups_dir under `dir`) never own.
+    let attacker_dir = tempfile::tempdir().unwrap();
+    let attacker_target = attacker_dir.path().join("attacker-chosen.bak");
+
+    let res = client
+        .post(format!("{base}/api/create_backup"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"destinationPath": attacker_target.to_string_lossy()}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200, "create_backup should succeed regardless of the ignored body");
+
+    let returned_path: String = res.json().await.unwrap();
+    let paths = AppPaths::new(dir.path().to_path_buf());
+    assert!(
+        std::path::Path::new(&returned_path).starts_with(paths.backups_dir()),
+        "returned path must be inside the server's own backups directory, got {returned_path}"
+    );
+    assert!(
+        !attacker_target.exists(),
+        "no file should ever be created at the client-supplied destination"
+    );
+}
