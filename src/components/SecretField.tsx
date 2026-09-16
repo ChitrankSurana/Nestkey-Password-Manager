@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { toast } from "../lib/toast";
 import { classifyChar } from "../lib/passwordColor";
 import { Icon } from "./Icon";
+import { Spinner } from "./Spinner";
 
 const CLASS_COLOR: Record<"digit" | "symbol", string> = {
   digit: "text-[var(--pw-digit)]",
@@ -128,7 +129,14 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
                 disabled={verifying || password === ""}
                 className="rounded bg-[var(--accent)] px-3 py-1 text-sm disabled:opacity-50"
               >
-                {verifying ? "Checking…" : "Confirm"}
+                {verifying ? (
+                  <>
+                    <Spinner className="mr-1.5 inline-block" />
+                    Checking…
+                  </>
+                ) : (
+                  "Confirm"
+                )}
               </button>
             </div>
           </form>
