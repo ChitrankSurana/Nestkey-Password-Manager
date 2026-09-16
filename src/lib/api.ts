@@ -232,7 +232,8 @@ export const api = {
   // No HTTP endpoint for clipboard - the browser has its own API. Desktop keeps the Tauri command.
   copyToClipboard: (text: string) =>
     isTauri ? invoke<void>("copy_to_clipboard", { text }) : webCopyToClipboard(text),
-  createBackup: () => call<string>("create_backup"),
+  createBackup: (destinationPath: string | null = null) =>
+    call<string>("create_backup", { destinationPath }),
   restoreBackup: (path: string, confirmed: boolean) =>
     call<void>("restore_backup", { path, confirmed }),
   exportCsv: (path: string, mode: ExportMode, confirmed: boolean) =>
