@@ -132,6 +132,8 @@ pub fn run() {
             commands::update_nav_collapsed,
             commands::update_mobile_nav_style,
             commands::update_ui_variant,
+            commands::update_reprompt_mode,
+            commands::update_reprompt_grace_seconds,
             commands::generate_password,
             commands::analyze_strength,
             commands::copy_to_clipboard,

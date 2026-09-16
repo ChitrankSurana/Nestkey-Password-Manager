@@ -223,3 +223,98 @@ async fn create_backup_route_ignores_a_client_supplied_destination() {
         "no file should ever be created at the client-supplied destination"
     );
 }
+
+#[tokio::test]
+async fn update_reprompt_mode_route_persists_and_is_visible_in_get_config() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let res = client
+        .post(format!("{base}/api/update_reprompt_mode"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"mode":"global"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+
+    let config: serde_json::Value = client
+        .post(format!("{base}/api/get_config"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(config["repromptMode"], "global");
+}
+
+#[tokio::test]
+async fn update_reprompt_mode_route_rejects_an_unknown_mode() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let res = client
+        .post(format!("{base}/api/update_reprompt_mode"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"mode":"always"}))
+        .send()
+        .await
+        .unwrap();
+    assert_ne!(res.status(), 200, "an unknown reprompt mode must not succeed");
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+}
+
+#[tokio::test]
+async fn update_reprompt_grace_seconds_route_persists() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let res = client
+        .post(format!("{base}/api/update_reprompt_grace_seconds"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"seconds":60}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+
+    let config: serde_json::Value = client
+        .post(format!("{base}/api/get_config"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(config["repromptGraceSeconds"], 60);
+}
