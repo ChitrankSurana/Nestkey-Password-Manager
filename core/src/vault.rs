@@ -119,9 +119,13 @@ pub enum CustomFieldType {
 // Not `#[derive(Debug)]`'d as part of `Credential`'s manual redacting impl below - a `Hidden`
 // field's value is exactly as sensitive as the main secret, so it gets the same treatment.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CustomField {
     pub label: String,
     pub value: String,
+    // The alias below keeps legacy encrypted blobs (sealed by any build predating this rename)
+    // readable: writes always emit `fieldType`, but reads accept either spelling.
+    #[serde(alias = "field_type")]
     pub field_type: CustomFieldType,
 }
 
@@ -1234,6 +1238,32 @@ mod tests {
         soft_delete_credential(&conn, cred_id).unwrap();
 
         assert!(list_old_credentials(&conn, 365).unwrap().is_empty());
+    }
+
+    #[test]
+    fn custom_field_deserializes_camel_case_field_type() {
+        let field: CustomField =
+            serde_json::from_str(r#"{"label":"PIN","value":"1234","fieldType":"hidden"}"#).unwrap();
+        assert_eq!(field.field_type, CustomFieldType::Hidden);
+    }
+
+    #[test]
+    fn custom_field_serializes_field_type_as_camel_case() {
+        let field = CustomField {
+            label: "PIN".into(),
+            value: "1234".into(),
+            field_type: CustomFieldType::Hidden,
+        };
+        let json = serde_json::to_string(&field).unwrap();
+        assert!(json.contains("\"fieldType\""));
+    }
+
+    #[test]
+    fn custom_field_still_deserializes_legacy_snake_case_key() {
+        let fields: Vec<CustomField> =
+            serde_json::from_slice(br#"[{"label":"PIN","value":"1234","field_type":"hidden"}]"#).unwrap();
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].field_type, CustomFieldType::Hidden);
     }
 
     #[test]
