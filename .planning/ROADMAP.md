@@ -159,7 +159,7 @@ found unresolved file-path, rate-limiting, and header gaps.
   3. A user can create folders, assign an item to at most one folder, and filter the vault by folder.
   4. A user can view a per-item health card (strength meter, breach status, reuse status) directly in that item's detail panel, without triggering a full vault-wide health sweep.
 
-**Plans**: 6/6 plans executed
+**Plans**: 12 plans (6/6 original executed; 6 gap-closure plans added 2026-09-16 from `08-UAT.md`)
 
 Plans:
 
@@ -169,6 +169,15 @@ Plans:
 - [x] 08-04-PLAN.md — Detail panel: credential repeater, reprompt-gated secrets, TOTP, custom fields, per-item strength meter
 - [x] 08-05-PLAN.md — CRUD wiring to the existing editors, five secondary panes, sidebar nav dispatch
 - [x] 08-06-PLAN.md — Three responsive tiers and the standing invariant gate over `src/newui/`
+
+Gap-closure plans (from `08-UAT.md`, wave order 1→5):
+
+- [ ] 08-07-PLAN.md — G-08-3 (blocker): `CustomField` camelCase serde fix, backward-compatible with existing encrypted blobs
+- [ ] 08-08-PLAN.md — G-08-7: reusable `Spinner` wired into login, register, and the reprompt confirm
+- [ ] 08-09-PLAN.md — G-08-4/5/6: cascade site delete, a confirm dialog that renders in the Tauri webview, and a direct Delete site control
+- [ ] 08-10-PLAN.md — G-08-1: native save-location picker for Create Backup (desktop only, web surface unchanged)
+- [ ] 08-11-PLAN.md — G-08-2 backend: `repromptMode` / `repromptGraceSeconds` config, setters, both transports
+- [ ] 08-12-PLAN.md — G-08-2 frontend: Global/Per-credential gate with a grace window, plus the Settings controls
 
 **Scope note (2026-09-13)**: the Goal and Success Criteria above describe the ORIGINAL scope and
 are superseded for execution by
