@@ -552,7 +552,15 @@ pub fn do_analyze_strength(password: &str) -> StrengthDto {
     StrengthDto { score, guesses_log10: est.guesses_log10(), label }
 }
 
-pub fn do_create_backup(state: &AppState, paths: &AppPaths) -> Result<String, CommandError> {
+/// `destination_path`: `None` means the app-owned backups directory (the historical, unchanged
+/// default). `Some` is only ever reached from the desktop transport, where the path came from a
+/// native save dialog the user drove — never from the web transport, which always passes `None`
+/// (see `web-src-tauri/src/handlers.rs::create_backup` for why that asymmetry is deliberate).
+pub fn do_create_backup(
+    state: &AppState,
+    paths: &AppPaths,
+    destination_path: Option<&str>,
+) -> Result<String, CommandError> {
     let vault_path = {
         let vault_guard = state.vault.lock().unwrap();
         let (_, path) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
@@ -573,13 +581,21 @@ pub fn do_create_backup(state: &AppState, paths: &AppPaths) -> Result<String, Co
     let vault_bytes = std::fs::read(&vault_path).map_err(|_| crate::error::internal_error())?;
     let bundle = crate::backup::encode_bundle(&user_record, &vault_bytes);
 
-    // Millisecond precision: a whole-second timestamp lets two backups made in quick succession
-    // silently collide and overwrite each other.
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let backup_path = paths.backups_dir().join(format!("{}-{}.bak", username, timestamp));
+    let backup_path = match destination_path {
+        None => {
+            // Millisecond precision: a whole-second timestamp lets two backups made in quick
+            // succession silently collide and overwrite each other.
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            paths.backups_dir().join(format!("{}-{}.bak", username, timestamp))
+        }
+        Some(p) if p.trim().is_empty() => {
+            return Err(crate::error::invalid_input_error("Choose a backup destination."));
+        }
+        Some(p) => std::path::PathBuf::from(p),
+    };
     std::fs::write(&backup_path, &bundle).map_err(|_| crate::error::internal_error())?;
 
     Ok(backup_path.to_string_lossy().to_string())
@@ -1524,7 +1540,7 @@ mod tests {
 
     fn backup_for(state: &AppState, paths: &AppPaths, username: &str) -> Vec<u8> {
         do_register(state, paths, username, "correct horse battery staple").unwrap();
-        let path = do_create_backup(state, paths).unwrap();
+        let path = do_create_backup(state, paths, None).unwrap();
         std::fs::read(path).unwrap()
     }
 
@@ -1533,7 +1549,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
 
-        let path = do_create_backup(&state, &paths).unwrap();
+        let path = do_create_backup(&state, &paths, None).unwrap();
 
         assert!(std::path::Path::new(&path).starts_with(paths.backups_dir()));
         let bytes = std::fs::read(&path).unwrap();
@@ -1545,8 +1561,53 @@ mod tests {
     #[test]
     fn create_backup_when_locked_returns_locked_error() {
         let (state, paths, _dir) = test_state_and_paths();
-        let result = do_create_backup(&state, &paths);
+        let result = do_create_backup(&state, &paths, None);
         assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn create_backup_writes_to_an_explicit_destination_when_given_one() {
+        let (state, paths, dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let chosen = dir.path().join("chosen-name.bak");
+
+        let path = do_create_backup(&state, &paths, Some(chosen.to_str().unwrap())).unwrap();
+
+        assert_eq!(path, chosen.to_string_lossy().to_string());
+        assert!(chosen.exists());
+        let entries: Vec<_> = std::fs::read_dir(paths.backups_dir())
+            .map(|rd| rd.filter_map(|e| e.ok()).collect())
+            .unwrap_or_default();
+        assert!(entries.is_empty(), "nothing should be written under backups_dir()");
+        let bytes = std::fs::read(&chosen).unwrap();
+        let (user, vault_bytes) = crate::backup::decode_bundle(&bytes).unwrap();
+        assert_eq!(user.username, "alice");
+        assert!(!vault_bytes.is_empty());
+    }
+
+    #[test]
+    fn create_backup_rejects_an_empty_destination() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let result = do_create_backup(&state, &paths, Some(""));
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+        let entries: Vec<_> = std::fs::read_dir(paths.backups_dir())
+            .map(|rd| rd.filter_map(|e| e.ok()).collect())
+            .unwrap_or_default();
+        assert!(entries.is_empty(), "nothing should be written for an empty destination");
+    }
+
+    #[test]
+    fn create_backup_when_locked_ignores_the_destination() {
+        let (state, paths, dir) = test_state_and_paths();
+        let chosen = dir.path().join("x.bak");
+
+        let result = do_create_backup(&state, &paths, Some(chosen.to_str().unwrap()));
+
+        assert_eq!(result.unwrap_err().code(), "locked");
+        assert!(!chosen.exists());
     }
 
     #[test]
