@@ -219,14 +219,32 @@ pub fn count_live_credentials_for_site(conn: &Connection, site_id: i64) -> Resul
     )?)
 }
 
+/// Soft-deletes a site AND cascades the delete to every one of its still-live credentials, in one
+/// transaction. A half-applied delete (site marked deleted but its credentials left live) would
+/// orphan nothing by itself, but the reverse - credentials marked deleted while their site stays
+/// live - is never reachable through this function's own statement order, and a mid-transaction
+/// crash must not be able to produce either partial state, since `list_credentials_for_site`
+/// filters on both the credential's own `deleted_at` and its parent site's. Uses
+/// `unchecked_transaction` (not `conn.transaction()`, which needs `&mut Connection`) because this
+/// function only ever receives `&Connection` - the command layer holds it behind a mutex guard it
+/// can't hand out `&mut` from.
 pub fn soft_delete_site(conn: &Connection, site_id: i64) -> Result<(), VaultError> {
-    let updated = conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    let updated = tx.execute(
         "UPDATE sites SET deleted_at = datetime('now') WHERE id = ?1 AND deleted_at IS NULL",
         rusqlite::params![site_id],
     )?;
     if updated == 0 {
         return Err(VaultError::NotFound);
     }
+    // `AND deleted_at IS NULL` here is required so a credential the user already trashed
+    // separately keeps its own original timestamp and its place in Trash's deleted_at ordering,
+    // instead of being silently re-stamped with "now" by this cascade.
+    tx.execute(
+        "UPDATE credentials SET deleted_at = datetime('now') WHERE site_id = ?1 AND deleted_at IS NULL",
+        rusqlite::params![site_id],
+    )?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -476,6 +494,18 @@ pub fn restore_credential(conn: &Connection, credential_id: i64) -> Result<(), V
     if updated == 0 {
         return Err(VaultError::NotFound);
     }
+    // Cascade-delete decision (Option A, 08-09-PLAN.md Task 1): soft_delete_site cascades to a
+    // site's live credentials, and those cascaded rows surface in Trash under the deleted site's
+    // name. Without this, restoring one of them here would clear the credential's own deleted_at
+    // while its parent site stayed deleted - list_credentials_for_site filters on both, so the
+    // credential would become live-but-unreachable with no restore-site UI anywhere to fix it.
+    // This UPDATE is a no-op (0 rows) whenever the site was already live, so restoring an
+    // individually-trashed credential under a live site is unaffected.
+    conn.execute(
+        "UPDATE sites SET deleted_at = NULL
+         WHERE id = (SELECT site_id FROM credentials WHERE id = ?1) AND deleted_at IS NOT NULL",
+        rusqlite::params![credential_id],
+    )?;
     Ok(())
 }
 
@@ -825,6 +855,104 @@ mod tests {
 
         let sites = list_sites(&conn).unwrap();
         assert!(sites.is_empty());
+    }
+
+    #[test]
+    fn soft_delete_site_cascades_to_its_live_credentials() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[50u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        add_credential(&conn, &key, site_id, Some("alice"), "s3cret-a", None, &[], false).unwrap();
+        add_credential(&conn, &key, site_id, Some("bob"), "s3cret-b", None, &[], false).unwrap();
+
+        soft_delete_site(&conn, site_id).unwrap();
+
+        let live: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM credentials WHERE site_id = ?1 AND deleted_at IS NULL",
+                rusqlite::params![site_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(live, 0);
+    }
+
+    #[test]
+    fn soft_delete_site_does_not_rewrite_an_already_trashed_credential() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[51u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret-a", None, &[], false).unwrap();
+        soft_delete_credential(&conn, cred_id).unwrap();
+        let original_deleted_at: String = conn
+            .query_row(
+                "SELECT deleted_at FROM credentials WHERE id = ?1",
+                rusqlite::params![cred_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        soft_delete_site(&conn, site_id).unwrap();
+
+        let after_cascade: String = conn
+            .query_row(
+                "SELECT deleted_at FROM credentials WHERE id = ?1",
+                rusqlite::params![cred_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(after_cascade, original_deleted_at);
+    }
+
+    #[test]
+    fn soft_delete_site_on_an_already_deleted_site_still_returns_not_found() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[52u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        soft_delete_site(&conn, site_id).unwrap();
+
+        let result = soft_delete_site(&conn, site_id);
+
+        assert!(matches!(result, Err(VaultError::NotFound)));
+    }
+
+    #[test]
+    fn cascade_deleted_credentials_appear_in_trash() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[53u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        add_credential(&conn, &key, site_id, Some("alice"), "s3cret-a", None, &[], false).unwrap();
+        add_credential(&conn, &key, site_id, Some("bob"), "s3cret-b", None, &[], false).unwrap();
+
+        soft_delete_site(&conn, site_id).unwrap();
+
+        let trash = list_trash(&conn).unwrap();
+        assert_eq!(trash.len(), 2);
+        assert!(trash.iter().all(|t| t.site_name == "example.com"));
+    }
+
+    #[test]
+    fn restore_credential_revives_its_cascade_deleted_site() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[54u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "s3cret-a", None, &[], false).unwrap();
+        soft_delete_site(&conn, site_id).unwrap();
+        assert!(list_sites(&conn).unwrap().is_empty());
+
+        restore_credential(&conn, cred_id).unwrap();
+
+        let sites = list_sites(&conn).unwrap();
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].id, site_id);
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+        assert_eq!(creds.len(), 1);
+        assert_eq!(creds[0].id, cred_id);
     }
 
     #[test]

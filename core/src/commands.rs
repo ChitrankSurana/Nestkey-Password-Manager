@@ -260,17 +260,11 @@ pub fn do_update_site(
 pub fn do_soft_delete_site(state: &AppState, site_id: i64) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
-    // Business rule enforced here, not in vault::soft_delete_site itself: that lower-level
-    // function is also used to cascade-delete a site's credentials from every read path, and
-    // several existing tests rely on it doing so unconditionally. The command layer is the right
-    // place to refuse the destructive action instead - there's no restore-site UI, so an orphaned
-    // site's credentials would otherwise become permanently unreachable.
-    let live = crate::vault::count_live_credentials_for_site(conn, site_id)?;
-    if live > 0 {
-        return Err(crate::error::invalid_input_error(
-            "This site still has credentials. Delete them first, then delete the site.",
-        ));
-    }
+    // No refuse-outright guard here anymore (08-09-PLAN.md, gap G-08-6): the command layer used
+    // to refuse a non-empty site because the lower-level soft_delete_site had no cascade logic.
+    // It cascades now, so a site with live credentials deletes cleanly - the user is warned by
+    // the frontend's confirm copy (src/lib/confirm.ts's siteDeleteMessage) before this is ever
+    // called, and Trash plus restore_credential's site-revival are the recovery path.
     Ok(crate::vault::soft_delete_site(conn, site_id)?)
 }
 
@@ -1201,16 +1195,18 @@ mod tests {
     }
 
     #[test]
-    fn soft_delete_site_refuses_when_site_still_has_a_live_credential() {
+    fn do_soft_delete_site_succeeds_when_the_site_still_has_credentials() {
+        // Previously this asserted a refusal (invalid_input). The user rejected that behavior
+        // (G-08-6, 08-UAT.md) - a site with credentials now deletes cleanly, cascading to its
+        // credentials, gated behind a frontend confirmation instead of a hard backend refusal.
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
         do_add_credential(&state, site_id, Some("bob"), "s3cret", None, &[], false).unwrap();
 
-        let err = do_soft_delete_site(&state, site_id).unwrap_err();
+        do_soft_delete_site(&state, site_id).unwrap();
 
-        assert_eq!(err.code(), "invalid_input");
-        assert_eq!(do_list_sites(&state).unwrap().len(), 1);
+        assert!(do_list_sites(&state).unwrap().is_empty());
     }
 
     #[test]
