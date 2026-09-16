@@ -159,7 +159,7 @@ found unresolved file-path, rate-limiting, and header gaps.
   3. A user can create folders, assign an item to at most one folder, and filter the vault by folder.
   4. A user can view a per-item health card (strength meter, breach status, reuse status) directly in that item's detail panel, without triggering a full vault-wide health sweep.
 
-**Plans**: 9/12 plans executed (6/6 original executed; 6 gap-closure plans added 2026-09-16 from `08-UAT.md`)
+**Plans**: 10/12 plans executed (6/6 original executed; 6 gap-closure plans added 2026-09-16 from `08-UAT.md`)
 
 Plans:
 
@@ -175,7 +175,7 @@ Gap-closure plans (from `08-UAT.md`, wave order 1→5):
 - [x] 08-07-PLAN.md — G-08-3 (blocker): `CustomField` camelCase serde fix, backward-compatible with existing encrypted blobs
 - [x] 08-08-PLAN.md — G-08-7: reusable `Spinner` wired into login, register, and the reprompt confirm
 - [x] 08-09-PLAN.md — G-08-4/5/6: cascade site delete, a confirm dialog that renders in the Tauri webview, and a direct Delete site control
-- [ ] 08-10-PLAN.md — G-08-1: native save-location picker for Create Backup (desktop only, web surface unchanged)
+- [x] 08-10-PLAN.md — G-08-1: native save-location picker for Create Backup (desktop only, web surface unchanged)
 - [ ] 08-11-PLAN.md — G-08-2 backend: `repromptMode` / `repromptGraceSeconds` config, setters, both transports
 - [ ] 08-12-PLAN.md — G-08-2 frontend: Global/Per-credential gate with a grace window, plus the Settings controls
 
@@ -222,5 +222,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Read-Only Viewer | v1.0 | N/A (pre-GSD) | Complete | 2026-07-16 |
 | 6. Localhost Web Mode | v1.0 | N/A (pre-GSD) | Complete | 2026-07-19 |
 | 7. Platform Integrations | v1.1 | N/A (pre-GSD) | Complete | 2026-09 (approx.) |
-| 8. New Vault UI (Figma Port) | v2.0 | 9/12 | In Progress|  |
+| 8. New Vault UI (Figma Port) | v2.0 | 10/12 | In Progress|  |
 | 9. Web Mode Security Hardening | v2.0 | 0/TBD | Not started | - |

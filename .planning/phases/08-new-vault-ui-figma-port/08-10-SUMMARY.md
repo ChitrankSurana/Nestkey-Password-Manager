@@ -255,3 +255,8 @@ already a direct dependency and already permitted by `dialog:allow-save` in
 ---
 *Phase: 08-new-vault-ui-figma-port*
 *Completed: 2026-09-16*
+
+## Self-Check: PASSED
+
+All 8 key files verified present on disk (`[ -f ]`), and all 4 commits (`955ff7f`, `80909d9`,
+`fb5d425`, `826ae4b`) verified present in `git log --oneline --all`.
