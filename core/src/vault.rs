@@ -1267,6 +1267,28 @@ mod tests {
     }
 
     #[test]
+    fn credential_with_hidden_custom_field_round_trips_through_vault() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("master password", &[45u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let custom_fields = vec![CustomField {
+            label: "Recovery PIN".into(),
+            value: "1234".into(),
+            field_type: CustomFieldType::Hidden,
+        }];
+        add_credential(&conn, &key, site_id, Some("alice"), "secret", None, &custom_fields, false).unwrap();
+
+        let creds = list_credentials_for_site(&conn, &key, site_id).unwrap();
+
+        assert_eq!(creds.len(), 1);
+        assert_eq!(creds[0].custom_fields.len(), 1);
+        assert_eq!(creds[0].custom_fields[0].label, "Recovery PIN");
+        assert_eq!(creds[0].custom_fields[0].value, "1234");
+        assert_eq!(creds[0].custom_fields[0].field_type, CustomFieldType::Hidden);
+    }
+
+    #[test]
     fn list_old_credentials_excludes_credentials_on_a_soft_deleted_site() {
         // The join's other half - s.deleted_at IS NULL - has no coverage without this: a
         // credential can be individually untouched but its site soft-deleted (e.g. via Trash),
