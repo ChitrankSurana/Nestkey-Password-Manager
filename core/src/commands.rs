@@ -1,4 +1,4 @@
-use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS, VALID_UI_VARIANTS};
+use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_REPROMPT_GRACE_SECONDS, VALID_REPROMPT_MODES, VALID_STRENGTH_ALGORITHMS, VALID_UI_VARIANTS};
 use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
@@ -214,6 +214,8 @@ pub fn do_get_config(state: &AppState) -> ConfigDto {
         biometric_enabled: config.biometric_enabled,
         ssh_agent_enabled: config.ssh_agent_enabled,
         ui_variant: config.ui_variant.clone(),
+        reprompt_mode: config.reprompt_mode.clone(),
+        reprompt_grace_seconds: config.reprompt_grace_seconds,
     }
 }
 
@@ -521,6 +523,30 @@ pub fn do_update_ui_variant(state: &AppState, paths: &AppPaths, variant: &str) -
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.ui_variant = variant.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_reprompt_mode(state: &AppState, paths: &AppPaths, mode: &str) -> Result<(), CommandError> {
+    if !VALID_REPROMPT_MODES.contains(&mode) {
+        return Err(crate::error::invalid_input_error("Unknown reprompt mode."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.reprompt_mode = mode.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_reprompt_grace_seconds(state: &AppState, paths: &AppPaths, seconds: u32) -> Result<(), CommandError> {
+    if !VALID_REPROMPT_GRACE_SECONDS.contains(&seconds) {
+        return Err(crate::error::invalid_input_error("Unknown reprompt grace window."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.reprompt_grace_seconds = seconds;
     updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
     *config = updated;
     Ok(())
@@ -2307,5 +2333,39 @@ mod tests {
         let result = do_update_ui_variant(&state, &bad_paths, "new");
         assert!(result.is_err());
         assert_eq!(do_get_config(&state).ui_variant, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn update_reprompt_mode_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_reprompt_mode(&state, &paths, "global").unwrap();
+        assert_eq!(do_get_config(&state).reprompt_mode, "global");
+        assert_eq!(do_update_reprompt_mode(&state, &paths, "always").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_reprompt_grace_seconds_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_reprompt_grace_seconds(&state, &paths, 60).unwrap();
+        assert_eq!(do_get_config(&state).reprompt_grace_seconds, 60);
+        assert_eq!(do_update_reprompt_grace_seconds(&state, &paths, 7).unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn get_config_includes_reprompt_defaults() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        let config = do_get_config(&state);
+        assert_eq!(config.reprompt_mode, "perCredential");
+        assert_eq!(config.reprompt_grace_seconds, 30);
+    }
+
+    #[test]
+    fn update_reprompt_mode_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+        let before = do_get_config(&state).reprompt_mode;
+        let result = do_update_reprompt_mode(&state, &bad_paths, "global");
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).reprompt_mode, before, "state.config must not change when the save fails");
     }
 }
