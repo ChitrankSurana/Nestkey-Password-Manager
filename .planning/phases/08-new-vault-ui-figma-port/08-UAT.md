@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 08-new-vault-ui-figma-port
 source: [08-VERIFICATION.md]
 started: 2026-09-14T17:17:38Z
-updated: 2026-09-15T00:15:00Z
+updated: 2026-09-16T00:00:00Z
 ---
 
 ## Current Test
 
-number: 6
-name: Responsive tiers, full capability checklist, and Classic regression check
-expected: |
-  Resize the window through all three D-18 tiers (>=1024px full sidebar honoring navCollapsed; 640-1023px icon rail with navCollapsed untouched; <640px mobile nav swap with single visible pane and a working Back). Walk all 18 flows in docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md §1 in the New UI, and separately confirm all six §4 cross-cutting behaviors (30s clipboard auto-clear, reprompt on reveal+copy for both secret types, idle/sleep auto-lock returns to login, theme+all 5 accents load flash-free, all three mobileNavStyle values render correctly below 640px, no credential fetched before a site is opened). Finally set ui_variant back to classic and walk the same 18 flows in Classic to confirm nothing changed.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -45,15 +41,16 @@ severity: major
 
 ### 6. Responsive tiers, full capability checklist, and Classic regression check
 expected: Resize the window through all three D-18 tiers (>=1024px full sidebar honoring navCollapsed; 640-1023px icon rail with navCollapsed untouched; <640px mobile nav swap with single visible pane and a working Back). Walk all 18 flows in docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md §1 in the New UI, and separately confirm all six §4 cross-cutting behaviors (30s clipboard auto-clear, reprompt on reveal+copy for both secret types, idle/sleep auto-lock returns to login, theme+all 5 accents load flash-free, all three mobileNavStyle values render correctly below 640px, no credential fetched before a site is opened). Finally set ui_variant back to classic and walk the same 18 flows in Classic to confirm nothing changed.
-result: [pending]
+result: skipped
+reason: "User will complete this test later"
 
 ## Summary
 
 total: 6
 passed: 2
 issues: 3
-pending: 1
-skipped: 0
+pending: 0
+skipped: 1
 blocked: 0
 
 ## Deferred Follow-Ups
