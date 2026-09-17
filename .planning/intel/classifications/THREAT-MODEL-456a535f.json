@@ -1,0 +1,13 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/THREAT_MODEL.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Threat Model",
+  "summary": "Technical specification of security threats, assets, mitigations, and residual risks.",
+  "scope": ["encryption", "master password", "vault security", "web mode", "CSRF", "session management", "tamper detection", "auto-lock", "Argon2id", "AES-256-GCM", "SQLCipher"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": "Boundary case between SPEC and DOC; classified as SPEC due to explicit verification requirements (Section 6: 'Each mitigation above should have a corresponding automated test or manual check') and prescriptive implementation constraints (e.g., 'binds to 127.0.0.1 only, hard-coded, not configurable'). Drives both implementation and testing decisions."
+}

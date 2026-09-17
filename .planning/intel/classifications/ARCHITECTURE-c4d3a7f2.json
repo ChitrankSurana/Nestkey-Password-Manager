@@ -1,0 +1,23 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/ARCHITECTURE.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Architecture",
+  "summary": "System architecture describing React frontend, Rust core, and SQLCipher storage with security-focused design rationale.",
+  "scope": [
+    "React frontend",
+    "Rust core",
+    "Tauri IPC",
+    "SQLCipher",
+    "AES-256-GCM",
+    "Argon2id",
+    "module boundaries",
+    "data flows",
+    "encryption"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": "Medium confidence: document contains technical constraints and architectural specifications (module boundaries, data flow contracts, storage locations) that resemble SPEC signals, but overall purpose is design rationale and explanation rather than formal specification format. Content is prose-heavy narrative with diagrams rather than schema/endpoint/SLO tables. Best classified as architectural documentation."
+}

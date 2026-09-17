@@ -185,3 +185,136 @@ async fn two_browser_sessions_over_real_connections_stay_isolated() {
         .unwrap();
     assert!(bob_unlocked, "locking alice's session must not lock bob's");
 }
+
+#[tokio::test]
+async fn create_backup_route_ignores_a_client_supplied_destination() {
+    let (base, dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    // A destination the server's paths (backups_dir under `dir`) never own.
+    let attacker_dir = tempfile::tempdir().unwrap();
+    let attacker_target = attacker_dir.path().join("attacker-chosen.bak");
+
+    let res = client
+        .post(format!("{base}/api/create_backup"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"destinationPath": attacker_target.to_string_lossy()}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200, "create_backup should succeed regardless of the ignored body");
+
+    let returned_path: String = res.json().await.unwrap();
+    let paths = AppPaths::new(dir.path().to_path_buf());
+    assert!(
+        std::path::Path::new(&returned_path).starts_with(paths.backups_dir()),
+        "returned path must be inside the server's own backups directory, got {returned_path}"
+    );
+    assert!(
+        !attacker_target.exists(),
+        "no file should ever be created at the client-supplied destination"
+    );
+}
+
+#[tokio::test]
+async fn update_reprompt_mode_route_persists_and_is_visible_in_get_config() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let res = client
+        .post(format!("{base}/api/update_reprompt_mode"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"mode":"global"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+
+    let config: serde_json::Value = client
+        .post(format!("{base}/api/get_config"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(config["repromptMode"], "global");
+}
+
+#[tokio::test]
+async fn update_reprompt_mode_route_rejects_an_unknown_mode() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let res = client
+        .post(format!("{base}/api/update_reprompt_mode"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"mode":"always"}))
+        .send()
+        .await
+        .unwrap();
+    assert_ne!(res.status(), 200, "an unknown reprompt mode must not succeed");
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+}
+
+#[tokio::test]
+async fn update_reprompt_grace_seconds_route_persists() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let res = client
+        .post(format!("{base}/api/update_reprompt_grace_seconds"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"seconds":60}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+
+    let config: serde_json::Value = client
+        .post(format!("{base}/api/get_config"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(config["repromptGraceSeconds"], 60);
+}

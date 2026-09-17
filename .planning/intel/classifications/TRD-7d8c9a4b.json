@@ -1,0 +1,12 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/TRD.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Technical Requirements Document (TRD)",
+  "summary": "Technical spec for local-first Tauri+Rust password manager with cryptographic design, database schema, and API contract.",
+  "scope": ["Tauri 2.x", "Rust", "React 18", "SQLCipher", "AES-256-GCM", "Argon2id", "password manager", "local-first architecture", "cryptographic protocols", "API contract", "database schema", "non-functional requirements"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null
+}

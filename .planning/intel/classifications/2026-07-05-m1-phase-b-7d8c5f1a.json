@@ -1,0 +1,26 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/superpowers/plans/2026-07-05-m1-phase-b.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "M1 Phase B — Tauri Desktop App + IPC + React Vault UI Implementation Plan",
+  "summary": "Step-by-step implementation guide for building Phase B: Tauri desktop shell, IPC command layer, and React vault UI with auth and auto-lock.",
+  "scope": [
+    "Tauri 2.x",
+    "React 18",
+    "TypeScript",
+    "Vite",
+    "Rust",
+    "IPC commands",
+    "authentication",
+    "auto-lock",
+    "vault UI",
+    "configuration",
+    "dark theme",
+    "Tailwind CSS"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

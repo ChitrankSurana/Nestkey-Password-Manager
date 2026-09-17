@@ -1,0 +1,12 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/superpowers/plans/2026-07-19-npm-audit-fix.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "npm audit fix (vitest 2 → 4) — Implementation Plan",
+  "summary": "Step-by-step plan to upgrade vitest 2.1.9 to 4.1.10 and resolve an esbuild advisory.",
+  "scope": ["npm audit", "vitest", "esbuild", "dependency upgrade", "package-lock.json", "vitest.config.ts"],
+  "cross_refs": ["vitest.config.ts", "src/lib/clipboard.test.ts", "package.json", "package-lock.json"],
+  "locked": false,
+  "precedence": null
+}

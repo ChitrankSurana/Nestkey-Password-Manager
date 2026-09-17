@@ -7,6 +7,14 @@ pub const VALID_STRENGTH_ALGORITHMS: [&str; 2] = ["simple", "zxcvbn"];
 pub const VALID_ACCENT_COLORS: [&str; 5] = ["indigo", "sky", "teal", "purple", "pink"];
 pub const VALID_OLD_PASSWORD_DAYS: [u32; 3] = [90, 180, 365];
 pub const VALID_MOBILE_NAV_STYLES: [&str; 3] = ["icon-rail", "bottom-tabs", "drawer"];
+pub const VALID_UI_VARIANTS: [&str; 2] = ["classic", "new"];
+// Exact camelCase spellings the UAT's locked decision names and the frontend compares against
+// directly - keeping one spelling end to end avoids a translation layer.
+pub const VALID_REPROMPT_MODES: [&str; 2] = ["perCredential", "global"];
+// A fixed allowlist rather than a free integer, matching how VALID_AUTO_LOCK_MINUTES constrains
+// the other timeout the user can pick - a free integer would need its own range validation and
+// would let a user disable the reprompt gate by entering an enormous grace window.
+pub const VALID_REPROMPT_GRACE_SECONDS: [u32; 4] = [15, 30, 60, 300];
 
 fn default_theme() -> String {
     "dark".to_string()
@@ -40,12 +48,26 @@ fn default_mobile_nav_style() -> String {
     "icon-rail".to_string()
 }
 
+fn default_ui_variant() -> String {
+    "classic".to_string()
+}
+
 fn default_biometric_enabled() -> bool {
     false
 }
 
 fn default_ssh_agent_enabled() -> bool {
     false
+}
+
+// Every existing install must keep today's exact behavior until the user opts in - only
+// credentials with "Require reprompt" on ask for the master password, and they ask every time.
+fn default_reprompt_mode() -> String {
+    "perCredential".to_string()
+}
+
+fn default_reprompt_grace_seconds() -> u32 {
+    30
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -77,6 +99,20 @@ pub struct Config {
     // an explicit opt-in switch.
     #[serde(default = "default_ssh_agent_enabled")]
     pub ssh_agent_enabled: bool,
+    // Selects which frontend entry the desktop window builds from at boot (Phase 8, D-02/D-03):
+    // "classic" -> index.html (today's UI, unchanged), "new" -> newui.html (Figma port). Read
+    // once at startup in src-tauri/src/lib.rs, applied on next launch after a Settings change.
+    #[serde(default = "default_ui_variant")]
+    pub ui_variant: String,
+    // Reprompt policy (Phase 8 gap G-08-2): "perCredential" (default, today's behavior) only
+    // gates credentials with their own "Require reprompt" flag on, every single time. "global"
+    // gates every credential's reveal/copy, but a correct entry opens a grace window
+    // (reprompt_grace_seconds) during which further reveals/copies for ANY credential do not
+    // re-prompt. The grace window applies only in "global" mode.
+    #[serde(default = "default_reprompt_mode")]
+    pub reprompt_mode: String,
+    #[serde(default = "default_reprompt_grace_seconds")]
+    pub reprompt_grace_seconds: u32,
 }
 
 impl Default for Config {
@@ -92,6 +128,9 @@ impl Default for Config {
             mobile_nav_style: default_mobile_nav_style(),
             biometric_enabled: default_biometric_enabled(),
             ssh_agent_enabled: default_ssh_agent_enabled(),
+            ui_variant: default_ui_variant(),
+            reprompt_mode: default_reprompt_mode(),
+            reprompt_grace_seconds: default_reprompt_grace_seconds(),
         }
     }
 }
@@ -144,6 +183,21 @@ impl Config {
         } else {
             parsed
         };
+        let parsed = if !VALID_UI_VARIANTS.contains(&parsed.ui_variant.as_str()) {
+            Config { ui_variant: default_ui_variant(), ..parsed }
+        } else {
+            parsed
+        };
+        let parsed = if !VALID_REPROMPT_MODES.contains(&parsed.reprompt_mode.as_str()) {
+            Config { reprompt_mode: default_reprompt_mode(), ..parsed }
+        } else {
+            parsed
+        };
+        let parsed = if !VALID_REPROMPT_GRACE_SECONDS.contains(&parsed.reprompt_grace_seconds) {
+            Config { reprompt_grace_seconds: default_reprompt_grace_seconds(), ..parsed }
+        } else {
+            parsed
+        };
         Ok(parsed)
     }
 
@@ -184,6 +238,9 @@ mod tests {
             mobile_nav_style: default_mobile_nav_style(),
             biometric_enabled: default_biometric_enabled(),
             ssh_agent_enabled: default_ssh_agent_enabled(),
+            ui_variant: default_ui_variant(),
+            reprompt_mode: default_reprompt_mode(),
+            reprompt_grace_seconds: default_reprompt_grace_seconds(),
         };
 
         config.save(&path).unwrap();
@@ -273,6 +330,9 @@ mod tests {
             mobile_nav_style: default_mobile_nav_style(),
             biometric_enabled: default_biometric_enabled(),
             ssh_agent_enabled: default_ssh_agent_enabled(),
+            ui_variant: default_ui_variant(),
+            reprompt_mode: default_reprompt_mode(),
+            reprompt_grace_seconds: default_reprompt_grace_seconds(),
         };
 
         config.save(&path).unwrap();
@@ -362,5 +422,86 @@ mod tests {
         let config = Config::load(&path).unwrap();
         assert_eq!(config.hibp_opt_in, true);
         assert_eq!(config.accent_color, "indigo"); // untouched field still defaults correctly
+    }
+
+    #[test]
+    fn load_defaults_ui_variant_to_classic() {
+        let dir = tempdir().unwrap();
+        let config = Config::load(&dir.path().join("config.json")).unwrap();
+        assert_eq!(config.ui_variant, "classic");
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_ui_variant() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let config = Config { ui_variant: "new".to_string(), ..Config::default() };
+
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+
+        assert_eq!(loaded.ui_variant, "new");
+    }
+
+    #[test]
+    fn load_rejects_invalid_ui_variant_by_falling_back_to_default() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"ui_variant":"figma-preview"}"#).unwrap();
+        assert_eq!(Config::load(&path).unwrap().ui_variant, "classic");
+    }
+
+    #[test]
+    fn load_defaults_reprompt_mode_to_per_credential() {
+        let dir = tempdir().unwrap();
+        let config = Config::load(&dir.path().join("config.json")).unwrap();
+        assert_eq!(config.reprompt_mode, "perCredential");
+        assert_eq!(config.reprompt_grace_seconds, 30);
+    }
+
+    #[test]
+    fn load_preserves_other_fields_when_reprompt_fields_are_absent() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"theme":"light"}"#).unwrap();
+
+        let config = Config::load(&path).unwrap();
+
+        assert_eq!(config.theme, "light");
+        assert_eq!(config.reprompt_mode, "perCredential");
+        assert_eq!(config.reprompt_grace_seconds, 30);
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_reprompt_fields() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let config = Config {
+            reprompt_mode: "global".to_string(),
+            reprompt_grace_seconds: 60,
+            ..Config::default()
+        };
+
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+
+        assert_eq!(loaded.reprompt_mode, "global");
+        assert_eq!(loaded.reprompt_grace_seconds, 60);
+    }
+
+    #[test]
+    fn load_rejects_invalid_reprompt_mode_by_falling_back_to_default() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"reprompt_mode":"always"}"#).unwrap();
+        assert_eq!(Config::load(&path).unwrap().reprompt_mode, "perCredential");
+    }
+
+    #[test]
+    fn load_rejects_invalid_reprompt_grace_seconds_by_falling_back_to_default() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"reprompt_grace_seconds":7}"#).unwrap();
+        assert_eq!(Config::load(&path).unwrap().reprompt_grace_seconds, 30);
     }
 }

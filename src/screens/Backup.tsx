@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
-import { api, isCommandError } from "../lib/api";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { api, isCommandError, isTauri } from "../lib/api";
+import { confirmDialog } from "../lib/confirm";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
@@ -10,11 +11,20 @@ export function Backup({ onBack }: { onBack: () => void }) {
   const [busy, setBusy] = useState(false);
 
   async function handleCreate() {
+    let target: string | null = null;
+    if (isTauri) {
+      target = await save({
+        defaultPath: "vault-backup.bak",
+        filters: [{ name: "Backup", extensions: ["bak"] }],
+      });
+      if (!target) return; // cancelled - no busy state, no error, no status change
+    }
+
     setBusy(true);
     try {
       setError(null);
       setStatus(null);
-      const path = await api.createBackup();
+      const path = await api.createBackup(target);
       setStatus(`Backup written to ${path}`);
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
@@ -35,7 +45,7 @@ export function Backup({ onBack }: { onBack: () => void }) {
       setStatus("Backup restored. Log in with that account's master password.");
     } catch (err) {
       if (isCommandError(err) && err.code === "confirm_required") {
-        if (window.confirm(err.message)) {
+        if (await confirmDialog(err.message)) {
           try {
             await api.restoreBackup(picked, true);
             setStatus("Backup restored. Log in with that account's master password.");
@@ -60,7 +70,7 @@ export function Backup({ onBack }: { onBack: () => void }) {
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
       {status && <p className="text-sm text-green-400 mb-4">{status}</p>}
       <div className="space-x-2">
-        <Tooltip text="Write an encrypted backup of this vault to ~/.pwmgr/backups">
+        <Tooltip text="Write an encrypted backup of this vault - you'll be asked where to save it">
           <button onClick={handleCreate} disabled={busy} className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
             <Icon name="floppy2-fill" /> Create Backup
           </button>

@@ -1,0 +1,12 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/PRD.md",
+  "type": "PRD",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Product Requirements Document: Local-First Zero-Knowledge Password Manager",
+  "summary": "Requirements for a local-first, zero-knowledge password manager with encrypted vault storage, master password authentication, and no cloud sync.",
+  "scope": ["password manager", "encrypted vault", "master password", "password generator", "health dashboard", "CSV import/export", "backup/restore", "theming", "read-only viewer", "localhost mode", "Windows 11"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null
+}

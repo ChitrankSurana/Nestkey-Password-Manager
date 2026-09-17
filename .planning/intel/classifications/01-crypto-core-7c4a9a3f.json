@@ -1,0 +1,13 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/bitwarden_compare_ideas/01-crypto-core.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Crypto Core: Bitwarden vs. This Project",
+  "summary": "Comparative analysis of cryptographic architecture between Bitwarden SDK and current project implementation, identifying gaps and ranked improvement opportunities.",
+  "scope": ["cryptographic architecture", "key derivation functions", "encryption schemes", "Bitwarden SDK", "password management", "data encryption", "KDF", "Argon2id", "PBKDF2", "ciphertext formats", "zeroization"],
+  "cross_refs": ["core/src/crypto.rs", "core/src/auth.rs", "core/src/vault.rs", "crates/bitwarden-crypto/src/keys/kdf.rs", "crates/bitwarden-crypto/src/keys/master_key.rs", "crates/bitwarden-unlock/src/session_key.rs", "crates/bitwarden-crypto/src/enc_string/symmetric.rs"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Design rationale and comparative analysis document. Section 3 lists 5 ranked improvement ideas, but these are recommendations—not locked decisions or requirements. Intended to inform future architectural decisions. No prescriptive specification language present. Technical depth describes existing approaches rather than defining future contracts."
+}

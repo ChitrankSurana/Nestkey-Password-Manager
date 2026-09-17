@@ -1,0 +1,5 @@
+{
+  "workflow": {
+    "api_coverage_gate": false
+  }
+}

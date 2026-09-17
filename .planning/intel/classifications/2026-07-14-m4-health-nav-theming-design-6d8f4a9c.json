@@ -1,0 +1,30 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/superpowers/specs/2026-07-14-m4-health-nav-theming-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "M4 Design — Health Dashboard, Navigation Rail, Theming, Generator Screen",
+  "summary": "Technical specification for M4 milestone: health dashboard, navigation rail, theming, and generator screen implementation.",
+  "scope": [
+    "health dashboard",
+    "weak password detection",
+    "password reuse detection",
+    "old password detection",
+    "HIBP breach checking",
+    "navigation rail",
+    "theming (light/dark mode)",
+    "accent colors",
+    "password generator",
+    "config.json fields",
+    "core::health module",
+    "Tauri app crate",
+    "Settings screen"
+  ],
+  "cross_refs": [
+    "docs/PRD.md",
+    "ARCHITECTURE.md",
+    "RESUME_HERE.md"
+  ],
+  "locked": false,
+  "precedence": null
+}

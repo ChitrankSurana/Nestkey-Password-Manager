@@ -1,0 +1,13 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/testing/HOW_TO_TEST_VIEWER_APP.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "How to Test — Viewer App",
+  "summary": "Testing guide for the read-only Viewer App covering automated tests, app launch, and manual functional verification.",
+  "scope": ["testing", "Viewer App", "Tauri", "manual testing", "pwmgr-viewer", "read-only application"],
+  "cross_refs": ["viewer-src-tauri/src/lib.rs"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { toast } from "../lib/toast";
 import { classifyChar } from "../lib/passwordColor";
+import { ensureRepromptConfig, isRepromptRequired, markRepromptSuccess } from "../lib/reprompt";
 import { Icon } from "./Icon";
+import { Spinner } from "./Spinner";
 
 const CLASS_COLOR: Record<"digit" | "symbol", string> = {
   digit: "text-[var(--pw-digit)]",
@@ -14,14 +16,22 @@ const CLASS_COLOR: Record<"digit" | "symbol", string> = {
 // Colorizes digits/symbols on reveal (Bitwarden's bit-color-password idea) - letters inherit the
 // default text color, only digit/symbol runs get a wrapping span.
 //
-// `reprompt` gates reveal/copy behind a master-password re-check (per-item "require master
-// password to view" flag) even though the vault itself is already unlocked.
+// `reprompt` is the per-item "require master password to view" flag - it still fully gates
+// reveal/copy in Per-credential mode (today's default). In Global mode (G-08-2) every credential
+// prompts regardless of this flag, and one correct entry opens a shared grace window read by
+// every mounted SecretField; see src/lib/reprompt.ts and src/lib/repromptPolicy.ts.
 export function SecretField({ secret, reprompt }: { secret: string; reprompt?: boolean }) {
   const [revealed, setRevealed] = useState(false);
   const [pendingAction, setPendingAction] = useState<"reveal" | "copy" | null>(null);
   const [password, setPassword] = useState("");
   const [reauthError, setReauthError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+
+  useEffect(() => {
+    // Loads the reprompt policy well before any click. Memoized in src/lib/reprompt.ts, so this
+    // is cheap regardless of how many SecretField instances mount.
+    void ensureRepromptConfig();
+  }, []);
 
   function runAction(action: "reveal" | "copy") {
     if (action === "reveal") {
@@ -33,7 +43,13 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
   }
 
   function requestAction(action: "reveal" | "copy") {
-    if (reprompt) {
+    // Decides through the shared reprompt policy instead of a bare flag check (G-08-2). If the
+    // config read hasn't resolved yet, the default policy is Per-credential - today's behavior -
+    // so this deliberately fails open rather than prompting spuriously on every field before
+    // config loads. The reprompt gate is a convenience gate over an already-unlocked vault, not a
+    // security boundary (SECURITY_CONCERNS.md records that decrypted secrets are in the DOM while
+    // unlocked).
+    if (isRepromptRequired(reprompt === true)) {
       setPendingAction(action);
     } else {
       runAction(action);
@@ -49,6 +65,8 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
         setReauthError("Incorrect master password.");
         return;
       }
+      // Only after the `ok` check: a failed attempt must never open the Global-mode grace window.
+      markRepromptSuccess();
       const action = pendingAction!;
       setPendingAction(null);
       setPassword("");
@@ -128,7 +146,14 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
                 disabled={verifying || password === ""}
                 className="rounded bg-[var(--accent)] px-3 py-1 text-sm disabled:opacity-50"
               >
-                {verifying ? "Checking…" : "Confirm"}
+                {verifying ? (
+                  <>
+                    <Spinner className="mr-1.5 inline-block" />
+                    Checking…
+                  </>
+                ) : (
+                  "Confirm"
+                )}
               </button>
             </div>
           </form>

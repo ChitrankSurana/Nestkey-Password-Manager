@@ -1,0 +1,13 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/superpowers/plans/2026-07-16-m5-readonly-viewer.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "M5 — Read-Only Viewer App Implementation Plan",
+  "summary": "Step-by-step implementation plan for M5 read-only Tauri viewer app, organized into Slice 1–3 with 11 tasks covering core refactoring, new binary creation, and frontend integration.",
+  "scope": ["M5 milestone", "read-only viewer app", "Tauri", "pwmgr-core", "Rust", "React", "implementation tasks"],
+  "cross_refs": ["docs/PRD.md", "docs/superpowers/specs/2026-07-16-m5-readonly-viewer-design.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Borderline between DOC and SPEC due to detailed architecture description and code snippets, but dominant signals are task-based instruction structure (tutorial/runbook style) rather than formal technical specification of APIs, schemas, or contracts. References the actual PRD in docs/PRD.md; this document is the execution roadmap, not the requirements."
+}

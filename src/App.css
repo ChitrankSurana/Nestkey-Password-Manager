@@ -9,6 +9,7 @@
    mirroring the v3-style content globs (index.html plus src js/ts/jsx/tsx files). */
 @import "tailwindcss" source(none);
 @source "../index.html";
+@source "../newui.html";
 @source "./**/*.js";
 @source "./**/*.ts";
 @source "./**/*.jsx";

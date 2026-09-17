@@ -36,6 +36,7 @@ export default defineConfig(async () => ({
       input: {
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         viewer: fileURLToPath(new URL("./viewer.html", import.meta.url)),
+        newui: fileURLToPath(new URL("./newui.html", import.meta.url)),
       },
     },
   },

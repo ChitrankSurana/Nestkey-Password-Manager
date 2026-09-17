@@ -167,6 +167,23 @@ struct MobileNavStyleRequest {
 }
 
 #[derive(Deserialize)]
+struct UiVariantRequest {
+    variant: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepromptModeRequest {
+    mode: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepromptGraceSecondsRequest {
+    seconds: u32,
+}
+
+#[derive(Deserialize)]
 struct GeneratePasswordRequest {
     request: GenerateRequest,
 }
@@ -511,6 +528,33 @@ async fn update_mobile_nav_style(
     Ok(StatusCode::OK)
 }
 
+async fn update_ui_variant(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<UiVariantRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_update_ui_variant(&s.app_state, &ctx.paths, &b.variant)?;
+    Ok(StatusCode::OK)
+}
+
+async fn update_reprompt_mode(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<RepromptModeRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_update_reprompt_mode(&s.app_state, &ctx.paths, &b.mode)?;
+    Ok(StatusCode::OK)
+}
+
+async fn update_reprompt_grace_seconds(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<RepromptGraceSecondsRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_update_reprompt_grace_seconds(&s.app_state, &ctx.paths, b.seconds)?;
+    Ok(StatusCode::OK)
+}
+
 async fn generate_password(
     Extension(_s): Extension<Arc<UserSession>>,
     Json(b): Json<GeneratePasswordRequest>,
@@ -525,11 +569,16 @@ async fn analyze_strength(
     Json(do_analyze_strength(&b.password))
 }
 
+// Deliberately does not accept a client-supplied destination, unlike the desktop `create_backup`
+// Tauri command. On desktop the path comes from a native save dialog the user personally drove;
+// in web mode it would be an arbitrary attacker-controlled string. SECURITY_CONCERNS.md H1 is the
+// still-open finding about exactly that class of parameter on four other handlers — this route
+// must not become a fifth. Phase 9 SEC-01 is chartered to confine the existing four.
 async fn create_backup(
     Extension(s): Extension<Arc<UserSession>>,
     State(ctx): State<AppContext>,
 ) -> Result<Json<String>, ApiError> {
-    Ok(Json(do_create_backup(&s.app_state, &ctx.paths)?))
+    Ok(Json(do_create_backup(&s.app_state, &ctx.paths, None)?))
 }
 
 async fn restore_backup(
@@ -626,6 +675,9 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/update_hibp_opt_in", post(update_hibp_opt_in))
         .route("/api/update_nav_collapsed", post(update_nav_collapsed))
         .route("/api/update_mobile_nav_style", post(update_mobile_nav_style))
+        .route("/api/update_ui_variant", post(update_ui_variant))
+        .route("/api/update_reprompt_mode", post(update_reprompt_mode))
+        .route("/api/update_reprompt_grace_seconds", post(update_reprompt_grace_seconds))
         .route("/api/generate_password", post(generate_password))
         .route("/api/analyze_strength", post(analyze_strength))
         .route("/api/create_backup", post(create_backup))

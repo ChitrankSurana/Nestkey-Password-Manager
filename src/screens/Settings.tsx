@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, FormEvent } from "react";
-import { api, isCommandError, isTauri, SshKeyDto } from "../lib/api";
+import { api, isCommandError, isTauri, RepromptMode, SshKeyDto } from "../lib/api";
+import { refreshRepromptConfig } from "../lib/reprompt";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
@@ -20,7 +21,18 @@ const MOBILE_NAV_STYLE_OPTIONS = [
   { value: "bottom-tabs", label: "Bottom tab bar" },
   { value: "drawer", label: "Hamburger menu" },
 ] as const;
+const UI_VARIANT_OPTIONS = [
+  { value: "classic", label: "Classic" },
+  { value: "new", label: "New" },
+] as const;
 const OLD_PASSWORD_DAYS_OPTIONS = [90, 180, 365] as const;
+const REPROMPT_MODE_OPTIONS = [
+  { value: "perCredential", label: "Per-credential (only flagged items)" },
+  { value: "global", label: "Global (every item)" },
+] as const;
+// Must match the Rust allowlist (VALID_REPROMPT_GRACE_SECONDS, core/src/config.rs) exactly - a
+// value here that the backend rejects would surface as a generic error with no explanation.
+const REPROMPT_GRACE_OPTIONS = [15, 30, 60, 300] as const;
 
 export function Settings({ onBack, username }: { onBack: () => void; username: string }) {
   const [autoLockMinutes, setAutoLockMinutes] = useState<number | null>(null);
@@ -30,6 +42,10 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   const [oldPasswordDays, setOldPasswordDays] = useState<number | null>(null);
   const [hibpOptIn, setHibpOptIn] = useState<boolean | null>(null);
   const [mobileNavStyle, setMobileNavStyle] = useState<string | null>(null);
+  const [uiVariant, setUiVariant] = useState<string | null>(null);
+  const bootUiVariantRef = useRef<string | null>(null);
+  const [repromptMode, setRepromptMode] = useState<RepromptMode | null>(null);
+  const [repromptGraceSeconds, setRepromptGraceSeconds] = useState<number | null>(null);
   const [pinSet, setPinSet] = useState<boolean | null>(null);
   const [pinInput, setPinInput] = useState("");
   const [biometricEnabled, setBiometricEnabled] = useState<boolean | null>(null);
@@ -62,6 +78,12 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
           setMobileNavStyle(c.mobileNavStyle);
           setBiometricEnabled(c.biometricEnabled);
           setSshAgentEnabled(c.sshAgentEnabled);
+          setUiVariant(c.uiVariant);
+          setRepromptMode(c.repromptMode);
+          setRepromptGraceSeconds(c.repromptGraceSeconds);
+        }
+        if (bootUiVariantRef.current === null) {
+          bootUiVariantRef.current = c.uiVariant;
         }
       })
       .catch((err) => {
@@ -280,6 +302,52 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
       setError(null);
       await api.updateMobileNavStyle(value);
       setMobileNavStyle(value);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleUiVariantChange(value: string) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateUiVariant(value);
+      setUiVariant(value);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleRepromptModeChange(value: RepromptMode) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateRepromptMode(value);
+      setRepromptMode(value);
+      // Without this the running session's SecretField instances would keep the stale policy
+      // until the next app start, which reads as the setting being broken.
+      await refreshRepromptConfig();
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleRepromptGraceChange(seconds: number) {
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateRepromptGraceSeconds(seconds);
+      setRepromptGraceSeconds(seconds);
+      await refreshRepromptConfig();
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -563,6 +631,41 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
       </details>
 
       <details open className="max-w-xs mt-4">
+        <summary className="cursor-pointer font-medium mb-2">Interface</summary>
+        <div className="space-y-4 pl-1">
+          <label className="block">
+            <span className="text-sm">Interface</span>
+            <Tooltip
+              text="Which vault interface this app opens - takes effect on next launch"
+              className="w-full"
+            >
+              <select
+                className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)] disabled:opacity-50"
+                value={uiVariant ?? ""}
+                onChange={(e) => handleUiVariantChange(e.target.value)}
+                disabled={submitting}
+              >
+                {UI_VARIANT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </Tooltip>
+          </label>
+
+          {bootUiVariantRef.current !== null && bootUiVariantRef.current !== uiVariant && (
+            <p className="text-sm rounded border px-2 py-1 border-[var(--border)]">
+              Interface changed to {UI_VARIANT_OPTIONS.find((o) => o.value === uiVariant)?.label}.{" "}
+              {isTauri
+                ? "Restart the app to see it."
+                : "Open /newui.html in this browser to use it."}
+            </p>
+          )}
+        </div>
+      </details>
+
+      <details open className="max-w-xs mt-4">
         <summary className="cursor-pointer font-medium mb-2">Vault</summary>
         <div className="space-y-4 pl-1">
           <label className="block">
@@ -577,6 +680,48 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
                 {ALGORITHM_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
+                  </option>
+                ))}
+              </select>
+            </Tooltip>
+          </label>
+
+          <label className="block">
+            <span className="text-sm">Reprompt mode</span>
+            <Tooltip
+              text="Per-credential: only items with 'Require reprompt' on ask for the master password, every time. Global: every item's reveal/copy asks for the master password, with a grace window after one correct entry."
+              className="w-full"
+            >
+              <select
+                className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)] disabled:opacity-50"
+                value={repromptMode ?? ""}
+                onChange={(e) => handleRepromptModeChange(e.target.value as RepromptMode)}
+                disabled={submitting}
+              >
+                {REPROMPT_MODE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </Tooltip>
+          </label>
+
+          <label className="block">
+            <span className="text-sm">Reprompt grace window</span>
+            <Tooltip
+              text="Applies to Global mode only: how long after one correct master password entry before the next reveal/copy asks again."
+              className="w-full"
+            >
+              <select
+                className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)] disabled:opacity-50"
+                value={repromptGraceSeconds ?? ""}
+                onChange={(e) => handleRepromptGraceChange(Number(e.target.value))}
+                disabled={submitting || repromptMode !== "global"}
+              >
+                {REPROMPT_GRACE_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s === 300 ? "300 seconds (5 minutes)" : `${s} seconds`}
                   </option>
                 ))}
               </select>

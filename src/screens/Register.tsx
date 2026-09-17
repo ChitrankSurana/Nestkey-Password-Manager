@@ -1,6 +1,7 @@
 import { useState, FormEvent } from "react";
 import { api, isCommandError } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
+import { Spinner } from "../components/Spinner";
 
 export function Register({
   onSuccess,
@@ -62,7 +63,14 @@ export function Register({
             disabled={submitting}
             className="w-full rounded bg-[var(--accent)] py-1.5 disabled:opacity-50"
           >
-            Register
+            {submitting ? (
+              <>
+                <Spinner className="mr-1.5 inline-block" />
+                Creating your vault…
+              </>
+            ) : (
+              "Register"
+            )}
           </button>
         </Tooltip>
         <Tooltip text="Already have an account? Log in" className="w-full">

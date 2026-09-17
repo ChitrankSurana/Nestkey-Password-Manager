@@ -1,5 +1,6 @@
 import { useState, FormEvent } from "react";
 import { api, isCommandError, SiteDto } from "../lib/api";
+import { confirmDialog, siteDeleteMessage } from "../lib/confirm";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
@@ -8,11 +9,13 @@ export function SiteEditor({
   onClose,
   onSaved,
   onDeleted,
+  credentialCount = null,
 }: {
   existing?: SiteDto | null;
   onClose: () => void;
   onSaved: () => void;
   onDeleted?: () => void;
+  credentialCount?: number | null;
 }) {
   const [name, setName] = useState(existing?.name ?? "");
   const [url, setUrl] = useState(existing?.url ?? "");
@@ -40,7 +43,7 @@ export function SiteEditor({
 
   async function handleDelete() {
     if (!existing) return;
-    if (!window.confirm(`Delete "${existing.name}"? This cannot be undone.`)) return;
+    if (!(await confirmDialog(siteDeleteMessage(existing.name, credentialCount ?? null)))) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -88,7 +91,7 @@ export function SiteEditor({
         {error && <p className="text-sm text-red-400">{error}</p>}
         <div className="flex justify-between items-center">
           {existing ? (
-            <Tooltip text="Delete this site (only if it has no credentials)">
+            <Tooltip text="Delete this site and any credentials saved for it">
               <button
                 type="button"
                 onClick={handleDelete}

@@ -1,4 +1,4 @@
-use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_STRENGTH_ALGORITHMS};
+use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_REPROMPT_GRACE_SECONDS, VALID_REPROMPT_MODES, VALID_STRENGTH_ALGORITHMS, VALID_UI_VARIANTS};
 use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
@@ -213,6 +213,9 @@ pub fn do_get_config(state: &AppState) -> ConfigDto {
         mobile_nav_style: config.mobile_nav_style.clone(),
         biometric_enabled: config.biometric_enabled,
         ssh_agent_enabled: config.ssh_agent_enabled,
+        ui_variant: config.ui_variant.clone(),
+        reprompt_mode: config.reprompt_mode.clone(),
+        reprompt_grace_seconds: config.reprompt_grace_seconds,
     }
 }
 
@@ -259,17 +262,11 @@ pub fn do_update_site(
 pub fn do_soft_delete_site(state: &AppState, site_id: i64) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
-    // Business rule enforced here, not in vault::soft_delete_site itself: that lower-level
-    // function is also used to cascade-delete a site's credentials from every read path, and
-    // several existing tests rely on it doing so unconditionally. The command layer is the right
-    // place to refuse the destructive action instead - there's no restore-site UI, so an orphaned
-    // site's credentials would otherwise become permanently unreachable.
-    let live = crate::vault::count_live_credentials_for_site(conn, site_id)?;
-    if live > 0 {
-        return Err(crate::error::invalid_input_error(
-            "This site still has credentials. Delete them first, then delete the site.",
-        ));
-    }
+    // No refuse-outright guard here anymore (08-09-PLAN.md, gap G-08-6): the command layer used
+    // to refuse a non-empty site because the lower-level soft_delete_site had no cascade logic.
+    // It cascades now, so a site with live credentials deletes cleanly - the user is warned by
+    // the frontend's confirm copy (src/lib/confirm.ts's siteDeleteMessage) before this is ever
+    // called, and Trash plus restore_credential's site-revival are the recovery path.
     Ok(crate::vault::soft_delete_site(conn, site_id)?)
 }
 
@@ -519,6 +516,42 @@ pub fn do_update_mobile_nav_style(state: &AppState, paths: &AppPaths, style: &st
     Ok(())
 }
 
+pub fn do_update_ui_variant(state: &AppState, paths: &AppPaths, variant: &str) -> Result<(), CommandError> {
+    if !VALID_UI_VARIANTS.contains(&variant) {
+        return Err(crate::error::invalid_input_error("Unknown UI variant."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.ui_variant = variant.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_reprompt_mode(state: &AppState, paths: &AppPaths, mode: &str) -> Result<(), CommandError> {
+    if !VALID_REPROMPT_MODES.contains(&mode) {
+        return Err(crate::error::invalid_input_error("Unknown reprompt mode."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.reprompt_mode = mode.to_string();
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_reprompt_grace_seconds(state: &AppState, paths: &AppPaths, seconds: u32) -> Result<(), CommandError> {
+    if !VALID_REPROMPT_GRACE_SECONDS.contains(&seconds) {
+        return Err(crate::error::invalid_input_error("Unknown reprompt grace window."));
+    }
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    updated.reprompt_grace_seconds = seconds;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
 pub fn do_generate_password(req: &GenerateRequest) -> Result<Zeroizing<String>, CommandError> {
     use crate::generator as gen;
     let pw = match req {
@@ -545,7 +578,15 @@ pub fn do_analyze_strength(password: &str) -> StrengthDto {
     StrengthDto { score, guesses_log10: est.guesses_log10(), label }
 }
 
-pub fn do_create_backup(state: &AppState, paths: &AppPaths) -> Result<String, CommandError> {
+/// `destination_path`: `None` means the app-owned backups directory (the historical, unchanged
+/// default). `Some` is only ever reached from the desktop transport, where the path came from a
+/// native save dialog the user drove — never from the web transport, which always passes `None`
+/// (see `web-src-tauri/src/handlers.rs::create_backup` for why that asymmetry is deliberate).
+pub fn do_create_backup(
+    state: &AppState,
+    paths: &AppPaths,
+    destination_path: Option<&str>,
+) -> Result<String, CommandError> {
     let vault_path = {
         let vault_guard = state.vault.lock().unwrap();
         let (_, path) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
@@ -566,13 +607,21 @@ pub fn do_create_backup(state: &AppState, paths: &AppPaths) -> Result<String, Co
     let vault_bytes = std::fs::read(&vault_path).map_err(|_| crate::error::internal_error())?;
     let bundle = crate::backup::encode_bundle(&user_record, &vault_bytes);
 
-    // Millisecond precision: a whole-second timestamp lets two backups made in quick succession
-    // silently collide and overwrite each other.
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let backup_path = paths.backups_dir().join(format!("{}-{}.bak", username, timestamp));
+    let backup_path = match destination_path {
+        None => {
+            // Millisecond precision: a whole-second timestamp lets two backups made in quick
+            // succession silently collide and overwrite each other.
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            paths.backups_dir().join(format!("{}-{}.bak", username, timestamp))
+        }
+        Some(p) if p.trim().is_empty() => {
+            return Err(crate::error::invalid_input_error("Choose a backup destination."));
+        }
+        Some(p) => std::path::PathBuf::from(p),
+    };
     std::fs::write(&backup_path, &bundle).map_err(|_| crate::error::internal_error())?;
 
     Ok(backup_path.to_string_lossy().to_string())
@@ -1188,16 +1237,18 @@ mod tests {
     }
 
     #[test]
-    fn soft_delete_site_refuses_when_site_still_has_a_live_credential() {
+    fn do_soft_delete_site_succeeds_when_the_site_still_has_credentials() {
+        // Previously this asserted a refusal (invalid_input). The user rejected that behavior
+        // (G-08-6, 08-UAT.md) - a site with credentials now deletes cleanly, cascading to its
+        // credentials, gated behind a frontend confirmation instead of a hard backend refusal.
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
         let site_id = do_add_site(&state, "example.com", None, None).unwrap();
         do_add_credential(&state, site_id, Some("bob"), "s3cret", None, &[], false).unwrap();
 
-        let err = do_soft_delete_site(&state, site_id).unwrap_err();
+        do_soft_delete_site(&state, site_id).unwrap();
 
-        assert_eq!(err.code(), "invalid_input");
-        assert_eq!(do_list_sites(&state).unwrap().len(), 1);
+        assert!(do_list_sites(&state).unwrap().is_empty());
     }
 
     #[test]
@@ -1515,7 +1566,7 @@ mod tests {
 
     fn backup_for(state: &AppState, paths: &AppPaths, username: &str) -> Vec<u8> {
         do_register(state, paths, username, "correct horse battery staple").unwrap();
-        let path = do_create_backup(state, paths).unwrap();
+        let path = do_create_backup(state, paths, None).unwrap();
         std::fs::read(path).unwrap()
     }
 
@@ -1524,7 +1575,7 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
 
-        let path = do_create_backup(&state, &paths).unwrap();
+        let path = do_create_backup(&state, &paths, None).unwrap();
 
         assert!(std::path::Path::new(&path).starts_with(paths.backups_dir()));
         let bytes = std::fs::read(&path).unwrap();
@@ -1536,8 +1587,53 @@ mod tests {
     #[test]
     fn create_backup_when_locked_returns_locked_error() {
         let (state, paths, _dir) = test_state_and_paths();
-        let result = do_create_backup(&state, &paths);
+        let result = do_create_backup(&state, &paths, None);
         assert_eq!(result.unwrap_err().code(), "locked");
+    }
+
+    #[test]
+    fn create_backup_writes_to_an_explicit_destination_when_given_one() {
+        let (state, paths, dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let chosen = dir.path().join("chosen-name.bak");
+
+        let path = do_create_backup(&state, &paths, Some(chosen.to_str().unwrap())).unwrap();
+
+        assert_eq!(path, chosen.to_string_lossy().to_string());
+        assert!(chosen.exists());
+        let entries: Vec<_> = std::fs::read_dir(paths.backups_dir())
+            .map(|rd| rd.filter_map(|e| e.ok()).collect())
+            .unwrap_or_default();
+        assert!(entries.is_empty(), "nothing should be written under backups_dir()");
+        let bytes = std::fs::read(&chosen).unwrap();
+        let (user, vault_bytes) = crate::backup::decode_bundle(&bytes).unwrap();
+        assert_eq!(user.username, "alice");
+        assert!(!vault_bytes.is_empty());
+    }
+
+    #[test]
+    fn create_backup_rejects_an_empty_destination() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+
+        let result = do_create_backup(&state, &paths, Some(""));
+
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+        let entries: Vec<_> = std::fs::read_dir(paths.backups_dir())
+            .map(|rd| rd.filter_map(|e| e.ok()).collect())
+            .unwrap_or_default();
+        assert!(entries.is_empty(), "nothing should be written for an empty destination");
+    }
+
+    #[test]
+    fn create_backup_when_locked_ignores_the_destination() {
+        let (state, paths, dir) = test_state_and_paths();
+        let chosen = dir.path().join("x.bak");
+
+        let result = do_create_backup(&state, &paths, Some(chosen.to_str().unwrap()));
+
+        assert_eq!(result.unwrap_err().code(), "locked");
+        assert!(!chosen.exists());
     }
 
     #[test]
@@ -2213,5 +2309,63 @@ mod tests {
         assert_eq!(do_get_config(&state).ssh_agent_enabled, true);
         let reloaded = Config::load(&paths.config_path()).unwrap();
         assert_eq!(reloaded.ssh_agent_enabled, true);
+    }
+
+    #[test]
+    fn update_ui_variant_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_ui_variant(&state, &paths, "new").unwrap();
+        assert_eq!(do_get_config(&state).ui_variant, "new");
+        assert_eq!(do_update_ui_variant(&state, &paths, "figma-preview").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn get_config_includes_ui_variant_default() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        assert_eq!(do_get_config(&state).ui_variant, "classic");
+    }
+
+    #[test]
+    fn update_ui_variant_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+        let before = do_get_config(&state).ui_variant;
+        let result = do_update_ui_variant(&state, &bad_paths, "new");
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).ui_variant, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn update_reprompt_mode_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_reprompt_mode(&state, &paths, "global").unwrap();
+        assert_eq!(do_get_config(&state).reprompt_mode, "global");
+        assert_eq!(do_update_reprompt_mode(&state, &paths, "always").unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn update_reprompt_grace_seconds_persists_and_rejects_invalid_value() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_update_reprompt_grace_seconds(&state, &paths, 60).unwrap();
+        assert_eq!(do_get_config(&state).reprompt_grace_seconds, 60);
+        assert_eq!(do_update_reprompt_grace_seconds(&state, &paths, 7).unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn get_config_includes_reprompt_defaults() {
+        let (state, _paths, _dir) = test_state_and_paths();
+        let config = do_get_config(&state);
+        assert_eq!(config.reprompt_mode, "perCredential");
+        assert_eq!(config.reprompt_grace_seconds, 30);
+    }
+
+    #[test]
+    fn update_reprompt_mode_does_not_mutate_state_when_save_fails() {
+        let (state, _paths, dir) = test_state_and_paths();
+        let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
+        let before = do_get_config(&state).reprompt_mode;
+        let result = do_update_reprompt_mode(&state, &bad_paths, "global");
+        assert!(result.is_err());
+        assert_eq!(do_get_config(&state).reprompt_mode, before, "state.config must not change when the save fails");
     }
 }

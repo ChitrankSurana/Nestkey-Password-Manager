@@ -1,0 +1,13 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/HOW_TO_TEST_M6_RESPONSIVE.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "How to Test — M6 Responsive Layout",
+  "summary": "Manual QA checklist for testing M6 responsive layout at different viewport sizes and navigation patterns.",
+  "scope": ["M6 responsive layout", "viewport testing", "manual QA", "navigation patterns"],
+  "cross_refs": ["docs/DEFERRED.md", "docs/superpowers/plans/2026-07-19-m6-responsive-layout.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

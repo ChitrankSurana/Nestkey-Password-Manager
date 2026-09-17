@@ -130,6 +130,9 @@ pub struct ConfigDto {
     pub mobile_nav_style: String,
     pub biometric_enabled: bool,
     pub ssh_agent_enabled: bool,
+    pub ui_variant: String,
+    pub reprompt_mode: String,
+    pub reprompt_grace_seconds: u32,
 }
 
 // #[derive(Debug)] is safe here - the private key never leaves the backend at all (unlike

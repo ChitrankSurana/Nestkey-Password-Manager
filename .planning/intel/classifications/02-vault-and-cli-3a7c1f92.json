@@ -1,0 +1,12 @@
+{
+  "source_path": "E:/Coding_Projects-CS/Account_1/Password_Manager/docs/bitwarden_compare_ideas/02-vault-and-cli.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Vault Data Model & CLI/UX — Bitwarden vs. This Project",
+  "summary": "Design analysis comparing Bitwarden's vault architecture, CLI, and export/import with our current implementation, identifying gaps and opportunities.",
+  "scope": ["vault data model", "CLI", "export/import formats", "item types", "password generator", "folders", "collections"],
+  "cross_refs": ["docs/PRD.md", "docs/ARCHITECTURE.md", "docs/KNOWN_LIMITATIONS.md", "core/src/vault.rs", "core/src/generator.rs", "core/src/portio.rs", "core/src/backup.rs"],
+  "locked": false,
+  "precedence": null
+}

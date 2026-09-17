@@ -11,8 +11,9 @@ use pwmgr_core::commands::{
     do_unlock_with_pin, do_update_accent_color, do_update_auto_lock_minutes,
     do_update_biometric_enabled, do_update_credential, do_update_hibp_opt_in,
     do_update_mobile_nav_style, do_update_nav_collapsed, do_update_old_password_days,
-    do_update_site, do_update_ssh_agent_enabled, do_update_strength_algorithm, do_update_theme,
-    do_verify_master_password,
+    do_update_reprompt_grace_seconds, do_update_reprompt_mode, do_update_site,
+    do_update_ssh_agent_enabled, do_update_strength_algorithm, do_update_theme,
+    do_update_ui_variant, do_verify_master_password,
 };
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
@@ -318,6 +319,25 @@ pub fn update_mobile_nav_style(state: State<AppState>, paths: State<AppPaths>, s
     do_update_mobile_nav_style(&state, &paths, &style)
 }
 
+// Exposed a plan-cycle ahead of the Settings UI wiring (08-02, D-05/D-07) so the New UI's
+// runtime-failure fallback (src/newui-main.tsx) has a command to call when it needs to persist
+// the "switch back to Classic" recovery choice - see the Task 2 checkpoint decision in
+// 08-01-PLAN.md for why this exists before the rest of the Settings integration does.
+#[tauri::command]
+pub fn update_ui_variant(state: State<AppState>, paths: State<AppPaths>, variant: String) -> Result<(), CommandError> {
+    do_update_ui_variant(&state, &paths, &variant)
+}
+
+#[tauri::command]
+pub fn update_reprompt_mode(state: State<AppState>, paths: State<AppPaths>, mode: String) -> Result<(), CommandError> {
+    do_update_reprompt_mode(&state, &paths, &mode)
+}
+
+#[tauri::command]
+pub fn update_reprompt_grace_seconds(state: State<AppState>, paths: State<AppPaths>, seconds: u32) -> Result<(), CommandError> {
+    do_update_reprompt_grace_seconds(&state, &paths, seconds)
+}
+
 #[tauri::command]
 pub fn generate_password(request: GenerateRequest) -> Result<Zeroizing<String>, CommandError> {
     do_generate_password(&request)
@@ -350,8 +370,12 @@ pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), Comm
 }
 
 #[tauri::command]
-pub fn create_backup(state: State<AppState>, paths: State<AppPaths>) -> Result<String, CommandError> {
-    do_create_backup(&state, &paths)
+pub fn create_backup(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    destination_path: Option<String>,
+) -> Result<String, CommandError> {
+    do_create_backup(&state, &paths, destination_path.as_deref())
 }
 
 #[tauri::command]
