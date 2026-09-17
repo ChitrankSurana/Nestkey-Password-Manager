@@ -176,9 +176,10 @@ export function DetailPanel({
             <Tooltip text="Delete this site and any credentials saved for it">
               <button
                 onClick={handleDeleteSite}
+                aria-label="Delete site"
                 className="rounded bg-[var(--danger)] hover:bg-[var(--danger-hover)] px-2 py-1 text-sm"
               >
-                <Icon name="trash" /> Delete site
+                <Icon name="trash" />
               </button>
             </Tooltip>
           </div>

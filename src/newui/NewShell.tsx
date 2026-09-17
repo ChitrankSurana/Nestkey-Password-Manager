@@ -216,7 +216,7 @@ export function NewShell({ username }: { username: string }) {
           />
         )}
         {screen === "generator" && <GeneratorPane onBack={goVault} />}
-        {screen === "trash" && <TrashPane onBack={goVault} />}
+        {screen === "trash" && <TrashPane onBack={goVault} onRestored={refreshAfterSave} />}
         {screen === "data" && <DataPane onBack={goVault} />}
         {screen === "settings" && <SettingsPane onBack={goVault} username={username} />}
       </div>

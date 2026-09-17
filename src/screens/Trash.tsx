@@ -3,7 +3,19 @@ import { api, isCommandError, TrashedCredentialDto } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
-export function Trash({ onBack }: { onBack: () => void }) {
+export function Trash({
+  onBack,
+  onRestored,
+}: {
+  onBack: () => void;
+  // Fired after a successful restore so a parent holding its own separately-fetched
+  // site/credential list (the New UI's NewShell keeps `useVault()` mounted across every pane
+  // switch, unlike Classic's AppShell which remounts Vault.tsx on return) can refresh — without
+  // this, restoring a cascade-deleted site's credential updates the DB correctly but the vault
+  // view stays stale until the app restarts, reading as "restore did nothing" even though the
+  // data was never lost.
+  onRestored?: () => void;
+}) {
   const [items, setItems] = useState<TrashedCredentialDto[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +78,7 @@ export function Trash({ onBack }: { onBack: () => void }) {
                     setError(null);
                     await api.restoreCredential(t.credentialId);
                     refresh();
+                    onRestored?.();
                   } catch (err) {
                     setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
                   }
