@@ -27,7 +27,7 @@ Requirements for this project. Each maps to exactly one roadmap phase.
   username/password pairs and free-text remarks.
 - [x] **VAULT-02**: User can search the vault in real time by site, username, or remarks, with
   results updating within one UI frame of each keystroke at up to ~5,000 entries.
-- [x] **VAULT-03**: User can create/view Login, Secure Note, Payment Card, and Identity items,
+- [ ] **VAULT-03**: User can create/view Login, Secure Note, Payment Card, and Identity items,
   each with its own icon/color and detail fields, filterable by type with a count badge.
 - [ ] **VAULT-04**: User can star any item as a favorite and filter to a "Favorites" view.
 - [ ] **VAULT-05**: User can create folders, assign an item to at most one folder, and filter the
@@ -133,7 +133,7 @@ Which phases cover which requirements.
 | WEB-01 | Phase 6 | Complete |
 | AUTH-02 | Phase 7 | Complete |
 | INTEG-01 | Phase 7 | Complete |
-| VAULT-03 | Phase 8 | Complete |
+| VAULT-03 | Phase 8 | Pending |
 | VAULT-04 | Phase 8 | Pending |
 | VAULT-05 | Phase 8 | Pending |
 | HEALTH-02 | Phase 8 | Pending |
