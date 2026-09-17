@@ -1,0 +1,58 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": "v2.0 — New Vault UI & Security Hardening (Phases 8-9) — Planned",
+  "phases": [
+    {
+      "number": "1",
+      "name": "Secure Vault Foundation",
+      "status": "complete"
+    },
+    {
+      "number": "2",
+      "name": "Password Generator",
+      "status": "complete"
+    },
+    {
+      "number": "3",
+      "name": "Data Portability",
+      "status": "complete"
+    },
+    {
+      "number": "4",
+      "name": "Health Dashboard, Navigation & Theming",
+      "status": "complete"
+    },
+    {
+      "number": "5",
+      "name": "Read-Only Viewer",
+      "status": "complete"
+    },
+    {
+      "number": "6",
+      "name": "Localhost Web Mode",
+      "status": "complete"
+    },
+    {
+      "number": "7",
+      "name": "Platform Integrations",
+      "status": "complete"
+    },
+    {
+      "number": "8",
+      "name": "New Vault UI (Figma Port)",
+      "status": "in_progress"
+    },
+    {
+      "number": "9",
+      "name": "Web Mode Security Hardening",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 08 of 2 · 100% · executing"
+  },
+  "updated_at": "2026-09-17T14:10:39.224Z"
+}
