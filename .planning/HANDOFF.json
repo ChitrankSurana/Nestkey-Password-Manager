@@ -1,55 +1,39 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-15T18:42:38.010Z",
-  "phase": "08",
-  "phase_name": "new-vault-ui-figma-port",
-  "phase_dir": ".planning/phases/08-new-vault-ui-figma-port",
-  "plan": "verify-work",
-  "task": 6,
-  "total_tasks": 6,
+  "timestamp": "2026-09-17T18:54:24.822Z",
+  "phase": "09",
+  "phase_name": "Web Mode Security Hardening",
+  "phase_dir": ".planning/phases/09-web-mode-security-hardening",
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
   "status": "paused",
+  "workflow_stage": "discuss-phase",
   "completed_tasks": [
-    {"id": "08-01..08-06", "name": "All 6 execution plans", "status": "done", "commit": "see 08-*-SUMMARY.md files"},
-    {"id": "code-review", "name": "Code review + fixes (CR-01, CR-02, WR-01)", "status": "done", "commit": "b79213b, e0e1f2d, 970a975"},
-    {"id": "verify-phase-goal", "name": "Phase-goal verification (15/15 automated must-haves)", "status": "done", "commit": "89d82bd"},
-    {"id": "uat-1", "name": "UAT Test 1: Full desktop launch and Classic/New UI switch parity", "status": "done", "progress": "issue (2 gaps: backup location picker G-08-1, reprompt-mode setting G-08-2)"},
-    {"id": "uat-2", "name": "UAT Test 2: Settings Interface section toggle and persistence", "status": "done", "progress": "pass (web-mode sub-check deferred by user until desktop considered complete)"},
-    {"id": "uat-3", "name": "UAT Test 3: Three-pane desktop view rendering", "status": "done", "progress": "pass, all 6 sub-points confirmed"},
-    {"id": "uat-4", "name": "UAT Test 4: Detail column walkthrough - reprompt gate, repeater, auto-lock", "status": "done", "progress": "issue (1 gap: G-08-3 add-custom-field throws 'Something went wrong' error, blocker)"},
-    {"id": "uat-5", "name": "UAT Test 5: CRUD round-trip and navigation", "status": "done", "progress": "issue (4 gaps: G-08-4 delete button placement, G-08-5 missing site-delete confirm dialog, G-08-6 blocked cascade delete, G-08-7 loading animations) + login/reprompt-delay audit completed and logged in UAT.md Audit Notes"}
+    {"id": 1, "name": "Sync main, branch to feature/phase-09-web-security", "status": "done"},
+    {"id": 2, "name": "Run /gsd-discuss-phase 09 — discuss all 4 gray areas", "status": "done"},
+    {"id": 3, "name": "Write 09-CONTEXT.md", "status": "done"}
   ],
   "remaining_tasks": [
-    {"id": "uat-6", "name": "UAT Test 6: Responsive tiers, full 18-flow capability checklist, 6 cross-cutting behaviors, Classic regression check", "status": "presented, awaiting user's live walkthrough and response"},
-    {"id": "complete-session", "name": "Finalize UAT.md status (partial/complete), commit", "status": "not_started"},
-    {"id": "diagnose-issues", "name": "Diagnose root causes for 7 open gaps (G-08-1 through G-08-7)", "status": "not_started"},
-    {"id": "plan-gap-closure", "name": "Spawn gsd-planner --gaps mode to create gap-closure plans", "status": "not_started"},
-    {"id": "verify-gap-plans", "name": "gsd-plan-checker verification of gap-closure plans", "status": "not_started"},
-    {"id": "fix-requirements-md", "name": "One-line fix: REQUIREMENTS.md marks VAULT-03 [x] Complete, contradicts 08-01/08-06-PLAN.md's explicit note it should stay open (deferred scope, not delivered). Flagged by verifier, not yet fixed.", "status": "not_started"},
-    {"id": "figma-visual-fidelity", "name": "Separate, larger follow-on (explicitly deferred by user until functional UAT + gap closure finishes): redo New UI visuals to closely match the original Figma design (user says current result 'looks nothing like Figma... too bland'). Use figma-design-to-code skill when starting this.", "status": "deferred, not started"}
+    {"id": 4, "name": "Write 09-DISCUSSION-LOG.md (audit trail of Q&A, from 09-DISCUSS-CHECKPOINT.json)", "status": "not_started"},
+    {"id": 5, "name": "Commit 09-CONTEXT.md + 09-DISCUSSION-LOG.md, delete 09-DISCUSS-CHECKPOINT.json", "status": "not_started"},
+    {"id": 6, "name": "Update .planning/STATE.md with phase 09 context session", "status": "not_started"},
+    {"id": 7, "name": "Run /gsd-plan-phase 09 (research -> plan -> verify)", "status": "not_started"}
   ],
-  "blockers": [
-    {"description": "UAT Test 6 requires the user to actually run the live desktop app through a resize + full capability walkthrough", "type": "human_action", "workaround": "none - inherent to UAT"}
-  ],
+  "blockers": [],
   "async_jobs": [],
-  "human_actions_pending": [
-    {"action": "Perform UAT Test 6: resize through all 3 D-18 tiers, walk all 18 checklist flows in New UI, confirm 6 cross-cutting behaviors, then set ui_variant=classic and re-walk the 18 flows to confirm no regression", "context": "Last of 6 UAT tests for phase 8; already presented to user, awaiting their response", "blocking": true}
-  ],
+  "human_actions_pending": [],
   "decisions": [
-    {"decision": "New Settings field 'Reprompt mode': Global | Per-credential. Global = every credential's reveal/copy requires master password, cached for a configurable grace window (default 30s), then re-locks. Per-credential = today's existing per-credential 'Require reprompt' flag, no grace window, asks every time.", "rationale": "User wants a universal reprompt option but the existing per-credential flag design should remain available for credentials that should never get a grace window. A single settings toggle lets the user choose the model without losing either.", "phase": "08"},
-    {"decision": "Login/reprompt master-password delay: do NOT reduce Argon2id KDF cost (m=64MiB t=3 p=4, core/src/crypto.rs:48) as part of this phase's gap closure. Add a loading animation instead (G-08-7).", "rationale": "Audited: measured 1961ms per derive_key call in a DEBUG build (npm run tauri dev always uses debug). Login calls it twice (~4s), reprompt once (~2s) - matches user's complaint. The KDF params are intentional and already reviewed as correct in SECURITY_CONCERNS.md (flagged there only for missing web-mode rate-limiting, not for being mistuned). Could not empirically confirm release-build timing - release build fails in this environment for an unrelated pre-existing reason (rusqlite's bundled-sqlcipher-vendored-openssl feature needs a Perl module, Locale::Maketext::Simple, not installed here). Unoptimized-vs-optimized Rust for tight crypto loops is a well-documented 5-20x gap, so real (release) delay is expected to be a few hundred ms. User explicitly deferred the KDF-cost decision to later, after a real release-build measurement.", "phase": "08"},
-    {"decision": "A site with saved credentials should be deletable (cascading to its credentials) behind a confirmation popup, not blocked outright as it is today.", "rationale": "User wants one clear cascade-delete action with a safety confirmation, not a forced one-by-one credential deletion first.", "phase": "08"},
-    {"decision": "Visual Figma-fidelity redesign (new UI 'looks nothing like Figma, too bland') is a separate, larger track from this phase's functional UAT gaps. User chose: finish functional UAT + gap closure first, then start a dedicated visual-parity pass using the figma-design-to-code skill.", "rationale": "User's own choice when asked to compare 'finish functional UAT first, then redesign' vs 'stop UAT now, fix visuals first' — picked the former.", "phase": "08"}
+    {"decision": "SEC-01: full upload/download redesign (web mode only), not path-confinement", "rationale": "Strongest fix per SECURITY_CONCERNS.md H1 — no server-side path ever named by a web client; desktop keeps native-dialog path flow unchanged", "phase": "09"},
+    {"decision": "CSV import caches one upload in UserSession (session_store.rs), not re-uploaded per step", "rationale": "Avoids 3x re-upload of the same file for headers/preview/commit; reuses existing per-session struct instead of a new store", "phase": "09"},
+    {"decision": "restore_backup also becomes a client upload, no path parameter", "rationale": "Consistency with the CSV/export redesign", "phase": "09"},
+    {"decision": "SEC-02 login/register throttle: new in-process store beside session_store.rs, keyed by username AND IP independently", "rationale": "No registry.db schema change needed; both keys catch both targeted-account and single-attacker-many-accounts brute force", "phase": "09"},
+    {"decision": "Lockout shape: 5 fails -> lock for base window W; each repeated lockout cycle doubles W; resets to base on next successful login", "rationale": "User-specified exact shape, not a menu pick — must be implemented exactly as stated, not substituted with a different backoff curve", "phase": "09"},
+    {"decision": "Argon2 concurrency cap: try_acquire + HTTP 429 (no queueing), 2-4 shared permits across login/register/export_csv(password mode)", "rationale": "429 chosen over queueing specifically for DoS resistance (a queue itself could become a pile-up vector)", "phase": "09"},
+    {"decision": "Frontend auto-retries a 429 with 1-2s backoff", "rationale": "User chose forgiving UX over a bare error message", "phase": "09"},
+    {"decision": "CSP: strict default-src/script-src/style-src 'self', no unsafe-inline; same policy in web-src-tauri response header AND tauri.conf.json app.security.csp (replacing null); relaxed only in Vite dev mode; also add Referrer-Policy + X-Frame-Options: DENY", "rationale": "Matches SECURITY_CONCERNS.md M3 fix suggestion; confirmed the one existing inline style (PasswordGeneratorPanel.tsx:186) is a DOM property set, not parsed CSS text, so style-src 'self' is safe", "phase": "09"}
   ],
-  "uncommitted_files": [
-    "M .planning/phases/08-new-vault-ui-figma-port/08-UAT.md",
-    "M src-tauri/Cargo.toml (no-op line-ending touch only, git diff shows zero content change)",
-    "?? .gsd/",
-    "?? .planning/milestone.lock",
-    "?? .planning/state.json",
-    "?? 2026-09-13-174724-local-command-caveatcaveat-the-messages-below.txt",
-    "?? docs/FIGMA_UI_VS_CURRENT_FEATURES.md",
-    "?? docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md"
-  ],
-  "next_action": "Run /gsd-verify-work 08 to resume. It will find 08-UAT.md with Tests 1-5 answered and Test 6 pending, and re-present Test 6's checkpoint. Walk the user through the live resize + 18-flow + 6-behavior + Classic-regression walkthrough, record the response, then proceed to complete_session (status will be 'partial' or 'complete' depending on Test 6's outcome, but issues>0 already guaranteed by the 7 open gaps) -> diagnose_issues -> plan_gap_closure -> verify_gap_plans.",
-  "context_notes": "Phase 8 code/tests/build are all done and clean (npm run build, npm test 25/25, cargo test --workspace, parity.test.ts 7/7 all pass). This session is purely in the human-UAT stage. 5 of 6 UAT tests are answered; every answered issue test produced real, well-defined gaps (see UAT.md ## Gaps, G-08-1 through G-08-7) - none were dismissed or auto-fixed inline, all deferred to the standard diagnose -> plan -> execute --gaps-only pipeline once Test 6 finishes. Also note: a fresh, separate large ask surfaced mid-UAT (full Figma visual redesign) that is intentionally NOT part of this phase's gap set - it was explicitly deferred by the user to after gap closure. Do not fold it into the gap-closure plans; it needs its own planning pass (likely /gsd-explore or a new phase) using figma-design-to-code."
+  "uncommitted_files": [".planning/phases/09-web-mode-security-hardening/09-CONTEXT.md", ".planning/phases/09-web-mode-security-hardening/09-DISCUSS-CHECKPOINT.json"],
+  "next_action": "Read .planning/phases/09-web-mode-security-hardening/09-CONTEXT.md and 09-DISCUSS-CHECKPOINT.json, write 09-DISCUSSION-LOG.md from the checkpoint's decisions map, commit both docs + delete the checkpoint file, update STATE.md, then run /gsd-plan-phase 09",
+  "context_notes": "Branch feature/phase-09-web-security was created off main at b859dd8 (post PR#11 merge) specifically for Phase 09. Working tree was clean before this session's only change (the new phase-09 directory) — no stray untracked files to worry about. discuss-phase ran in default (non --auto) interactive mode; every decision above was an explicit user choice via AskUserQuestion, not an auto-pick. D-08 (lockout backoff shape) was user-authored free text, not selected from the offered options — preserve it verbatim when planning, do not reinterpret it as a simpler exponential-per-attempt-delay scheme."
 }

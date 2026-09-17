@@ -1,0 +1,109 @@
+{
+  "phase": "09",
+  "phase_name": "Web Mode Security Hardening",
+  "timestamp": "2026-09-17T00:00:00.000Z",
+  "areas_completed": ["Path confinement (SEC-01)", "Login throttling (SEC-02)", "Argon2 concurrency cap (SEC-02)", "CSP & headers (SEC-03)"],
+  "areas_remaining": [],
+  "decisions": {
+    "Path confinement (SEC-01)": [
+      {
+        "question": "SEC-01: how should web-mode export/import/restore stop accepting arbitrary client paths?",
+        "answer": "Full upload/download redesign",
+        "options_presented": ["Confine to app directory (Recommended)", "Full upload/download redesign"]
+      },
+      {
+        "question": "Does the upload/download redesign apply only to web mode, or does desktop switch too?",
+        "answer": "Web mode only",
+        "options_presented": ["Web mode only (Recommended)", "Both transports unified"]
+      },
+      {
+        "question": "For CSV import specifically: read_csv_headers + import_csv_preview currently take a path and re-read the file per step. With upload bodies, how should the multi-step flow work in web mode?",
+        "answer": "Upload once, cache server-side",
+        "options_presented": ["Upload once, cache server-side (Recommended)", "Client re-uploads at each step"]
+      },
+      {
+        "question": "Where should the cached CSV upload live between headers/preview/commit calls, and how long does it persist?",
+        "answer": "In UserSession, cleared on commit/cancel/logout",
+        "options_presented": ["In UserSession, cleared on commit/cancel/logout (Recommended)", "Temp file on disk, session-scoped"]
+      },
+      {
+        "question": "restore_backup currently reads an arbitrary path server-side. With the upload redesign, does it become a client upload too?",
+        "answer": "Yes — client uploads the backup file",
+        "options_presented": ["Yes — client uploads the backup file (Recommended)", "No — restore stays path-based but confined"]
+      }
+    ],
+    "Login throttling (SEC-02)": [
+      {
+        "question": "Let's talk about login throttling (SEC-02). Where should attempt/lockout state live?",
+        "answer": "New in-process store in web-src-tauri",
+        "options_presented": ["New in-process store in web-src-tauri (Recommended)", "Persist to registry.db"]
+      },
+      {
+        "question": "Should /api/register_user (currently open, pre-auth) also be throttled?",
+        "answer": "Yes, same throttle as login",
+        "options_presented": ["Yes, same throttle as login (Recommended)", "No, login only"]
+      },
+      {
+        "question": "What should the backoff/lockout shape look like for repeated failed attempts?",
+        "answer": "Hybrid: 5 failed attempts -> lockout for fixed base window W. Each subsequent lockout triggered while still failing doubles W (exponential growth of the lockout window itself, not per-attempt delay).",
+        "options_presented": ["Fixed threshold + timed lockout (Recommended)", "Exponential backoff, no hard lockout"]
+      },
+      {
+        "question": "Key the throttle by username, by IP, or both?",
+        "answer": "Both, independently — whichever limit is hit first blocks the request",
+        "options_presented": ["Both, independently (Recommended)", "Per-username only"]
+      },
+      {
+        "question": "When does the exponential lockout-window multiplier reset back to the base window?",
+        "answer": "On next successful login — resets both failure count and window multiplier for that username/IP",
+        "options_presented": ["On next successful login (Recommended)", "After a long cooldown of no attempts"]
+      }
+    ],
+    "Argon2 concurrency cap (SEC-02)": [
+      {
+        "question": "What should happen to a request that arrives when the Argon2 concurrency limit is already saturated?",
+        "answer": "Reject with 429 immediately (try_acquire, no queueing)",
+        "options_presented": ["Queue and wait (Recommended)", "Reject with 429 immediately"]
+      },
+      {
+        "question": "What should the permit count (max concurrent Argon2 derivations) be?",
+        "answer": "Small fixed number, e.g. 2-4",
+        "options_presented": ["Small fixed number, e.g. 2-4 (Recommended)", "You decide at planning/research time"]
+      },
+      {
+        "question": "Which handlers share the same Argon2 concurrency semaphore?",
+        "answer": "All three (login, register_user, export_csv password mode), one shared semaphore",
+        "options_presented": ["All three, one shared semaphore (Recommended)", "Login/register only"]
+      },
+      {
+        "question": "On a 429 rejection, how should the web frontend behave?",
+        "answer": "Automatic client-side retry with backoff (1-2s delay), invisible to user unless repeatedly failing",
+        "options_presented": ["Generic retry-later error message (Recommended)", "Automatic client-side retry with backoff"]
+      }
+    ],
+    "CSP & headers (SEC-03)": [
+      {
+        "question": "How strict should the Content-Security-Policy be for the served SPA?",
+        "answer": "Strict default-src 'self'; script-src 'self'; style-src 'self' (no 'unsafe-inline'). React's style={{}} prop sets DOM properties directly, not parsed CSS text, so it isn't blocked by style-src.",
+        "options_presented": ["Strict default-src 'self' (Recommended)", "Strict but with style-src 'unsafe-inline'"]
+      },
+      {
+        "question": "Does the same CSP apply to both the web-mode server response header AND the desktop Tauri shell's tauri.conf.json, or do they diverge?",
+        "answer": "Same policy, both places — web-src-tauri response header AND tauri.conf.json app.security.csp get the equivalent policy string instead of null",
+        "options_presented": ["Same policy, both places (Recommended)", "Different policies per surface"]
+      },
+      {
+        "question": "Should dev mode (Vite HMR) get a relaxed CSP?",
+        "answer": "Relax only in dev (connect-src ws://localhost, script-src 'unsafe-eval' for sourcemaps); strict policy applies to the production build only",
+        "options_presented": ["Relax only in dev, strict in production build (Recommended)", "Same strict policy always, fix dev separately if it breaks"]
+      },
+      {
+        "question": "Should the same response-header layer also add Referrer-Policy and X-Frame-Options (mentioned in SECURITY_CONCERNS.md M3 but not named in SEC-03's success criteria)?",
+        "answer": "Yes — add Referrer-Policy and X-Frame-Options: DENY while touching this layer, even though not strictly required by SEC-03's locked wording",
+        "options_presented": ["Yes, add both while touching this layer (Recommended)", "No, only what SEC-03 requires"]
+      }
+    ]
+  },
+  "deferred_ideas": [],
+  "canonical_refs": ["SECURITY_CONCERNS.md", ".planning/codebase/ARCHITECTURE.md", ".planning/codebase/CONCERNS.md"]
+}
