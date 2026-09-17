@@ -27,7 +27,7 @@ export function ItemRow({
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm">{site.name}</p>
-        <p className="truncate text-xs font-semibold uppercase tracking-widest opacity-70">
+        <p className="truncate text-xs opacity-70">
           {site.url ?? "(no URL)"}
         </p>
       </div>
