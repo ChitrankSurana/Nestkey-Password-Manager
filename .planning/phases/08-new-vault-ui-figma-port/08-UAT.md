@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: complete
 phase: 08-new-vault-ui-figma-port
-source: [08-VERIFICATION.md]
+source: [08-VERIFICATION.md, 08-07-SUMMARY.md, 08-08-SUMMARY.md, 08-09-SUMMARY.md, 08-10-SUMMARY.md, 08-11-SUMMARY.md, 08-12-SUMMARY.md]
 started: 2026-09-14T17:17:38Z
-updated: 2026-09-16T00:00:00Z
+updated: 2026-09-17T00:00:00Z
 ---
 
 ## Current Test
@@ -12,11 +12,10 @@ updated: 2026-09-16T00:00:00Z
 
 ## Tests
 
-### 1. Full desktop launch and Classic/New UI switch parity
-expected: With ~/.pwmgr/config.json absent or ui_variant=classic, the Classic UI opens in an 800x600 window titled tauri-app unchanged (login screen, clipboard copy with 30s-clear toast, Data->Backup native file dialog). Set ui_variant=new, relaunch, confirm the new entry opens and shows the real site list. Set back to classic, relaunch, confirm Classic returns exactly as before.
-result: issue
-reported: "Config had no ui_variant before opening — opened old UI (expected default, not a bug). No master password prompt when viewing a credential's password. Need option to choose backup location when clicking 'create backup'. UI variant toggle itself works."
-severity: major
+### 1. Re-verify: Backup save-location picker + Global reprompt mode (G-08-1, G-08-2)
+expected: Data -> Backup -> "Create backup" opens a native OS save dialog letting you pick the destination file. In Settings -> Vault, a "Reprompt mode" select offers Per-credential (unchanged default) and Global; Global prompts for every credential's reveal/copy and opens a grace window (configurable, default 30s) after one correct entry, expiring back to a prompt; switching back to Per-credential is byte-identical to today.
+result: pass
+note: "User also flagged an unrelated cosmetic aside (Delete site button styling) — logged as G-08-8, does not affect this test's pass."
 
 ### 2. Settings "Interface" section toggle and persistence
 expected: Switch to New, confirm a persistent (non-fading) banner appears and survives 10+ seconds and a collapse/reopen of the section; restart and confirm New UI opens and banner is gone. In web mode, change the select and confirm the banner instead names /newui.html and the current tab does not switch UIs.
@@ -27,17 +26,14 @@ note: "Desktop steps (1-4) confirmed. Web-mode banner check postponed by user un
 expected: Sidebar (shield chip, "Vault", username, six destinations), 280px live-search list (no debounce, no duplicate rows for a two-credential site), selected-row accent-subtle tint, long name/url truncation with ellipsis, light-mode background correctness after a Classic theme change.
 result: pass
 
-### 4. Detail column walkthrough — reprompt gate, repeater, auto-lock
-expected: Select a site with one credential (masked secret, live strength meter); reveal/copy a reprompt-flagged credential and confirm the master-password prompt fires on both reveal AND copy, for the main secret and for a hidden custom field; select a 3-credential site and confirm one expanded + "Other logins (2)" toggle; select a 0-credential site and confirm the empty state and its CTA; confirm notes/remarks render with line breaks; leave the app idle until auto-lock and confirm the panel empties and returns to login.
-result: issue
-reported: "Adding a custom field shows a 'Something went wrong. Please Try Again' error. All else (main-secret reprompt on reveal+copy, 3-credential repeater/toggle, 0-credential empty state, notes line breaks, idle auto-lock) works correctly."
-severity: blocker
+### 4. Re-verify: Adding a custom field to a credential (G-08-3)
+expected: Open a credential's editor, add a custom field (choose a field type, enter a label and value), save. The save succeeds with no "Something went wrong" error, and the new custom field appears on the credential's detail view. (Everything else in this test — main-secret reprompt on reveal+copy, 3-credential repeater/toggle, 0-credential empty state, notes line breaks, idle auto-lock — was already confirmed working and is not being re-tested.)
+result: pass
 
-### 5. CRUD round-trip and navigation
-expected: Add/edit/delete a site (confirm exact prompt copy 'Delete "{name}"? This cannot be undone.'), add/edit/delete a credential (no confirm dialog, appears in Trash), confirm list/detail refresh without reselecting. Navigate all six sidebar destinations (Health, Generator, Trash, Data, Settings, Vault) and confirm each renders its real screen with a working Back control. Click a weak entry in Health and confirm it lands on that site's detail view; click "View full health" on a credential and confirm it opens the Health pane. Collapse the sidebar, restart, confirm it stays collapsed. Click Lock and confirm return to login.
-result: issue
-reported: "Delete control only reachable via edit-site, should be exposed directly. No confirm dialog shown when deleting a site with no credentials. Deleting a site that already has credentials is blocked entirely (message says credentials exist, must delete them one by one first) instead of offering a confirmed cascade delete. Login and reprompt password-check both feel slow; audited (see Audit Notes) — decision: add loading animations now, defer any KDF-cost change to a later decision. All other points (edit, credential CRUD to Trash, list/detail auto-refresh, all six nav destinations + Back, Health->detail linking, View-full-health, sidebar-collapse persistence across restart, Lock) work correctly."
-severity: major
+### 5. Re-verify: Direct site delete, confirm dialogs, cascade delete, loading spinners (G-08-4, G-08-5, G-08-6, G-08-7)
+expected: A site's detail view has a delete control reachable directly (no need to open edit-site first). Deleting a site with no credentials shows a confirm dialog reading 'Delete "{name}"? This cannot be undone.' before deleting. Deleting a site that already has credentials shows the same confirm dialog (not a hard block) and, on confirmation, cascades the delete to its credentials. Login and the master-password reprompt check both show a visible spinner/loading animation while verifying, instead of just a dimmed button. (Everything else in the original test 5 — edit, credential CRUD to Trash, list/detail auto-refresh, all six nav destinations + Back, Health->detail linking, View-full-health, sidebar-collapse persistence, Lock — was already confirmed working and is not being re-tested.)
+result: pass
+note: "Trash restore also confirmed pass, plus the vault-refresh bug found and fixed live (G-08-9)."
 
 ### 6. Responsive tiers, full capability checklist, and Classic regression check
 expected: Resize the window through all three D-18 tiers (>=1024px full sidebar honoring navCollapsed; 640-1023px icon rail with navCollapsed untouched; <640px mobile nav swap with single visible pane and a working Back). Walk all 18 flows in docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md §1 in the New UI, and separately confirm all six §4 cross-cutting behaviors (30s clipboard auto-clear, reprompt on reveal+copy for both secret types, idle/sleep auto-lock returns to login, theme+all 5 accents load flash-free, all three mobileNavStyle values render correctly below 640px, no credential fetched before a site is opened). Finally set ui_variant back to classic and walk the same 18 flows in Classic to confirm nothing changed.
@@ -47,8 +43,8 @@ reason: "User will complete this test later"
 ## Summary
 
 total: 6
-passed: 2
-issues: 3
+passed: 5
+issues: 0
 pending: 0
 skipped: 1
 blocked: 0
@@ -63,7 +59,9 @@ blocked: 0
 
 - gap_id: G-08-1
   truth: "Clicking Data -> Backup opens a native OS dialog letting the user pick the backup file's save location"
-  status: failed
+  status: resolved
+  resolved_by: 08-10-PLAN.md
+  resolved_at: 2026-09-17
   reason: "User reported: Need option to choose backup location when clicking \"create backup\" — no location picker appeared."
   severity: major
   test: 1
@@ -84,7 +82,9 @@ blocked: 0
   debug_session: ".planning/debug/backup-location-picker-missing.md"
 - gap_id: G-08-2
   truth: "A new Settings field 'Reprompt mode' (Global | Per-credential) controls the reprompt gate. Global: every credential's password reveal/copy requires the master password; a correct entry opens a grace window (default 30s, configurable in Settings) during which further reveals/copies for ANY credential do not re-prompt; after the window expires, the next reveal/copy re-prompts. Per-credential: today's existing behavior — only credentials with 'Require reprompt' ON ask for the master password, and they ask every single time (no grace window)."
-  status: failed
+  status: resolved
+  resolved_by: 08-11-PLAN.md, 08-12-PLAN.md
+  resolved_at: 2026-09-17
   reason: "User reported: no master password was asked to view a credential's password. Locked decision (this session): add the Global/Per-credential Settings toggle described above rather than changing per-credential default behavior."
   severity: major
   test: 1
@@ -101,7 +101,9 @@ blocked: 0
   debug_session: ".planning/debug/reprompt-not-firing-on-reveal.md"
 - gap_id: G-08-3
   truth: "Adding a custom field to a credential in the New UI succeeds without error"
-  status: failed
+  status: resolved
+  resolved_by: 08-07-PLAN.md
+  resolved_at: 2026-09-17
   reason: "User reported: Adding a custom field shows a 'Something went wrong. Please Try Again' error. Blocks verifying the hidden-custom-field reprompt path (Test 4 sub-check) since a hidden field can't be added to test against."
   severity: blocker
   test: 4
@@ -115,7 +117,9 @@ blocked: 0
   debug_session: ".planning/debug/custom-field-add-error.md"
 - gap_id: G-08-4
   truth: "A delete control for a site is reachable directly, without first opening edit mode"
-  status: failed
+  status: resolved
+  resolved_by: 08-09-PLAN.md
+  resolved_at: 2026-09-17
   reason: "User reported: I shouldn't need to click on edit site to see the delete button, it should be available outside somewhere."
   severity: minor
   test: 5
@@ -130,7 +134,9 @@ blocked: 0
   debug_session: ".planning/debug/delete-control-not-direct.md"
 - gap_id: G-08-5
   truth: "Deleting a site (with no credentials) shows a confirm dialog reading 'Delete \"{name}\"? This cannot be undone.' before deleting"
-  status: failed
+  status: resolved
+  resolved_by: 08-09-PLAN.md
+  resolved_at: 2026-09-17
   reason: "User reported: No popup shown asking to confirm deletion."
   severity: major
   test: 5
@@ -146,7 +152,9 @@ blocked: 0
   debug_session: ".planning/debug/no-confirm-dialog-delete-site-no-creds.md"
 - gap_id: G-08-6
   truth: "A site that already has saved credentials can still be deleted (cascading the delete to its credentials), gated behind a confirmation popup — not blocked outright"
-  status: failed
+  status: resolved
+  resolved_by: 08-09-PLAN.md
+  resolved_at: 2026-09-17
   reason: "User reported: it says I have a credential saved for that site and just stops deletion altogether until all credentials for that site are deleted one by one. User wants: I should be able to delete site (with a confirmation popup) even if it has credentials already saved for it."
   severity: major
   test: 5
@@ -163,7 +171,9 @@ blocked: 0
   debug_session: ".planning/debug/delete-blocked-when-credentials-exist.md"
 - gap_id: G-08-7
   truth: "A loading animation shows during any operation with a perceptible wait (login, master-password reprompt check, and similar)"
-  status: failed
+  status: resolved
+  resolved_by: 08-08-PLAN.md
+  resolved_at: 2026-09-17
   reason: "User reported: login and password check (reprompt popup) both take too much time with no feedback; add a loading animation wherever loading the next thing takes time. Decision (this session): add the loading animation now; the underlying KDF cost itself is NOT being changed as part of this — see Audit Notes."
   severity: minor
   test: 5
@@ -177,6 +187,38 @@ blocked: 0
     - "reusable spinner component composed from existing Icon.tsx (bootstrap-icons arrow-repeat/arrow-clockwise glyph) + Tailwind's animate-spin utility (both already in use elsewhere — no new dependency needed)"
     - "spinner wired into Login.tsx submit/biometric buttons and SecretField.tsx Confirm button when submitting/verifying is true"
   debug_session: ".planning/debug/no-loading-animation-login-reprompt.md"
+- gap_id: G-08-8
+  truth: "The direct 'Delete site' control in DetailPanel.tsx's header shows only the trash icon, matching an icon-only button treatment, not an icon plus a text label"
+  status: resolved
+  resolved_by: "fixed inline during 08-UAT re-verification (commit 55a757b)"
+  resolved_at: 2026-09-17
+  reason: "User reported: Delete site button should just have the trashcan icon."
+  severity: cosmetic
+  test: 1
+  artifacts:
+    - path: "src/newui/components/DetailPanel.tsx"
+      issue: "Delete site button (lines 176-183, added by 08-09-PLAN.md) renders `<Icon name=\"trash\" /> Delete site` — icon plus text label"
+  missing: []
+  root_cause: ""
+  debug_session: ""
+- gap_id: G-08-9
+  truth: "Restoring a credential from Trash makes it (and its parent site, if the site was cascade-deleted) reappear in the vault list without restarting the app"
+  status: resolved
+  resolved_by: "fixed inline during 08-UAT re-verification (commit 55a757b)"
+  resolved_at: 2026-09-17
+  reason: "User reported: restore button in the delete tab didn't restore the credential back. Clarified: the item vanished from Trash but never reappeared in the vault."
+  severity: major
+  test: 5
+  root_cause: "New UI's useVault() lives in NewShell.tsx and stays mounted across every pane switch (unlike Classic's AppShell, which unmounts/remounts Vault.tsx on return, refetching automatically). Trash.tsx's restore handler only refreshed its own local Trash list, never NewShell's vault.refreshSites()/refreshCredentials() — restore_credential's backend logic and DB state were correct throughout (proven by the existing restore_credential_revives_its_cascade_deleted_site unit test); only the New UI's cached list was stale."
+  artifacts:
+    - path: "src/screens/Trash.tsx"
+      issue: "restore button's onClick called api.restoreCredential + its own refresh() only, no external refresh callback"
+    - path: "src/newui/screens/TrashPane.tsx"
+      issue: "one-to-one passthrough to Trash, no onRestored prop to forward a parent refresh"
+    - path: "src/newui/NewShell.tsx"
+      issue: "TrashPane rendered with only onBack — refreshAfterSave (used by every other editor's onSaved) never wired to Trash restores"
+  missing: []
+  debug_session: ""
 
 ## Audit Notes
 
