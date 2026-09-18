@@ -634,3 +634,133 @@ async fn upload_csv_without_a_session_cookie_is_unauthorized() {
         .unwrap();
     assert_eq!(res.status(), 401);
 }
+
+#[tokio::test]
+async fn csv_import_uploads_once_then_previews_and_commits() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let upload_res = client
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body("name,url,username,password\nexample.com,https://example.com,alice,s3cret\n")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(upload_res.status(), 200);
+
+    let preview_res = client
+        .post(format!("{base}/api/import_csv_preview"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"format":{"format":"chromium"}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(preview_res.status(), 200);
+    let records: Vec<serde_json::Value> = preview_res.json().await.unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["siteName"], "example.com");
+
+    let commit_res = client
+        .post(format!("{base}/api/import_csv_commit"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"records": records}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(commit_res.status(), 200);
+    let summary: serde_json::Value = commit_res.json().await.unwrap();
+    assert_eq!(summary["imported"], 1);
+
+    let sites: Vec<serde_json::Value> = client
+        .post(format!("{base}/api/list_sites"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        sites.iter().any(|s| s["name"] == "example.com"),
+        "the committed import must be visible via list_sites"
+    );
+}
+
+#[tokio::test]
+async fn import_csv_preview_without_an_upload_is_rejected() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let res = client
+        .post(format!("{base}/api/import_csv_preview"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"format":{"format":"chromium"}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+}
+
+#[tokio::test]
+async fn one_upload_serves_two_previews() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    client
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body("name,url,username,password\nexample.com,https://example.com,alice,s3cret\n")
+        .send()
+        .await
+        .unwrap();
+
+    let first = client
+        .post(format!("{base}/api/import_csv_preview"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"format":{"format":"chromium"}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), 200);
+
+    // Same single upload, previewed again with a different format - the cache must not have been
+    // consumed by the first preview.
+    let second = client
+        .post(format!("{base}/api/import_csv_preview"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"format":{"format":"generic","mapping":{"name":"site_name"}}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second.status(), 200, "the same upload must serve a second preview with a different format");
+}

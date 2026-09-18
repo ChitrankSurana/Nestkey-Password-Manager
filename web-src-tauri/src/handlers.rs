@@ -216,10 +216,11 @@ struct ExportCsvRequest {
     confirmed: bool,
 }
 
+// No `path` field (SEC-01/D-01/D-03): reads the CSV bytes this session already uploaded via
+// `/api/upload_csv` instead of a client-supplied filesystem path.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ImportCsvPreviewRequest {
-    path: String,
     format: ImportFormat,
 }
 
@@ -636,10 +637,15 @@ async fn read_csv_headers(Extension(s): Extension<Arc<UserSession>>) -> Result<J
 }
 
 async fn import_csv_preview(
-    Extension(_s): Extension<Arc<UserSession>>,
+    Extension(s): Extension<Arc<UserSession>>,
     Json(b): Json<ImportCsvPreviewRequest>,
 ) -> Result<Json<Vec<ImportRecordDto>>, ApiError> {
-    Ok(Json(do_import_csv_preview(&b.path, &b.format)?))
+    let bytes = s
+        .csv_upload()
+        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No CSV file uploaded yet."))?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| pwmgr_core::error::invalid_input_error("That file doesn't look like a CSV."))?;
+    Ok(Json(do_import_csv_preview_from_str(&text, &b.format)?))
 }
 
 async fn import_csv_commit(

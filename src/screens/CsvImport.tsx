@@ -96,11 +96,13 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
   }
 
   async function handlePreview() {
+    // Desktop needs a real path; web mode only needs "a file has been uploaded", which `path`
+    // (the display label set on upload) already signals.
     if (!path) return;
     setBusy(true);
     try {
       setError(null);
-      setRecords(await api.importCsvPreview(path, currentFormat()));
+      setRecords(await api.importCsvPreview(isTauri ? path : null, currentFormat()));
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {

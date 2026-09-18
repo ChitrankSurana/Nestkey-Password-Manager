@@ -320,8 +320,10 @@ export const api = {
   uploadCsv: (file: File) => httpUpload("upload_csv", file),
   readCsvHeaders: (path: string | null) =>
     isTauri ? invoke<string[]>("read_csv_headers", { path }) : httpPost<string[]>("read_csv_headers", {}),
-  importCsvPreview: (path: string, format: ImportFormat) =>
-    call<ImportRecordDto[]>("import_csv_preview", { path, format }),
+  importCsvPreview: (path: string | null, format: ImportFormat) =>
+    isTauri
+      ? invoke<ImportRecordDto[]>("import_csv_preview", { path, format })
+      : httpPost<ImportRecordDto[]>("import_csv_preview", { format }),
   importCsvCommit: (records: ImportRecordDto[]) =>
     call<ImportSummaryDto>("import_csv_commit", { records }),
   healthReport: () => call<HealthReportDto>("health_report"),

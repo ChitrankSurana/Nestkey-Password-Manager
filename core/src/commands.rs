@@ -817,19 +817,30 @@ pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
     do_read_csv_headers_from_str(&text)
 }
 
+/// Path-free preview parse (SEC-01/D-01/D-03): the web branch reads no filesystem path at all —
+/// its caller decodes the session's cached upload bytes into a `&str` and hands it here directly.
+/// Reading does not consume anything (this takes `&str`, not ownership of the cache), so the same
+/// upload can be previewed again with a different format.
+pub fn do_import_csv_preview_from_str(
+    text: &str,
+    format: &ImportFormat,
+) -> Result<Vec<ImportRecordDto>, CommandError> {
+    let records = match format {
+        ImportFormat::Chromium => crate::portio::parse_chromium_csv(text)?,
+        ImportFormat::Firefox => crate::portio::parse_firefox_csv(text)?,
+        ImportFormat::LastPass => crate::portio::parse_lastpass_csv(text)?,
+        ImportFormat::Generic { mapping } => crate::portio::parse_generic_csv(text, mapping)?,
+    };
+    Ok(records.into_iter().map(ImportRecordDto::from).collect())
+}
+
 pub fn do_import_csv_preview(
     path: &str,
     format: &ImportFormat,
 ) -> Result<Vec<ImportRecordDto>, CommandError> {
     let text = std::fs::read_to_string(path)
         .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
-    let records = match format {
-        ImportFormat::Chromium => crate::portio::parse_chromium_csv(&text)?,
-        ImportFormat::Firefox => crate::portio::parse_firefox_csv(&text)?,
-        ImportFormat::LastPass => crate::portio::parse_lastpass_csv(&text)?,
-        ImportFormat::Generic { mapping } => crate::portio::parse_generic_csv(&text, mapping)?,
-    };
-    Ok(records.into_iter().map(ImportRecordDto::from).collect())
+    do_import_csv_preview_from_str(&text, format)
 }
 
 pub fn do_import_csv_commit(
