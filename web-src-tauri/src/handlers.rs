@@ -303,6 +303,11 @@ async fn logout(State(ctx): State<AppContext>, req: axum::http::Request<axum::bo
         .and_then(|h| h.to_str().ok())
         .and_then(crate::middleware::parse_session_cookie);
     if let Some(token) = token {
+        // Wipe any cached upload promptly (SEC-01/D-04) rather than waiting for the last `Arc`
+        // clone of this session to drop.
+        if let Some(session) = ctx.store.get(&token) {
+            session.clear_upload();
+        }
         ctx.store.remove(&token);
     }
     let mut res = StatusCode::OK.into_response();
@@ -652,7 +657,19 @@ async fn import_csv_commit(
     Extension(s): Extension<Arc<UserSession>>,
     Json(b): Json<ImportCsvCommitRequest>,
 ) -> Result<Json<ImportSummaryDto>, ApiError> {
-    Ok(Json(do_import_csv_commit(&s.app_state, b.records)?))
+    let summary = do_import_csv_commit(&s.app_state, b.records)?;
+    // Success path only (SEC-01/D-04) - a failed commit keeps the upload cached so the user can
+    // retry without re-uploading.
+    s.clear_upload();
+    Ok(Json(summary))
+}
+
+// Explicit cancel point (SEC-01/D-04): the frontend calls this when the user backs out of the
+// import flow or switches source after uploading, so a cancelled import does not leave credential
+// bytes resident in the server process.
+async fn clear_upload(Extension(s): Extension<Arc<UserSession>>) -> StatusCode {
+    s.clear_upload();
+    StatusCode::OK
 }
 
 async fn health_report(
@@ -725,6 +742,7 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/read_csv_headers", post(read_csv_headers))
         .route("/api/import_csv_preview", post(import_csv_preview))
         .route("/api/import_csv_commit", post(import_csv_commit))
+        .route("/api/clear_upload", post(clear_upload))
         .route("/api/health_report", post(health_report))
         .route("/api/check_breach", post(check_breach))
         .route_layer(axum::middleware::from_fn_with_state(

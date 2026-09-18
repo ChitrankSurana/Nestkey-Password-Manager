@@ -764,3 +764,210 @@ async fn one_upload_serves_two_previews() {
         .unwrap();
     assert_eq!(second.status(), 200, "the same upload must serve a second preview with a different format");
 }
+
+#[tokio::test]
+async fn upload_cache_is_cleared_after_a_successful_commit() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    client
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body("name,url,username,password\nexample.com,https://example.com,alice,s3cret\n")
+        .send()
+        .await
+        .unwrap();
+
+    let records: Vec<serde_json::Value> = client
+        .post(format!("{base}/api/import_csv_preview"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"format":{"format":"chromium"}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let commit_res = client
+        .post(format!("{base}/api/import_csv_commit"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"records": records}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(commit_res.status(), 200);
+
+    let headers_res = client
+        .post(format!("{base}/api/read_csv_headers"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        headers_res.status(),
+        400,
+        "a successful commit must clear the cached upload server-side"
+    );
+}
+
+#[tokio::test]
+async fn clear_upload_route_drops_the_cached_bytes() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    client
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body("name,url\nexample.com,https://example.com\n")
+        .send()
+        .await
+        .unwrap();
+
+    let clear_res = client
+        .post(format!("{base}/api/clear_upload"))
+        .header("x-pwmgr-csrf", "1")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(clear_res.status(), 200);
+
+    let headers_res = client
+        .post(format!("{base}/api/read_csv_headers"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(headers_res.status(), 400, "clear_upload must drop the cached bytes");
+}
+
+#[tokio::test]
+async fn uploads_are_isolated_between_two_browser_sessions() {
+    let (base, _dir) = spawn_server().await;
+    let alice = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    let bob = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    alice
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"alice password one"}))
+        .send()
+        .await
+        .unwrap();
+    bob.post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"bob","masterPassword":"bob password one"}))
+        .send()
+        .await
+        .unwrap();
+
+    alice
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body("name,url\nexample.com,https://example.com\n")
+        .send()
+        .await
+        .unwrap();
+
+    let bob_res = bob
+        .post(format!("{base}/api/read_csv_headers"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bob_res.status(), 400, "bob's session must never see alice's uploaded CSV");
+}
+
+#[tokio::test]
+async fn two_concurrent_uploads_leave_one_complete_buffer() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let upload_a = client
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body("colA\nvalueA\n");
+    let upload_b = client
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body("colB\nvalueB\n");
+
+    let (res_a, res_b) = tokio::join!(upload_a.send(), upload_b.send());
+    assert_eq!(res_a.unwrap().status(), 200);
+    assert_eq!(res_b.unwrap().status(), 200);
+
+    let headers_res = client
+        .post(format!("{base}/api/read_csv_headers"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(headers_res.status(), 200);
+    let headers: Vec<String> = headers_res.json().await.unwrap();
+    assert!(
+        headers == vec!["colA".to_string()] || headers == vec!["colB".to_string()],
+        "two concurrent uploads must leave exactly one complete buffer, never a splice; got {headers:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_oversized_upload_is_rejected() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let oversized_body = vec![b'a'; pwmgr_web::handlers::UPLOAD_BODY_LIMIT + 1];
+    let res = client
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body(oversized_body)
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        !res.status().is_success(),
+        "an upload larger than UPLOAD_BODY_LIMIT must be rejected, got {}",
+        res.status()
+    );
+}

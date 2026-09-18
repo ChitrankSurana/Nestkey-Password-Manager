@@ -77,15 +77,39 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
   }
 
   async function handleSourceChange(next: "chromium" | "firefox" | "lastPass" | "generic") {
+    // Web mode: switching source abandons this upload (SEC-01/D-04) - clear the server-side cache
+    // rather than leaving credential bytes resident for a file the user is no longer importing.
+    const hadWebUpload = !isTauri && path;
+    if (hadWebUpload) {
+      try {
+        await api.clearUpload();
+      } catch {
+        // Best-effort cleanup - the session sweep would eventually reclaim it anyway.
+      }
+    }
     setSource(next);
     setRecords(null);
     setSummary(null);
     setError(null);
     setHeaders([]);
     setMapping({});
-    if (next === "generic" && path) {
-      await loadHeaders(isTauri ? path : null);
+    if (hadWebUpload) {
+      setPath(null); // the cache backing this label is gone - the user must re-upload
+    } else if (next === "generic" && path) {
+      await loadHeaders(path);
     }
+  }
+
+  async function handleBack() {
+    // Web mode: leaving the screen abandons any in-flight upload (SEC-01/D-04).
+    if (!isTauri && path) {
+      try {
+        await api.clearUpload();
+      } catch {
+        // Best-effort cleanup - the session sweep would eventually reclaim it anyway.
+      }
+    }
+    onBack();
   }
 
   function currentFormat(): ImportFormat {
@@ -133,7 +157,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] p-4">
       <Tooltip text="Back to vault">
-        <button onClick={onBack} className="mb-4 underline text-sm"><Icon name="arrow-left" /> Back</button>
+        <button onClick={handleBack} className="mb-4 underline text-sm"><Icon name="arrow-left" /> Back</button>
       </Tooltip>
       <h1 className="text-xl font-semibold mb-4">Import from CSV</h1>
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}

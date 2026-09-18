@@ -318,6 +318,8 @@ export const api = {
   // open dialog; web mode has already uploaded the file bytes via `uploadCsv` and reads them back
   // from its own session cache, so no path is ever sent.
   uploadCsv: (file: File) => httpUpload("upload_csv", file),
+  // No-op on desktop, which has no upload cache to clear.
+  clearUpload: () => (isTauri ? Promise.resolve() : httpPost<void>("clear_upload", {})),
   readCsvHeaders: (path: string | null) =>
     isTauri ? invoke<string[]>("read_csv_headers", { path }) : httpPost<string[]>("read_csv_headers", {}),
   importCsvPreview: (path: string | null, format: ImportFormat) =>
