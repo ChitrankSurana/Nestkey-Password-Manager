@@ -216,11 +216,24 @@ file-dialog path flow untouched (D-02).
 **Plans**: 5 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 09-01-PLAN.md — SEC-01: CSV export becomes an HTTP download body; no destination in the request
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 09-02-PLAN.md — SEC-01: CSV import becomes a raw-body upload cached on the session
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 09-03-PLAN.md — SEC-01: backup restore becomes an upload, plus the four-handler H1 closure gate
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 09-04-PLAN.md — SEC-02: login/register/PIN throttle with a doubling lockout window, and a bounded Argon2 semaphore
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 09-05-PLAN.md — SEC-03: strict CSP and security headers on every response, and a real CSP in the desktop shell
 
 ## Progress
