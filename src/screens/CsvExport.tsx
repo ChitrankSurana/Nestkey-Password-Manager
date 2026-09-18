@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
-import { api, isCommandError, ExportMode } from "../lib/api";
+import { api, isCommandError, isTauri, ExportMode } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
@@ -20,9 +20,12 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
   const canExport = passwordModeReady && plaintextModeReady && !busy;
 
   async function handleExport() {
-    const defaultName = mode === "plaintext" ? "vault-export.csv" : "vault-export.pwenc";
-    const target = await save({ defaultPath: defaultName });
-    if (!target) return; // cancelled
+    let target: string | null = null;
+    if (isTauri) {
+      const defaultName = mode === "plaintext" ? "vault-export.csv" : "vault-export.pwenc";
+      target = await save({ defaultPath: defaultName });
+      if (!target) return; // cancelled
+    }
 
     setBusy(true);
     setError(null);
@@ -33,7 +36,7 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
         mode === "withPassword" ? { mode: "withPassword", password } :
         { mode: "plaintext" };
       await api.exportCsv(target, exportMode, mode === "plaintext");
-      setStatus(`Exported to ${target}`);
+      setStatus(isTauri ? `Exported to ${target}` : "Export downloaded.");
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {

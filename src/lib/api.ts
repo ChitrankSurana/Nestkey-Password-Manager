@@ -166,6 +166,44 @@ function call<T>(command: string, args: Record<string, unknown> = {}): Promise<T
   return isTauri ? invoke<T>(command, args) : httpPost<T>(command, args);
 }
 
+// Web-only: posts `args` like `httpPost`, but the response body is the file itself, not JSON. Reads
+// the filename off `content-disposition` (falling back to `fallbackName`), then drives the browser's
+// native download via a programmatic anchor click - no server-side path is ever involved (SEC-01).
+async function httpDownload(
+  command: string,
+  args: Record<string, unknown>,
+  fallbackName: string,
+): Promise<void> {
+  const res = await fetch(`/api/${command}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-PWMGR-CSRF": "1" },
+    credentials: "same-origin",
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) {
+    let err: CommandError = { code: "internal_error", message: "Something went wrong. Please try again." };
+    try {
+      err = (await res.json()) as CommandError;
+    } catch {
+      // Non-JSON error body (e.g. a raw 404 from the static layer) - keep the generic fallback.
+    }
+    throw err;
+  }
+  const disposition = res.headers.get("content-disposition");
+  const match = disposition ? /filename="?([^";]+)"?/.exec(disposition) : null;
+  const filename = match?.[1] ?? fallbackName;
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   registerUser: (username: string, masterPassword: string) =>
     call<AuthSuccess>("register_user", { username, masterPassword }),
@@ -245,8 +283,16 @@ export const api = {
     call<string>("create_backup", { destinationPath }),
   restoreBackup: (path: string, confirmed: boolean) =>
     call<void>("restore_backup", { path, confirmed }),
-  exportCsv: (path: string, mode: ExportMode, confirmed: boolean) =>
-    call<void>("export_csv", { path, mode, confirmed }),
+  // Desktop and web legitimately diverge here (D-02): desktop still names a path from the native
+  // save dialog; web mode never names a destination and instead downloads the bytes directly.
+  exportCsv: (path: string | null, mode: ExportMode, confirmed: boolean) =>
+    isTauri
+      ? invoke<void>("export_csv", { path, mode, confirmed })
+      : httpDownload(
+          "export_csv",
+          { mode, confirmed },
+          mode.mode === "plaintext" ? "vault-export.csv" : "vault-export.pwenc",
+        ),
   readCsvHeaders: (path: string) => call<string[]>("read_csv_headers", { path }),
   importCsvPreview: (path: string, format: ImportFormat) =>
     call<ImportRecordDto[]>("import_csv_preview", { path, format }),

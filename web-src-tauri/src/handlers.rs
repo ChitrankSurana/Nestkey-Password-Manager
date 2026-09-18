@@ -200,10 +200,11 @@ struct RestoreBackupRequest {
     confirmed: bool,
 }
 
+// No `path` field (SEC-01/D-01): the web transport never accepts a client-supplied export
+// destination. `export_csv` returns the bytes in the HTTP response body instead.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExportCsvRequest {
-    path: String,
     mode: ExportMode,
     confirmed: bool,
 }
@@ -590,13 +591,23 @@ async fn restore_backup(
     Ok(StatusCode::OK)
 }
 
+// Returns the export bytes directly in the response body (SEC-01/D-01) - this handler performs no
+// filesystem access itself; `do_export_csv_download` is the only path-writing-free export producer
+// it is allowed to call.
 async fn export_csv(
     Extension(s): Extension<Arc<UserSession>>,
     State(ctx): State<AppContext>,
     Json(b): Json<ExportCsvRequest>,
-) -> Result<StatusCode, ApiError> {
-    do_export_csv(&s.app_state, &ctx.paths, &b.path, &b.mode, b.confirmed)?;
-    Ok(StatusCode::OK)
+) -> Result<Response, ApiError> {
+    let (filename, bytes) = do_export_csv_download(&s.app_state, &ctx.paths, &b.mode, b.confirmed)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\"")),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 async fn read_csv_headers(

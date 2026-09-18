@@ -720,13 +720,13 @@ fn append_plaintext_export_log(paths: &AppPaths, path: &str) -> std::io::Result<
     writeln!(file, "{}\t{}", ts, path)
 }
 
-pub fn do_export_csv(
+/// Produces the export bytes for `mode`, performing no filesystem access at all - the byte-producing
+/// half of export shared by both the desktop (path-writing) and web (bytes-over-HTTP) transports.
+pub fn do_export_csv_bytes(
     state: &AppState,
-    paths: &AppPaths,
-    path: &str,
     mode: &ExportMode,
     confirmed: bool,
-) -> Result<(), CommandError> {
+) -> Result<Vec<u8>, CommandError> {
     if matches!(mode, ExportMode::Plaintext) && !confirmed {
         return Err(crate::error::invalid_input_error(
             "Plaintext export requires explicit confirmation.",
@@ -757,6 +757,40 @@ pub fn do_export_csv(
             crate::portio::encode_sealed_csv(Some(&salt), &nonce, &ciphertext)
         }
     };
+    Ok(bytes)
+}
+
+/// Web-mode export: never touches the filesystem for the export target itself (SEC-01/D-01) - the
+/// bytes are handed back for the HTTP response body. The plaintext-export log still gets an entry
+/// (DATA-02), but with a fixed `<web download>` label standing in for the filesystem destination
+/// desktop exports would otherwise record.
+pub fn do_export_csv_download(
+    state: &AppState,
+    paths: &AppPaths,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(String, Vec<u8>), CommandError> {
+    let bytes = do_export_csv_bytes(state, mode, confirmed)?;
+
+    let filename = if matches!(mode, ExportMode::Plaintext) {
+        if let Err(e) = append_plaintext_export_log(paths, "<web download>") {
+            eprintln!("warning: failed to append plaintext export log entry: {e}");
+        }
+        "vault-export.csv"
+    } else {
+        "vault-export.pwenc"
+    };
+    Ok((filename.to_string(), bytes))
+}
+
+pub fn do_export_csv(
+    state: &AppState,
+    paths: &AppPaths,
+    path: &str,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    let bytes = do_export_csv_bytes(state, mode, confirmed)?;
     std::fs::write(path, &bytes).map_err(|_| crate::error::internal_error())?;
 
     if matches!(mode, ExportMode::Plaintext) {

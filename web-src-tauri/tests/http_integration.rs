@@ -318,3 +318,40 @@ async fn update_reprompt_grace_seconds_route_persists() {
         .unwrap();
     assert_eq!(config["repromptGraceSeconds"], 60);
 }
+
+#[tokio::test]
+async fn export_csv_returns_the_file_bytes_in_the_response_body() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    // No destination in the request body at all (SEC-01/D-01) - just mode and confirmed.
+    let res = client
+        .post(format!("{base}/api/export_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"mode":{"mode":"thisDevice"},"confirmed":false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let disposition = res
+        .headers()
+        .get("content-disposition")
+        .expect("export_csv must return a content-disposition header")
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        disposition.contains("attachment; filename="),
+        "unexpected content-disposition: {disposition}"
+    );
+    let body = res.bytes().await.unwrap();
+    assert!(!body.is_empty(), "exported body must not be empty");
+}
