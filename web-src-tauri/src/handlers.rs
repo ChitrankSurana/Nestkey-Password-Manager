@@ -1,5 +1,6 @@
 use crate::error_map::ApiError;
-use crate::session_store::{SessionStore, UserSession};
+use crate::session_store::{SessionStore, UploadCache, UserSession};
+use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -26,6 +27,12 @@ pub struct AppContext {
     pub store: SessionStore,
     pub paths: Arc<AppPaths>,
 }
+
+/// Per-route body-size cap for the raw-bytes upload endpoints only (SEC-01/D-01, D-03). Applied as
+/// a `DefaultBodyLimit` layer on `/api/upload_csv` (and, in plan 09-03, `/api/upload_backup`) —
+/// never globally, so axum's 2 MiB default (RUSTSEC-2022-0055) still guards every JSON command
+/// route without silently rejecting a real vault-sized CSV/backup upload.
+pub const UPLOAD_BODY_LIMIT: usize = 25 * 1024 * 1024;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -210,11 +217,6 @@ struct ExportCsvRequest {
 }
 
 #[derive(Deserialize)]
-struct ReadCsvHeadersRequest {
-    path: String,
-}
-
-#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ImportCsvPreviewRequest {
     path: String,
@@ -244,6 +246,7 @@ fn issue_session(ctx: &AppContext, body: &AuthRequest, register: bool) -> Result
         username: body.username.clone(),
         app_state,
         last_seen: Mutex::new(Instant::now()),
+        upload_cache: Mutex::new(None),
     };
     let token = ctx.store.insert(session);
     let cookie = format!("session={token}; HttpOnly; SameSite=Strict; Path=/");
@@ -277,6 +280,7 @@ async fn unlock_with_pin(
         username: body.username.clone(),
         app_state,
         last_seen: Mutex::new(Instant::now()),
+        upload_cache: Mutex::new(None),
     };
     let token = ctx.store.insert(session);
     let cookie = format!("session={token}; HttpOnly; SameSite=Strict; Path=/");
@@ -610,11 +614,25 @@ async fn export_csv(
         .into_response())
 }
 
-async fn read_csv_headers(
-    Extension(_s): Extension<Arc<UserSession>>,
-    Json(b): Json<ReadCsvHeadersRequest>,
-) -> Result<Json<Vec<String>>, ApiError> {
-    Ok(Json(do_read_csv_headers(&b.path)?))
+// Caches the raw uploaded bytes on the requesting browser's own session (SEC-01/D-01/D-03/D-04) -
+// performs no filesystem access and returns no data, since `read_csv_headers`/`import_csv_preview`
+// read the cache back on their own subsequent calls.
+async fn upload_csv(Extension(s): Extension<Arc<UserSession>>, body: Bytes) -> StatusCode {
+    s.set_upload(UploadCache::Csv(Zeroizing::new(body.to_vec())));
+    StatusCode::OK
+}
+
+// No `path` field (SEC-01/D-01): reads the CSV bytes this session already uploaded via
+// `/api/upload_csv` instead of a client-supplied filesystem path. Never surfaces a path or raw
+// byte content in its error - "No CSV file uploaded yet." / "That file doesn't look like a CSV."
+// are the only two messages this can return.
+async fn read_csv_headers(Extension(s): Extension<Arc<UserSession>>) -> Result<Json<Vec<String>>, ApiError> {
+    let bytes = s
+        .csv_upload()
+        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No CSV file uploaded yet."))?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| pwmgr_core::error::invalid_input_error("That file doesn't look like a CSV."))?;
+    Ok(Json(do_read_csv_headers_from_str(&text)?))
 }
 
 async fn import_csv_preview(
@@ -694,6 +712,10 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/create_backup", post(create_backup))
         .route("/api/restore_backup", post(restore_backup))
         .route("/api/export_csv", post(export_csv))
+        .route(
+            "/api/upload_csv",
+            post(upload_csv).layer(axum::extract::DefaultBodyLimit::max(UPLOAD_BODY_LIMIT)),
+        )
         .route("/api/read_csv_headers", post(read_csv_headers))
         .route("/api/import_csv_preview", post(import_csv_preview))
         .route("/api/import_csv_commit", post(import_csv_commit))

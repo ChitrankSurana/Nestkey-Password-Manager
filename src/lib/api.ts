@@ -204,6 +204,27 @@ async function httpDownload(
   URL.revokeObjectURL(url);
 }
 
+// Web-only: posts a raw file body (not JSON) to a session-scoped upload endpoint - the file's bytes
+// land on the requesting browser's own session cache (SEC-01/D-01/D-03/D-04), reused by every
+// downstream step. Follows the same CommandError-parsing branch `httpPost` uses.
+async function httpUpload(command: string, file: File | Blob): Promise<void> {
+  const res = await fetch(`/api/${command}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream", "X-PWMGR-CSRF": "1" },
+    credentials: "same-origin",
+    body: file,
+  });
+  if (!res.ok) {
+    let err: CommandError = { code: "internal_error", message: "Something went wrong. Please try again." };
+    try {
+      err = (await res.json()) as CommandError;
+    } catch {
+      // Non-JSON error body (e.g. a raw 404 from the static layer) - keep the generic fallback.
+    }
+    throw err;
+  }
+}
+
 export const api = {
   registerUser: (username: string, masterPassword: string) =>
     call<AuthSuccess>("register_user", { username, masterPassword }),
@@ -293,7 +314,12 @@ export const api = {
           { mode, confirmed },
           mode.mode === "plaintext" ? "vault-export.csv" : "vault-export.pwenc",
         ),
-  readCsvHeaders: (path: string) => call<string[]>("read_csv_headers", { path }),
+  // Desktop and web legitimately diverge here (D-02): desktop still names a path from the native
+  // open dialog; web mode has already uploaded the file bytes via `uploadCsv` and reads them back
+  // from its own session cache, so no path is ever sent.
+  uploadCsv: (file: File) => httpUpload("upload_csv", file),
+  readCsvHeaders: (path: string | null) =>
+    isTauri ? invoke<string[]>("read_csv_headers", { path }) : httpPost<string[]>("read_csv_headers", {}),
   importCsvPreview: (path: string, format: ImportFormat) =>
     call<ImportRecordDto[]>("import_csv_preview", { path, format }),
   importCsvCommit: (records: ImportRecordDto[]) =>

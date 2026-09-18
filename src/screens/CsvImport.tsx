@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { api, isCommandError, ImportFormat, ImportRecordDto, ImportSummaryDto } from "../lib/api";
+import { api, isCommandError, isTauri, ImportFormat, ImportRecordDto, ImportSummaryDto } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
@@ -15,8 +15,9 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
   const [summary, setSummary] = useState<ImportSummaryDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function loadHeaders(filePath: string) {
+  async function loadHeaders(filePath: string | null) {
     setBusy(true);
     try {
       setError(null);
@@ -30,16 +31,48 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
   }
 
   async function handlePickFile() {
-    const picked = await open({ multiple: false, filters: [{ name: "CSV", extensions: ["csv"] }] });
-    if (typeof picked !== "string") return;
-    setPath(picked);
+    if (isTauri) {
+      const picked = await open({ multiple: false, filters: [{ name: "CSV", extensions: ["csv"] }] });
+      if (typeof picked !== "string") return;
+      setPath(picked);
+      setRecords(null);
+      setSummary(null);
+      setError(null);
+      setHeaders([]);
+      setMapping({});
+      if (source === "generic") {
+        await loadHeaders(picked);
+      }
+      return;
+    }
+    // Web mode: no native open dialog - drive a hidden <input type="file"> instead (SEC-01/D-01).
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    setBusy(true);
+    try {
+      setError(null);
+      await api.uploadCsv(file);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+
+    setPath(file.name); // display label only - never sent to the server
     setRecords(null);
     setSummary(null);
     setError(null);
     setHeaders([]);
     setMapping({});
     if (source === "generic") {
-      await loadHeaders(picked);
+      await loadHeaders(null);
     }
   }
 
@@ -51,7 +84,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
     setHeaders([]);
     setMapping({});
     if (next === "generic" && path) {
-      await loadHeaders(path);
+      await loadHeaders(isTauri ? path : null);
     }
   }
 
@@ -125,6 +158,15 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
             <Icon name="folder2-open" /> Choose File…
           </button>
         </Tooltip>
+        {!isTauri && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={handleFileSelected}
+          />
+        )}
         {path && <span className="text-xs opacity-70">{path}</span>}
       </div>
 

@@ -517,3 +517,120 @@ async fn plaintext_web_export_logs_the_download_label() {
         "web-mode plaintext export log entry must record the download label, not a path; got: {last_line}"
     );
 }
+
+#[tokio::test]
+async fn upload_csv_then_read_csv_headers_round_trips_over_http() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let upload_res = client
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body("name,url,username,password\nexample.com,https://example.com,alice,s3cret\n")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(upload_res.status(), 200, "upload_csv should cache the bytes and return 200");
+
+    let headers_res = client
+        .post(format!("{base}/api/read_csv_headers"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(headers_res.status(), 200);
+    let headers: Vec<String> = headers_res.json().await.unwrap();
+    assert_eq!(headers, vec!["name", "url", "username", "password"]);
+}
+
+#[tokio::test]
+async fn read_csv_headers_without_an_upload_is_rejected() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let res = client
+        .post(format!("{base}/api/read_csv_headers"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+}
+
+#[tokio::test]
+async fn a_second_session_never_sees_the_first_sessions_uploaded_csv() {
+    let (base, _dir) = spawn_server().await;
+    let alice = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    let bob = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    alice
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"alice password one"}))
+        .send()
+        .await
+        .unwrap();
+    bob.post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"bob","masterPassword":"bob password one"}))
+        .send()
+        .await
+        .unwrap();
+
+    alice
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body("name,url\nexample.com,https://example.com\n")
+        .send()
+        .await
+        .unwrap();
+
+    let bob_res = bob
+        .post(format!("{base}/api/read_csv_headers"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bob_res.status(), 400, "bob's session must never see alice's uploaded CSV");
+    let body: serde_json::Value = bob_res.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+}
+
+#[tokio::test]
+async fn upload_csv_without_a_session_cookie_is_unauthorized() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let res = client
+        .post(format!("{base}/api/upload_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .header("content-type", "application/octet-stream")
+        .body("name,url\nexample.com,https://example.com\n")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 401);
+}

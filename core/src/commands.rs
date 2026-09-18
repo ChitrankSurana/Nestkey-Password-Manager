@@ -801,14 +801,20 @@ pub fn do_export_csv(
     Ok(())
 }
 
-pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+/// Path-free header parse (SEC-01/D-01): the web branch reads no filesystem path at all — its
+/// caller decodes the session's cached upload bytes into a `&str` and hands it here directly.
+pub fn do_read_csv_headers_from_str(text: &str) -> Result<Vec<String>, CommandError> {
     let mut reader = csv::Reader::from_reader(text.as_bytes());
     let headers = reader
         .headers()
         .map_err(|_| crate::error::invalid_input_error("That file doesn't look like a CSV."))?;
     Ok(headers.iter().map(|h| h.to_string()).collect())
+}
+
+pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+    do_read_csv_headers_from_str(&text)
 }
 
 pub fn do_import_csv_preview(

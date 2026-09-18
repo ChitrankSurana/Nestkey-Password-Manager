@@ -99,6 +99,7 @@ mod tests {
             username: "alice".into(),
             app_state,
             last_seen: Mutex::new(Instant::now()),
+            upload_cache: Mutex::new(None),
         });
         (store, token, dir)
     }
