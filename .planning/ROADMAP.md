@@ -213,7 +213,7 @@ own text recommends: a full upload/download redesign in which no server-side pat
 web client, with no filename-only allowance. The plans implement D-01. Desktop keeps its native
 file-dialog path flow untouched (D-02).
 
-**Plans**: 1/5 plans executed
+**Plans**: 2/5 plans executed
 
 Plans:
 **Wave 1**
@@ -222,7 +222,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 09-02-PLAN.md — SEC-01: CSV import becomes a raw-body upload cached on the session
+- [x] 09-02-PLAN.md — SEC-01: CSV import becomes a raw-body upload cached on the session
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -251,4 +251,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Localhost Web Mode | v1.0 | N/A (pre-GSD) | Complete | 2026-07-19 |
 | 7. Platform Integrations | v1.1 | N/A (pre-GSD) | Complete | 2026-09 (approx.) |
 | 8. New Vault UI (Figma Port) | v2.0 | 12/12 | In Progress|  |
-| 9. Web Mode Security Hardening | v2.0 | 1/5 | In Progress|  |
+| 9. Web Mode Security Hardening | v2.0 | 2/5 | In Progress|  |

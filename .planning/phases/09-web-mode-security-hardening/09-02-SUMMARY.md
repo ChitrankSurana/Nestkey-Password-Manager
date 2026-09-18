@@ -267,3 +267,15 @@ None - no external service configuration required.
 ---
 *Phase: 09-web-mode-security-hardening*
 *Completed: 2026-09-19*
+
+## Self-Check: PASSED
+
+- FOUND: `.planning/phases/09-web-mode-security-hardening/09-02-SUMMARY.md`
+- FOUND: commit `bfb6b32` (Task 1)
+- FOUND: commit `ca019ad` (Task 2)
+- FOUND: commit `c0ffa79` (Task 3)
+- FOUND: `pub enum UploadCache` in `web-src-tauri/src/session_store.rs`
+- FOUND: `pub fn do_read_csv_headers_from_str` in `core/src/commands.rs`
+- FOUND: `pub fn do_import_csv_preview_from_str` in `core/src/commands.rs`
+- FOUND: `httpUpload` in `src/lib/api.ts`
+- FOUND: `clearUpload` referenced in `src/screens/CsvImport.tsx`
