@@ -5,17 +5,17 @@ milestone_name: New Vault UI & Security Hardening (Phases 8-9) — Planned
 current_phase: 09
 current_phase_name: Web Mode Security Hardening
 status: executing
-stopped_at: Phase 09 context gathered
-last_updated: "2026-09-18T18:52:45.316Z"
-last_activity: 2026-09-17
-last_activity_desc: Phase 08 execution started
-state_head: e55b1bfe3c497553986e5c3667789fa3e9c28710
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-09-18T19:40:15.417Z"
+last_activity: 2026-09-19
+last_activity_desc: Phase 09 execution started
+state_head: a78c81b0235c02bd719b715d788d1d12e2033277
 progress:
   total_phases: 2
   completed_phases: 7
   total_plans: 17
-  completed_plans: 12
-  percent: 71
+  completed_plans: 13
+  percent: 76
 ---
 
 # Project State
@@ -26,19 +26,19 @@ See: .planning/PROJECT.md (updated 2026-09-13)
 
 **Core value:** The vault must stay unreadable to anyone without the master password —
 zero-knowledge and local-only by default, with no path to recover a forgotten master password.
-**Current focus:** Phase 08 — New Vault UI (Figma Port)
+**Current focus:** Phase 09 — Web Mode Security Hardening
 
 ## Current Position
 
-Phase: 09 (Web Mode Security Hardening) — READY TO EXECUTE
-Plan: 2 of 12
+Phase: 09 (Web Mode Security Hardening) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-09-17 — Phase 08 execution started
+Last activity: 2026-09-19 — Phase 09 execution started
 PROJECT.md/REQUIREMENTS.md/ROADMAP.md/STATE.md. Phases 1-7 (PRD milestones M1-M6 plus biometric
 unlock/SSH agent) retroactively marked Complete based on shipped code, git history, and manual
 test checklists — none were executed through GSD plan-phase/execute-phase.
 
-Progress: [███████░░░] 71% (7/9 phases complete; plan-level tracking not applicable to
+Progress: [████████░░] 76% (7/9 phases complete; plan-level tracking not applicable to
 pre-GSD phases)
 
 ## Performance Metrics
@@ -76,6 +76,7 @@ pre-GSD phases)
 | Phase 08 P09 | ~25min | 4 tasks | 9 files |
 | Phase 08 P10 | ~15min | 3 tasks | 7 files |
 | Phase 08 P11 | ~15min | 3 tasks | 8 files |
+| Phase 09 P01 | ~35min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,8 @@ Recent decisions affecting current work:
 - [Phase 08]: [Phase 08]: Phase 08 Plan 11: Task 1 (tracer, tdd=true) executed as real production-quality code from the start, RED/GREEN done in-session but committed as one feat commit per this phase's established convention
 - [Phase 08]: [Phase 08]: Phase 08 Plan 11: Task 2's HTTP integration tests written fresh in web-src-tauri/tests/http_integration.rs (no existing get_config test to mirror despite the plan's read_first pointer), following the file's own established conventions instead
 - [Phase 08]: [Phase 08]: Phase 08 Plan 11: G-08-2 backend closed - repromptMode/repromptGraceSeconds persisted, validated, defaulted to today's perCredential/30s behavior, and reachable over both transports; the gate logic and Settings controls remain plan 08-12's scope
+- [Phase 09]: [Phase 09]: Phase 09 Plan 01: plaintext web-mode exports log a fixed <web download> label instead of a filesystem destination, preserving DATA-02's log-every-plaintext-export behavior without ever recording a path
+- [Phase 09]: [Phase 09]: Phase 09 Plan 01: new web-only httpDownload helper in src/lib/api.ts is the established pattern for file-download screens; called directly (bypassing call()'s isTauri dispatch) since desktop invoke() and web fetch() now take divergent argument shapes for export_csv
 
 ### Pending Todos
 
@@ -146,9 +149,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-18T17:00:41.783Z
-Stopped at: Phase 09 context gathered
+Last session: 2026-09-18T19:40:15.305Z
+Stopped at: Completed 09-01-PLAN.md
 (`.planning/intel/SYNTHESIS.md`) plus the existing codebase map (`.planning/codebase/`); ready for
 the orchestrator to present the roadmap for approval and finalize the ingest workflow.
-Resume file: .planning/phases/09-web-mode-security-hardening/09-CONTEXT.md
+Resume file: None
 workflow, not phase execution; safe to remove once this handoff is reviewed)
