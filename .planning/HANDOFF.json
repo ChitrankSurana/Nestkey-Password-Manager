@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-18T20:06:08.590Z",
+  "phase": "09",
+  "phase_name": "Web Mode Security Hardening",
+  "phase_dir": ".planning/phases/09-web-mode-security-hardening",
+  "plan": 3,
+  "task": 1,
+  "total_tasks": 5,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "09-01 Web-Mode CSV Export Redesign (SEC-01 export half)", "status": "done", "commit": "1a73344"},
+    {"id": 2, "name": "09-02 Web-Mode CSV Import Upload Redesign (SEC-01 import half)", "status": "done", "commit": "42a6667"}
+  ],
+  "remaining_tasks": [
+    {"id": 3, "name": "09-03 restore_backup handler redesign (SEC-01 last handler)", "status": "not_started"},
+    {"id": 4, "name": "09-04 login/register throttling + KDF guard (SEC-02)", "status": "not_started"},
+    {"id": 5, "name": "09-05 strict CSP header (SEC-03)", "status": "not_started"}
+  ],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "Dispatch isolation forced to 'none' (sequential, main working tree) for this phase run", "rationale": "Local HEAD diverged from origin/HEAD; harness worktree base-check auto-degraded per #683/#3659. All 5 plans are single-plan sequential waves (each depends_on the prior) so no parallelism was lost.", "phase": "09"},
+    {"decision": "SEC-01 requirement gating verified working correctly as of 09-02", "rationale": "09-01's executor called requirements.mark-complete directly instead of the ready-ids gate, marking SEC-01 Complete prematurely (09-02/09-03 still owed it). 09-02's executor was briefed to use the gate properly and confirmed SEC-01 stayed 'blocked' pending 09-03. REQUIREMENTS.md will read correctly once 09-03 lands.", "phase": "09"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Re-run /gsd-execute-phase 09 to resume Wave 3 (plan 09-03: restore_backup handler redesign, SEC-01). Before dispatching, re-force isolation=none (`gsd_run query dispatch-isolation --raw --phase 09 --force-isolation none`) — the harness-worktree isolation guard re-resolves per Agent() call and is NOT sticky across separate tool invocations within this session; it errored once on the 09-02 dispatch until re-forced. Re-check `worktree.base-check --mode harness-worktree --pick shouldDegrade` first in case origin/HEAD has since caught up.",
+  "context_notes": "Phase 09 closes SECURITY_CONCERNS.md H1/M1/M2/M3 (SEC-01/02/03) for web-mode (localhost HTTP) operation. Waves 1-2 done: export and import CSV endpoints no longer accept a server-side destination/source path — bytes flow over HTTP request/response body, cached server-side only in an in-memory per-session UploadCache keyed by session id. Wave 3 (09-03) closes the last SEC-01 handler (restore_backup) and can reuse the UploadCache::Backup variant + backup_upload accessor already defined but unused in session_store.rs. Waves 4-5 are SEC-02 (throttling) and SEC-03 (CSP header) — independent of the CSV/backup upload pattern. All work so far: clean sequential commits, full test suites green (348 tests), no deviations from plan content."
+}
