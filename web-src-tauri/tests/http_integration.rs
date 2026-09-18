@@ -355,3 +355,165 @@ async fn export_csv_returns_the_file_bytes_in_the_response_body() {
     let body = res.bytes().await.unwrap();
     assert!(!body.is_empty(), "exported body must not be empty");
 }
+
+#[tokio::test]
+async fn export_csv_returns_bytes_for_every_mode() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let site_id: i64 = client
+        .post(format!("{base}/api/add_site"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"name":"example.com","url":null,"notes":null}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    client
+        .post(format!("{base}/api/add_credential"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"siteId": site_id, "username":"alice", "secret":"s3cret!", "remarks": null}))
+        .send()
+        .await
+        .unwrap();
+
+    let this_device = client
+        .post(format!("{base}/api/export_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"mode":{"mode":"thisDevice"},"confirmed":false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(this_device.status(), 200);
+    assert!(this_device.headers().get("content-disposition").is_some());
+    let this_device_body = this_device.bytes().await.unwrap();
+    assert!(!this_device_body.is_empty());
+
+    let with_password = client
+        .post(format!("{base}/api/export_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"mode":{"mode":"withPassword","password":"pw"},"confirmed":false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(with_password.status(), 200);
+    assert!(with_password.headers().get("content-disposition").is_some());
+    let with_password_body = with_password.bytes().await.unwrap();
+    assert!(!with_password_body.is_empty());
+    assert_ne!(
+        this_device_body, with_password_body,
+        "withPassword mode embeds a fresh random salt, so its bytes must differ from thisDevice"
+    );
+
+    let plaintext = client
+        .post(format!("{base}/api/export_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"mode":{"mode":"plaintext"},"confirmed":true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(plaintext.status(), 200);
+    assert!(plaintext.headers().get("content-disposition").is_some());
+    let plaintext_body = plaintext.text().await.unwrap();
+    assert!(plaintext_body.contains("example.com"), "plaintext body must contain the site name");
+}
+
+#[tokio::test]
+async fn export_csv_plaintext_without_confirmation_is_rejected() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let res = client
+        .post(format!("{base}/api/export_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"mode":{"mode":"plaintext"},"confirmed":false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+}
+
+#[tokio::test]
+async fn export_csv_writes_no_server_side_file_for_a_crafted_destination() {
+    let (base, dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let target = dir.path().join("pwned.csv");
+    let res = client
+        .post(format!("{base}/api/export_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({
+            "mode":{"mode":"thisDevice"},
+            "confirmed": false,
+            "path": target.to_string_lossy(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200, "export_csv should succeed regardless of the ignored extra field");
+    let body = res.bytes().await.unwrap();
+    assert!(!body.is_empty());
+
+    assert!(!target.exists(), "no file should ever be created at the client-supplied destination");
+}
+
+#[tokio::test]
+async fn plaintext_web_export_logs_the_download_label() {
+    let (base, dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let res = client
+        .post(format!("{base}/api/export_csv"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"mode":{"mode":"plaintext"},"confirmed":true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+
+    let paths = AppPaths::new(dir.path().to_path_buf());
+    let log = std::fs::read_to_string(paths.plaintext_export_log_path()).unwrap();
+    let last_line = log.lines().last().expect("plaintext export must append a log line");
+    let fields: Vec<&str> = last_line.split('\t').collect();
+    assert_eq!(
+        fields.get(1),
+        Some(&"<web download>"),
+        "web-mode plaintext export log entry must record the download label, not a path; got: {last_line}"
+    );
+}
