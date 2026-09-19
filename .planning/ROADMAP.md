@@ -213,7 +213,7 @@ own text recommends: a full upload/download redesign in which no server-side pat
 web client, with no filename-only allowance. The plans implement D-01. Desktop keeps its native
 file-dialog path flow untouched (D-02).
 
-**Plans**: 2/5 plans executed
+**Plans**: 3/5 plans executed
 
 Plans:
 **Wave 1**
@@ -226,7 +226,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 09-03-PLAN.md — SEC-01: backup restore becomes an upload, plus the four-handler H1 closure gate
+- [x] 09-03-PLAN.md — SEC-01: backup restore becomes an upload, plus the four-handler H1 closure gate
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -251,4 +251,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Localhost Web Mode | v1.0 | N/A (pre-GSD) | Complete | 2026-07-19 |
 | 7. Platform Integrations | v1.1 | N/A (pre-GSD) | Complete | 2026-09 (approx.) |
 | 8. New Vault UI (Figma Port) | v2.0 | 12/12 | In Progress|  |
-| 9. Web Mode Security Hardening | v2.0 | 2/5 | In Progress|  |
+| 9. Web Mode Security Hardening | v2.0 | 3/5 | In Progress|  |
