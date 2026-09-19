@@ -1,7 +1,7 @@
 use crate::error_map::ApiError;
 use crate::session_store::{SessionStore, UploadCache, UserSession};
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
@@ -12,10 +12,13 @@ use pwmgr_core::dto::{
     HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
+use crate::throttle_store::ThrottleStore;
 use pwmgr_core::paths::AppPaths;
+use pwmgr_core::session::SystemClock;
 use pwmgr_core::state::AppState;
 use pwmgr_core::vault::CustomField;
 use serde::Deserialize;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tower_http::services::{ServeDir, ServeFile};
@@ -26,6 +29,8 @@ use zeroize::Zeroizing;
 pub struct AppContext {
     pub store: SessionStore,
     pub paths: Arc<AppPaths>,
+    /// In-process failed-attempt throttle for the credential routes (SEC-02).
+    pub throttle: ThrottleStore,
 }
 
 /// Per-route body-size cap for the raw-bytes upload endpoints only (SEC-01/D-01, D-03). Applied as
@@ -255,8 +260,53 @@ fn issue_session(ctx: &AppContext, body: &AuthRequest, register: bool) -> Result
     Ok(res)
 }
 
-async fn login(State(ctx): State<AppContext>, Json(body): Json<AuthRequest>) -> Result<Response, ApiError> {
-    issue_session(&ctx, &body, false)
+/// Throttle keys for one credential attempt (D-09): one per username, one per peer IP. The username
+/// key is lowercased and built the same way whether or not the account exists, so a lockout never
+/// reveals account existence.
+fn throttle_keys(username: &str, peer: SocketAddr) -> (String, String) {
+    (format!("user:{}", username.to_lowercase()), format!("ip:{}", peer.ip()))
+}
+
+/// Counts an attempt against both keys (both counters always advance) and refuses with a
+/// `throttled` error if either is locked out. Runs before any credential work or KDF permit.
+fn begin_credential_attempt(ctx: &AppContext, username: &str, peer: SocketAddr) -> Result<(), ApiError> {
+    let (user_key, ip_key) = throttle_keys(username, peer);
+    let clock = SystemClock;
+    let user = ctx.throttle.begin_attempt(&user_key, &clock);
+    let ip = ctx.throttle.begin_attempt(&ip_key, &clock);
+    if let Err(remaining) = user {
+        let secs = remaining.as_secs().max(1);
+        return Err(pwmgr_core::error::throttled_error(&format!(
+            "Too many failed attempts. Try again in {secs} seconds."
+        ))
+        .into());
+    }
+    if let Err(remaining) = ip {
+        let secs = remaining.as_secs().max(1);
+        return Err(pwmgr_core::error::throttled_error(&format!(
+            "Too many failed attempts from this machine. Try again in {secs} seconds."
+        ))
+        .into());
+    }
+    Ok(())
+}
+
+/// Successful authentication resets both keys (D-10).
+fn reset_credential_attempts(ctx: &AppContext, username: &str, peer: SocketAddr) {
+    let (user_key, ip_key) = throttle_keys(username, peer);
+    ctx.throttle.record_success(&user_key);
+    ctx.throttle.record_success(&ip_key);
+}
+
+async fn login(
+    State(ctx): State<AppContext>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(body): Json<AuthRequest>,
+) -> Result<Response, ApiError> {
+    begin_credential_attempt(&ctx, &body.username, peer)?;
+    let res = issue_session(&ctx, &body, false)?;
+    reset_credential_attempts(&ctx, &body.username, peer);
+    Ok(res)
 }
 
 async fn register(State(ctx): State<AppContext>, Json(body): Json<AuthRequest>) -> Result<Response, ApiError> {

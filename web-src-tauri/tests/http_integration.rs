@@ -1,5 +1,5 @@
 use pwmgr_core::paths::AppPaths;
-use pwmgr_web::{build_router, AppContext, SessionStore};
+use pwmgr_web::{build_router, AppContext, SessionStore, ThrottleStore};
 use std::sync::Arc;
 
 /// Starts the real router on an ephemeral 127.0.0.1 port; returns its base URL and the tempdir whose
@@ -8,12 +8,18 @@ async fn spawn_server() -> (String, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let paths = AppPaths::new(dir.path().to_path_buf());
     paths.ensure_app_dirs().unwrap();
-    let ctx = AppContext { store: SessionStore::new(), paths: Arc::new(paths) };
+    let ctx = AppContext {
+        store: SessionStore::new(),
+        paths: Arc::new(paths),
+        throttle: ThrottleStore::new(),
+    };
     let app = build_router(ctx);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+            .await
+            .unwrap();
     });
     (format!("http://{addr}"), dir)
 }
@@ -1111,4 +1117,39 @@ fn no_web_handler_accepts_a_client_supplied_destination() {
         !src.contains("ReadCsvHeadersRequest"),
         "SECURITY_CONCERNS.md H1: ReadCsvHeadersRequest must not exist"
     );
+}
+
+const CSRF: (&str, &str) = ("x-pwmgr-csrf", "1");
+
+async fn post_auth(
+    client: &reqwest::Client,
+    base: &str,
+    route: &str,
+    user: &str,
+    pw: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/{route}"))
+        .header(CSRF.0, CSRF.1)
+        .json(&serde_json::json!({"username": user, "masterPassword": pw}))
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn five_failed_logins_lock_the_key_out_with_429() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    assert_eq!(post_auth(&client, &base, "register_user", "alice", "correct horse battery").await.status(), 200);
+    client.post(format!("{base}/api/logout")).header(CSRF.0, CSRF.1).send().await.unwrap();
+
+    for i in 0..5 {
+        let res = post_auth(&client, &base, "login", "alice", "wrong password").await;
+        assert_eq!(res.status(), 401, "attempt {i} should be a plain credential failure");
+    }
+    let res = post_auth(&client, &base, "login", "alice", "wrong password").await;
+    assert_eq!(res.status(), 429);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "throttled");
 }

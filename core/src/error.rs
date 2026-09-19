@@ -149,6 +149,18 @@ pub fn forbidden_error(message: &str) -> CommandError {
     CommandError::new("forbidden", message)
 }
 
+/// This throttle key is locked out after repeated failed credential attempts - do not retry yet.
+/// Distinct from `rate_limited_error` so a client never auto-retries a lockout.
+pub fn throttled_error(message: &str) -> CommandError {
+    CommandError::new("throttled", message)
+}
+
+/// The server is momentarily saturated (too many concurrent key derivations) - a retry will
+/// likely succeed shortly.
+pub fn rate_limited_error(message: &str) -> CommandError {
+    CommandError::new("rate_limited", message)
+}
+
 impl CommandError {
     // `code`/`message` are deliberately private (see the doc comment on the struct) so no call
     // site can construct a CommandError by hand - but callers outside this module still need
