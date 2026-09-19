@@ -1,5 +1,5 @@
 use pwmgr_core::paths::AppPaths;
-use pwmgr_web::{build_router, AppContext, SessionStore, ThrottleStore};
+use pwmgr_web::{build_router, AppContext, KdfGuard, SessionStore, ThrottleStore};
 use std::sync::Arc;
 
 /// Starts the real router on an ephemeral 127.0.0.1 port; returns its base URL and the tempdir whose
@@ -12,6 +12,7 @@ async fn spawn_server() -> (String, tempfile::TempDir) {
         store: SessionStore::new(),
         paths: Arc::new(paths),
         throttle: ThrottleStore::new(),
+        kdf: KdfGuard::new(),
     };
     let app = build_router(ctx);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1214,4 +1215,35 @@ async fn a_concurrent_burst_of_logins_cannot_exceed_the_threshold() {
     );
     let n429 = [a, b, c, d, e, f].iter().filter(|r| r.status() == 429).count();
     assert!(n429 >= 1, "six parallel attempts must hit the lockout");
+}
+
+// Multi-thread runtime on purpose: the handlers run Argon2 synchronously, so on a single-thread
+// runtime requests serialize and the semaphore could never saturate (production is multi-thread).
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn a_saturated_kdf_semaphore_returns_429_rate_limited() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    post_auth(&client, &base, "register_user", "alice", "correct horse battery").await;
+    client.post(format!("{base}/api/logout")).header(CSRF.0, CSRF.1).send().await.unwrap();
+
+    let n = pwmgr_web::kdf_guard::KDF_PERMITS + 3;
+    let mut tasks = Vec::new();
+    for _ in 0..n {
+        let (c, b) = (reqwest::Client::new(), base.clone());
+        tasks.push(tokio::spawn(async move {
+            let res = post_auth(&c, &b, "login", "alice", "wrong password").await;
+            let status = res.status().as_u16();
+            let body: serde_json::Value = res.json().await.unwrap();
+            (status, body["code"].as_str().unwrap_or("").to_string())
+        }));
+    }
+    let mut seen = Vec::new();
+    for t in tasks {
+        seen.push(t.await.unwrap());
+    }
+    assert!(seen.iter().all(|(s, _)| *s < 500), "no 5xx expected: {seen:?}");
+    assert!(
+        seen.iter().any(|(s, c)| *s == 429 && c == "rate_limited"),
+        "expected at least one rate_limited 429: {seen:?}"
+    );
 }

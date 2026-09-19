@@ -140,22 +140,34 @@ export interface BreachReportDto { breached: HealthEntryDto[]; }
 // biometric unlock, which has no web-mode route - Windows Hello can't run server-side).
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-async function httpPost<T>(command: string, args: Record<string, unknown>): Promise<T> {
-  const res = await fetch(`/api/${command}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-PWMGR-CSRF": "1" },
-    credentials: "same-origin",
-    body: JSON.stringify(args),
-  });
-  if (!res.ok) {
+// One fetch that throws the parsed CommandError on any non-2xx. Retries exactly once, after a short
+// backoff, when the server says `rate_limited` (transient KDF saturation, SEC-02/D-14). `throttled`
+// (a lockout) and every other code are rethrown immediately: retrying a lockout only burns attempts.
+async function fetchOk(command: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`/api/${command}`, init);
+    if (res.ok) return res;
     let err: CommandError = { code: "internal_error", message: "Something went wrong. Please try again." };
     try {
       err = (await res.json()) as CommandError;
     } catch {
       // Non-JSON error body (e.g. a raw 404 from the static layer) - keep the generic fallback.
     }
+    if (err.code === "rate_limited" && attempt === 0) {
+      await new Promise((r) => setTimeout(r, 1500));
+      continue;
+    }
     throw err;
   }
+}
+
+async function httpPost<T>(command: string, args: Record<string, unknown>): Promise<T> {
+  const res = await fetchOk(command, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-PWMGR-CSRF": "1" },
+    credentials: "same-origin",
+    body: JSON.stringify(args),
+  });
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }
@@ -174,21 +186,12 @@ async function httpDownload(
   args: Record<string, unknown>,
   fallbackName: string,
 ): Promise<void> {
-  const res = await fetch(`/api/${command}`, {
+  const res = await fetchOk(command, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-PWMGR-CSRF": "1" },
     credentials: "same-origin",
     body: JSON.stringify(args),
   });
-  if (!res.ok) {
-    let err: CommandError = { code: "internal_error", message: "Something went wrong. Please try again." };
-    try {
-      err = (await res.json()) as CommandError;
-    } catch {
-      // Non-JSON error body (e.g. a raw 404 from the static layer) - keep the generic fallback.
-    }
-    throw err;
-  }
   const disposition = res.headers.get("content-disposition");
   const match = disposition ? /filename="?([^";]+)"?/.exec(disposition) : null;
   const filename = match?.[1] ?? fallbackName;
@@ -208,21 +211,12 @@ async function httpDownload(
 // land on the requesting browser's own session cache (SEC-01/D-01/D-03/D-04), reused by every
 // downstream step. Follows the same CommandError-parsing branch `httpPost` uses.
 async function httpUpload(command: string, file: File | Blob): Promise<void> {
-  const res = await fetch(`/api/${command}`, {
+  await fetchOk(command, {
     method: "POST",
     headers: { "Content-Type": "application/octet-stream", "X-PWMGR-CSRF": "1" },
     credentials: "same-origin",
     body: file,
   });
-  if (!res.ok) {
-    let err: CommandError = { code: "internal_error", message: "Something went wrong. Please try again." };
-    try {
-      err = (await res.json()) as CommandError;
-    } catch {
-      // Non-JSON error body (e.g. a raw 404 from the static layer) - keep the generic fallback.
-    }
-    throw err;
-  }
 }
 
 export const api = {

@@ -1,6 +1,6 @@
 use pwmgr_core::paths::AppPaths;
 use pwmgr_core::session::SystemClock;
-use pwmgr_web::{build_router, AppContext, SessionStore, ThrottleStore, PORT};
+use pwmgr_web::{build_router, AppContext, KdfGuard, SessionStore, ThrottleStore, PORT};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,6 +14,7 @@ async fn main() {
         store: SessionStore::new(),
         paths: Arc::new(paths),
         throttle: ThrottleStore::new(),
+        kdf: KdfGuard::new(),
     };
 
     // Idle sweep: every 2s (same cadence as the desktop autolock::tick loop), lock idle sessions and

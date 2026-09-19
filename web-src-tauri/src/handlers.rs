@@ -12,6 +12,7 @@ use pwmgr_core::dto::{
     HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
+use crate::kdf_guard::KdfGuard;
 use crate::throttle_store::ThrottleStore;
 use pwmgr_core::paths::AppPaths;
 use pwmgr_core::session::SystemClock;
@@ -31,6 +32,8 @@ pub struct AppContext {
     pub paths: Arc<AppPaths>,
     /// In-process failed-attempt throttle for the credential routes (SEC-02).
     pub throttle: ThrottleStore,
+    /// Bounds concurrent Argon2 derivations on login/register/password-mode export (SEC-02).
+    pub kdf: KdfGuard,
 }
 
 /// Per-route body-size cap for the raw-bytes upload endpoints only (SEC-01/D-01, D-03). Applied as
@@ -304,6 +307,7 @@ async fn login(
     Json(body): Json<AuthRequest>,
 ) -> Result<Response, ApiError> {
     begin_credential_attempt(&ctx, &body.username, peer)?;
+    let _kdf_permit = ctx.kdf.try_acquire()?;
     let res = issue_session(&ctx, &body, false)?;
     reset_credential_attempts(&ctx, &body.username, peer);
     Ok(res)
@@ -315,6 +319,7 @@ async fn register(
     Json(body): Json<AuthRequest>,
 ) -> Result<Response, ApiError> {
     begin_credential_attempt(&ctx, &body.username, peer)?;
+    let _kdf_permit = ctx.kdf.try_acquire()?;
     let res = issue_session(&ctx, &body, true)?;
     reset_credential_attempts(&ctx, &body.username, peer);
     Ok(res)
@@ -676,6 +681,11 @@ async fn export_csv(
     State(ctx): State<AppContext>,
     Json(b): Json<ExportCsvRequest>,
 ) -> Result<Response, ApiError> {
+    // Only the password-protected mode runs Argon2 (D-13); the other modes take no permit.
+    let _kdf_permit = match b.mode {
+        ExportMode::WithPassword { .. } => Some(ctx.kdf.try_acquire()?),
+        _ => None,
+    };
     let (filename, bytes) = do_export_csv_download(&s.app_state, &ctx.paths, &b.mode, b.confirmed)?;
     Ok((
         [
