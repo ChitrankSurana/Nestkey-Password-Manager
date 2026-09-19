@@ -2,7 +2,7 @@ use crate::error_map::ApiError;
 use crate::session_store::{SessionStore, Token};
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, Method, Request};
+use axum::http::{header, HeaderValue, Method, Request};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use pwmgr_core::session::SystemClock;
@@ -45,6 +45,22 @@ pub async fn csrf_middleware(req: Request<Body>, next: Next) -> Response {
             .into_response();
     }
     next.run(req).await
+}
+
+/// Production Content-Security-Policy (D-15/D-16). Must stay byte-identical to `app.security.csp`
+/// in `src-tauri/tauri.conf.json`.
+pub const CSP_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+
+/// Stamps the security headers on EVERY response, unconditionally (no branch on route/status/body).
+/// Must be the outermost layer so CSRF/auth/throttle rejections still pass back through it.
+pub async fn security_headers_middleware(req: Request<Body>, next: Next) -> Response {
+    let mut res = next.run(req).await;
+    let h = res.headers_mut();
+    h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP_POLICY));
+    h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    res
 }
 
 /// Shared with `handlers::logout`, which needs to resolve the same cookie outside the
@@ -175,6 +191,15 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         assert_eq!(status_of(csrf_app(), req).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn csrf_rejection_still_carries_the_csp() {
+        let app = csrf_app().layer(axum::middleware::from_fn(security_headers_middleware));
+        let req = Request::builder().method("POST").uri("/thing").body(Body::empty()).unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert_eq!(res.headers()["content-security-policy"], CSP_POLICY);
     }
 
     #[tokio::test]

@@ -1217,6 +1217,56 @@ async fn a_concurrent_burst_of_logins_cannot_exceed_the_threshold() {
     assert!(n429 >= 1, "six parallel attempts must hit the lockout");
 }
 
+#[tokio::test]
+async fn security_headers_are_present_on_every_response_shape() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    let anon = reqwest::Client::new();
+    register_as(&client, &base, "alice").await;
+
+    let ok = client
+        .post(format!("{base}/api/list_sites"))
+        .header(CSRF.0, CSRF.1)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    let fallback = anon.get(format!("{base}/no/such/page")).send().await.unwrap();
+    let no_csrf = anon.post(format!("{base}/api/list_sites")).send().await.unwrap();
+    let unauth = anon
+        .post(format!("{base}/api/list_sites"))
+        .header(CSRF.0, CSRF.1)
+        .send()
+        .await
+        .unwrap();
+    let mut throttled = None;
+    for _ in 0..6 {
+        throttled = Some(post_auth(&anon, &base, "login", "mallory", "wrong password").await);
+    }
+    let options = anon.request(reqwest::Method::OPTIONS, format!("{base}/api/list_sites")).send().await.unwrap();
+
+    let throttled = throttled.unwrap();
+    assert_eq!(throttled.status(), 429, "sixth failed login should be throttled");
+    for (shape, res) in [
+        ("authenticated 200", ok),
+        ("static fallback", fallback),
+        ("csrf 403", no_csrf),
+        ("unauthorized 401", unauth),
+        ("throttled 429", throttled),
+        ("bodyless OPTIONS", options),
+    ] {
+        let h = res.headers();
+        assert_eq!(
+            h.get("content-security-policy").map(|v| v.to_str().unwrap()),
+            Some(pwmgr_web::middleware::CSP_POLICY),
+            "{shape}: CSP missing or different"
+        );
+        assert_eq!(h.get("x-content-type-options").map(|v| v.as_bytes()), Some(&b"nosniff"[..]), "{shape}: nosniff");
+        assert_eq!(h.get("referrer-policy").map(|v| v.as_bytes()), Some(&b"no-referrer"[..]), "{shape}: referrer-policy");
+        assert_eq!(h.get("x-frame-options").map(|v| v.as_bytes()), Some(&b"DENY"[..]), "{shape}: x-frame-options");
+    }
+}
+
 // Multi-thread runtime on purpose: the handlers run Argon2 synchronously, so on a single-thread
 // runtime requests serialize and the semaphore could never saturate (production is multi-thread).
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]

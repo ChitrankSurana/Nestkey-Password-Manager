@@ -843,5 +843,8 @@ pub fn build_router(ctx: AppContext) -> Router {
         .merge(protected)
         .fallback_service(ServeDir::new("dist").fallback(ServeFile::new("dist/index.html")))
         .layer(axum::middleware::from_fn(crate::middleware::csrf_middleware))
+        // ORDER MATTERS: last-added layer is outermost. Security headers must sit outside CSRF/auth/
+        // throttle so rejected requests still get them. Do not reorder.
+        .layer(axum::middleware::from_fn(crate::middleware::security_headers_middleware))
         .with_state(ctx)
 }
