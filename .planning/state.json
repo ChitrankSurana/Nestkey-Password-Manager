@@ -41,18 +41,18 @@
     {
       "number": "8",
       "name": "New Vault UI (Figma Port)",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "9",
       "name": "Web Mode Security Hardening",
-      "status": "in_progress"
+      "status": "complete"
     }
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 09 of 2 · 82% · executing"
+    "label": "Advance to the next step (plan phase 09)",
+    "reason": "Phase 09 of 2 — needs a plan"
   },
-  "updated_at": "2026-09-18T20:03:27.247Z"
+  "updated_at": "2026-09-19T17:06:40.678Z"
 }

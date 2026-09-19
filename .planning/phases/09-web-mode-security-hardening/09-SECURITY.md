@@ -49,7 +49,7 @@ Severity/disposition per the 09-01..09-05 PLAN threat models. All 34 register ro
 | T-09-16 | DoS | Oversized backup upload | medium | mitigate | Same per-route body limit | closed |
 | T-09-17 | Spoofing | Restore for other username | medium | accept | Pre-existing, same as desktop; own master password still required | closed |
 | T-09-18 | Spoofing | Online brute force of login (M1) | high | mitigate | Username + IP throttle, 5 attempts then doubling lockout | closed |
-| T-09-19 | Spoofing | PIN brute force via `unlock_with_pin` | high | accept | Developer declined throttling; known gap, see Accepted Risks | closed |
+| T-09-19 | Spoofing | PIN brute force via `unlock_with_pin` | high | mitigate (was accept) | Route now shares login's username+IP throttle and KDF cap; `five_failed_pin_unlocks_lock_the_key_out_with_429` (fixed 2026-09-19) | closed |
 | T-09-20 | DoS | Argon2 memory flood (M2) | high | mitigate | `KdfGuard` 3 permits, non-blocking | closed |
 | T-09-21 | Spoofing | Concurrent burst past threshold | medium | mitigate | Check+increment in one write lock; test | closed |
 | T-09-22 | DoS | Loopback IP key machine-wide lockout | medium | accept | Locked decision D-09; bounded to 1h, cleared on success | closed |
@@ -75,7 +75,7 @@ Severity/disposition per the 09-01..09-05 PLAN threat models. All 34 register ro
 
 | Risk ID | Threat Ref | Rationale | Accepted By | Date |
 |---------|------------|-----------|-------------|------|
-| AR-09-01 | T-09-19 | `unlock_with_pin` left unthrottled and uncapped; scope kept to the three routes in D-07/D-13. Follow-up recommended. | Developer (plan 09-04) | 2026-09-19 |
+| AR-09-01 | T-09-19 | ~~`unlock_with_pin` left unthrottled~~ RESOLVED 2026-09-19: throttled and KDF-capped like login. No longer an accepted risk. | Developer (plan 09-04) | 2026-09-19 |
 | AR-09-02 | T-09-22 | Loopback IP key is machine-wide by locked decision D-09; bounded by 1h max window | Developer (plan 09-04) | 2026-09-19 |
 | AR-09-03 | T-09-05, -11, -17, -26, -34, -SC | Low/medium risks accepted in PLAN threat models | Developer (plans 09-01..09-05) | 2026-09-19 |
 
@@ -83,9 +83,9 @@ Severity/disposition per the 09-01..09-05 PLAN threat models. All 34 register ro
 
 ## Unregistered Flags (auditor warnings, not counted in threats_open)
 
-- **W1 — username used as a path component.** `do_restore_backup_from_bytes` builds `vault_path(username)` from the uploaded bundle's username, which is only UTF-8 validated. A crafted bundle with separators or `..` in the name could write a `.vault`-suffixed file outside the vaults dir. Requires an authenticated session and `confirmed: true`. Same pattern exists in `do_register` and `do_login` and pre-dates phase 09. Recommended follow-up: restrict usernames to a safe charset or reject separators and `..` in `vault_path`.
-- **W2 — plaintext copies on the heap.** `csv_upload()`/`backup_upload()` return plain `Vec<u8>` clones and handlers hold non-zeroized strings for the request lifetime. Declared T-09-08 mitigations are met.
-- **W3 — no integration test for `/api/create_backup_download`.** Added after the plans; it sits in the protected router, takes no client input and writes no server file. Recommended: add a test.
+- **W1 — username used as a path component. RESOLVED 2026-09-19.** `AppPaths::checked_vault_path` now rejects separators, `..`, drive/wildcard characters, control characters, leading/trailing dot or space, and Windows device names; it is used by register, login, PIN unlock, biometric unlock and backup restore. Tests: `checked_vault_path_rejects_traversal_and_device_names`, `restore_backup_rejects_a_path_traversal_username`, `login_and_register_reject_a_path_traversal_username`.
+- **W2 — plaintext copies on the heap.** `csv_upload()`/`backup_upload()` return plain `Vec<u8>` clones and handlers hold non-zeroized strings for the request lifetime. Declared T-09-08 mitigations are met. Left as is.
+- **W3 — no integration test for `/api/create_backup_download`. RESOLVED 2026-09-19.** Tests: `create_backup_download_returns_the_bundle_and_writes_no_server_file`, `create_backup_download_without_a_session_is_unauthorized`.
 - Post-plan additions reviewed with no new unmitigated threat: `/api/create_backup_download`, frontend `pwmgr-session-locked` event.
 
 ---
