@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2.0
 milestone_name: New Vault UI & Security Hardening (Phases 8-9) — Planned
-current_phase: 09
-current_phase_name: Web Mode Security Hardening
-status: verifying
-stopped_at: Completed 09-04-PLAN.md
-last_updated: "2026-09-19T06:15:43.169Z"
+current_phase: 8
+current_phase_name: New Vault UI (Figma Port)
+status: planning
+stopped_at: Phase 09 complete, ready to plan Phase 8
+last_updated: "2026-09-19T15:51:12.686Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 09 execution started
-state_head: 4f39497ed2d5f687513ae5c25290de69e373f296
+last_activity_desc: Phase 09 complete, transitioned to Phase 8
+state_head: b4fa3e1b7d89ea4498ccfa30bf8adecfe6dea14e
 progress:
   total_phases: 2
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 17
   completed_plans: 17
-  percent: 100
+  percent: 89
 ---
 
 # Project State
@@ -30,22 +30,22 @@ zero-knowledge and local-only by default, with no path to recover a forgotten ma
 
 ## Current Position
 
-Phase: 09 (Web Mode Security Hardening) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-09-19 — Phase 09 execution started
+Phase: 8 — New Vault UI (Figma Port)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-19 — Phase 09 complete, transitioned to Phase 8
 PROJECT.md/REQUIREMENTS.md/ROADMAP.md/STATE.md. Phases 1-7 (PRD milestones M1-M6 plus biometric
 unlock/SSH agent) retroactively marked Complete based on shipped code, git history, and manual
 test checklists — none were executed through GSD plan-phase/execute-phase.
 
-Progress: [██████████] 100% (7/9 phases complete; plan-level tracking not applicable to
+Progress: [█████████░] 89% (7/9 phases complete; plan-level tracking not applicable to
 pre-GSD phases)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0 (no phase has been executed through GSD's plan-phase/execute-phase yet)
+- Total plans completed: 5 (no phase has been executed through GSD's plan-phase/execute-phase yet)
 - Average duration: N/A
 - Total execution time: N/A
 
@@ -55,6 +55,7 @@ pre-GSD phases)
 |-------|-------|-------|----------|
 | 1-7 (pre-GSD) | N/A | N/A | N/A |
 | 8-9 | 0 | - | - |
+| 09 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -155,7 +156,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-09-19T06:09:16.410Z
-Stopped at: Completed 09-04-PLAN.md
+Stopped at: Phase 09 complete, ready to plan Phase 8
 (`.planning/intel/SYNTHESIS.md`) plus the existing codebase map (`.planning/codebase/`); ready for
 the orchestrator to present the roadmap for approval and finalize the ingest workflow.
 Resume file: None

@@ -84,7 +84,7 @@ Requirements for this project. Each maps to exactly one roadmap phase.
   outside the app's own backups/exports directory — no arbitrary file read or write is possible.
 - [x] **SEC-02**: Web-mode login/register attempts are throttled (backoff/lockout), and
   concurrent Argon2 derivations are bounded so a request burst cannot exhaust server memory.
-- [ ] **SEC-03**: The web server sends a strict Content-Security-Policy and
+- [x] **SEC-03**: The web server sends a strict Content-Security-Policy and
   `X-Content-Type-Options: nosniff` on every response, and the desktop Tauri shell no longer
   ships with `csp: null`.
 
@@ -139,7 +139,7 @@ Which phases cover which requirements.
 | HEALTH-02 | Phase 8 | Pending |
 | SEC-01 | Phase 9 | Complete |
 | SEC-02 | Phase 9 | Complete |
-| SEC-03 | Phase 9 | Pending |
+| SEC-03 | Phase 9 | Complete |
 
 **Coverage:**
 

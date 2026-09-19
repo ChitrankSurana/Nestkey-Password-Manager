@@ -1,11 +1,12 @@
 ---
 phase: 09-web-mode-security-hardening
 verified: 2026-09-19T12:00:00Z
-status: human_needed
+status: passed
 score: 3/3 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
+
   - test: "Run `npm run tauri:dev` and `npm run tauri:build` (launch the binary); open every screen with DevTools console open"
     expected: "No CSP violation messages; app renders and works in both dev (overlay CSP) and production binary"
     why_human: "CSP violations are only observable in a real webview console; not automatable here"
