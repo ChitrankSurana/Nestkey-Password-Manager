@@ -309,8 +309,15 @@ async fn login(
     Ok(res)
 }
 
-async fn register(State(ctx): State<AppContext>, Json(body): Json<AuthRequest>) -> Result<Response, ApiError> {
-    issue_session(&ctx, &body, true)
+async fn register(
+    State(ctx): State<AppContext>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(body): Json<AuthRequest>,
+) -> Result<Response, ApiError> {
+    begin_credential_attempt(&ctx, &body.username, peer)?;
+    let res = issue_session(&ctx, &body, true)?;
+    reset_credential_attempts(&ctx, &body.username, peer);
+    Ok(res)
 }
 
 // Public (unauthenticated), like login/register - the login screen needs this before a session

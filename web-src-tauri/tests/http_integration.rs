@@ -1153,3 +1153,65 @@ async fn five_failed_logins_lock_the_key_out_with_429() {
     let body: serde_json::Value = res.json().await.unwrap();
     assert_eq!(body["code"], "throttled");
 }
+
+#[tokio::test]
+async fn register_user_route_is_throttled_like_login() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    assert_eq!(post_auth(&client, &base, "register_user", "alice", "correct horse battery").await.status(), 200);
+    // Re-registering a taken username fails (today as a 500 from the vault re-key, a pre-existing
+    // quirk logged in deferred-items.md) - what matters here is only that each is a counted failure.
+    for i in 0..5 {
+        let s = post_auth(&client, &base, "register_user", "alice", "correct horse battery").await.status();
+        assert!(s != 200 && s != 429, "attempt {i} should fail but not yet be throttled, got {s}");
+    }
+    let res = post_auth(&client, &base, "register_user", "alice", "correct horse battery").await;
+    assert_eq!(res.status(), 429);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "throttled");
+}
+
+#[tokio::test]
+async fn a_successful_login_resets_the_failure_counter() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    post_auth(&client, &base, "register_user", "alice", "correct horse battery").await;
+    let mut statuses = Vec::new();
+    for _ in 0..4 {
+        statuses.push(post_auth(&client, &base, "login", "alice", "wrong password").await.status());
+    }
+    statuses.push(post_auth(&client, &base, "login", "alice", "correct horse battery").await.status());
+    for _ in 0..4 {
+        statuses.push(post_auth(&client, &base, "login", "alice", "wrong password").await.status());
+    }
+    assert!(statuses.iter().all(|s| *s != 429), "success must reset both keys: {statuses:?}");
+    assert_eq!(statuses[4], 200);
+}
+
+#[tokio::test]
+async fn two_usernames_have_independent_throttle_counters() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    for _ in 0..4 {
+        assert_eq!(post_auth(&client, &base, "login", "alice", "wrong password").await.status(), 401);
+    }
+    // bob's own username key is untouched. (On a loopback-only server the shared IP counter is what
+    // eventually catches both usernames - that is D-09 as written.)
+    assert_eq!(post_auth(&client, &base, "login", "bob", "wrong password").await.status(), 401);
+}
+
+#[tokio::test]
+async fn a_concurrent_burst_of_logins_cannot_exceed_the_threshold() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::new();
+    let (a, b, c, d, e, f) = tokio::join!(
+        post_auth(&client, &base, "login", "alice", "wrong password"),
+        post_auth(&client, &base, "login", "alice", "wrong password"),
+        post_auth(&client, &base, "login", "alice", "wrong password"),
+        post_auth(&client, &base, "login", "alice", "wrong password"),
+        post_auth(&client, &base, "login", "alice", "wrong password"),
+        post_auth(&client, &base, "login", "alice", "wrong password"),
+    );
+    let n429 = [a, b, c, d, e, f].iter().filter(|r| r.status() == 429).count();
+    assert!(n429 >= 1, "six parallel attempts must hit the lockout");
+}
