@@ -38,7 +38,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Read-Only Viewer** - A structurally read-only fallback app for when the main app is unavailable
 - [x] **Phase 6: Localhost Web Mode** - Full feature set from a browser tab, bound to 127.0.0.1 only, with a responsive layout
 - [x] **Phase 7: Platform Integrations** - Windows Hello biometric unlock and an SSH agent over a named pipe
-- [ ] **Phase 8: New Vault UI (Figma Port)** - Item types, favorites, folders, and per-item health in a redesigned vault UI
+- [x] **Phase 8: New Vault UI (Figma Port)** - Item types, favorites, folders, and per-item health in a redesigned vault UI
 - [x] **Phase 9: Web Mode Security Hardening** - Close the file-path, rate-limiting, and header gaps a security audit found in Phase 6
 
 ## Phase Details
@@ -250,5 +250,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Read-Only Viewer | v1.0 | N/A (pre-GSD) | Complete | 2026-07-16 |
 | 6. Localhost Web Mode | v1.0 | N/A (pre-GSD) | Complete | 2026-07-19 |
 | 7. Platform Integrations | v1.1 | N/A (pre-GSD) | Complete | 2026-09 (approx.) |
-| 8. New Vault UI (Figma Port) | v2.0 | 12/12 | In Progress|  |
+| 8. New Vault UI (Figma Port) | v2.0 | 12/12 | Complete    | 2026-09-19 |
 | 9. Web Mode Security Hardening | v2.0 | 5/5 | Complete    | 2026-09-19 |
