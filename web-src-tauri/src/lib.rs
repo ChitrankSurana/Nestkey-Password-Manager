@@ -4,10 +4,14 @@
 pub mod error_map;
 pub mod handlers;
 pub mod middleware;
+pub mod kdf_guard;
 pub mod session_store;
+pub mod throttle_store;
 
 pub use handlers::{build_router, AppContext};
+pub use kdf_guard::KdfGuard;
 pub use session_store::SessionStore;
+pub use throttle_store::ThrottleStore;
 
 /// Fixed listen port. Chosen to avoid the Vite dev server (1420) and common dev ports.
 pub const PORT: u16 = 7373;

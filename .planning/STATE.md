@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 milestone: v2.0
 milestone_name: New Vault UI & Security Hardening (Phases 8-9) — Planned
-current_phase: 08
-current_phase_name: New Vault UI (Figma Port)
-status: executing
-stopped_at: Completed 08-11-PLAN.md
-last_updated: "2026-09-17T14:10:39.149Z"
-last_activity: 2026-09-17
-last_activity_desc: Phase 08 execution started
-state_head: cb2fac34257cccf01a17b7a0abf2bdd02ba96e59
+current_phase: 09
+current_phase_name: Web Mode Security Hardening
+status: planning
+stopped_at: Phase 8 complete, ready to plan Phase 09
+last_updated: "2026-09-19T17:06:40.613Z"
+last_activity: 2026-09-19
+last_activity_desc: Phase 8 complete, transitioned to Phase 09
+state_head: 03ed3e6adc70633b490582f2781f3f6cd84e9b2e
 progress:
   total_phases: 2
-  completed_phases: 7
-  total_plans: 12
-  completed_plans: 12
+  completed_phases: 9
+  total_plans: 17
+  completed_plans: 17
   percent: 100
 ---
 
@@ -26,14 +26,14 @@ See: .planning/PROJECT.md (updated 2026-09-13)
 
 **Core value:** The vault must stay unreadable to anyone without the master password —
 zero-knowledge and local-only by default, with no path to recover a forgotten master password.
-**Current focus:** Phase 08 — New Vault UI (Figma Port)
+**Current focus:** Phase 09 — Web Mode Security Hardening
 
 ## Current Position
 
-Phase: 08 (New Vault UI (Figma Port)) — EXECUTING
-Plan: 2 of 12
-Status: Ready to execute
-Last activity: 2026-09-17 — Phase 08 execution started
+Phase: 09 — Web Mode Security Hardening
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-19 — Phase 8 complete, transitioned to Phase 09
 PROJECT.md/REQUIREMENTS.md/ROADMAP.md/STATE.md. Phases 1-7 (PRD milestones M1-M6 plus biometric
 unlock/SSH agent) retroactively marked Complete based on shipped code, git history, and manual
 test checklists — none were executed through GSD plan-phase/execute-phase.
@@ -45,7 +45,7 @@ pre-GSD phases)
 
 **Velocity:**
 
-- Total plans completed: 0 (no phase has been executed through GSD's plan-phase/execute-phase yet)
+- Total plans completed: 17 (no phase has been executed through GSD's plan-phase/execute-phase yet)
 - Average duration: N/A
 - Total execution time: N/A
 
@@ -55,6 +55,8 @@ pre-GSD phases)
 |-------|-------|-------|----------|
 | 1-7 (pre-GSD) | N/A | N/A | N/A |
 | 8-9 | 0 | - | - |
+| 09 | 5 | - | - |
+| 8 | 12 | - | - |
 
 **Recent Trend:**
 
@@ -76,6 +78,9 @@ pre-GSD phases)
 | Phase 08 P09 | ~25min | 4 tasks | 9 files |
 | Phase 08 P10 | ~15min | 3 tasks | 7 files |
 | Phase 08 P11 | ~15min | 3 tasks | 8 files |
+| Phase 09 P01 | ~35min | 2 tasks | 5 files |
+| Phase 09 P02 | ~55min | 3 tasks | 7 files |
+| Phase 09 P04 | 30min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -111,6 +116,11 @@ Recent decisions affecting current work:
 - [Phase 08]: [Phase 08]: Phase 08 Plan 11: Task 1 (tracer, tdd=true) executed as real production-quality code from the start, RED/GREEN done in-session but committed as one feat commit per this phase's established convention
 - [Phase 08]: [Phase 08]: Phase 08 Plan 11: Task 2's HTTP integration tests written fresh in web-src-tauri/tests/http_integration.rs (no existing get_config test to mirror despite the plan's read_first pointer), following the file's own established conventions instead
 - [Phase 08]: [Phase 08]: Phase 08 Plan 11: G-08-2 backend closed - repromptMode/repromptGraceSeconds persisted, validated, defaulted to today's perCredential/30s behavior, and reachable over both transports; the gate logic and Settings controls remain plan 08-12's scope
+- [Phase 09]: [Phase 09]: Phase 09 Plan 01: plaintext web-mode exports log a fixed <web download> label instead of a filesystem destination, preserving DATA-02's log-every-plaintext-export behavior without ever recording a path
+- [Phase 09]: [Phase 09]: Phase 09 Plan 01: new web-only httpDownload helper in src/lib/api.ts is the established pattern for file-download screens; called directly (bypassing call()'s isTauri dispatch) since desktop invoke() and web fetch() now take divergent argument shapes for export_csv
+- [Phase 09]: [Phase 09] Phase 09 Plan 02: set_upload's single-critical-section replacement guarantee doc comment was written in Task 1 (its first creation) rather than deferred to Task 3 as the plan's task split literally proposed - no functional difference
+- [Phase 09]: [Phase 09] Phase 09 Plan 02: web-mode handleSourceChange clears the server-side upload cache and resets the path label when switching source after uploading, treating a format switch as abandoning the import attempt (D-04 cancel-clears-cache intent) rather than preserving the cache for cross-format reuse from the UI - backend D-03 reuse is still proven directly at the HTTP layer
+- [Phase 09]: 09-04: unlock_with_pin left unthrottled by developer decision (T-09-19); IP throttle key is machine-wide on loopback (T-09-22)
 
 ### Pending Todos
 
@@ -146,8 +156,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T17:57:44.314Z
-Stopped at: Completed 08-11-PLAN.md
+Last session: 2026-09-19T06:09:16.410Z
+Stopped at: Phase 8 complete, ready to plan Phase 09
 (`.planning/intel/SYNTHESIS.md`) plus the existing codebase map (`.planning/codebase/`); ready for
 the orchestrator to present the roadmap for approval and finalize the ingest workflow.
 Resume file: None

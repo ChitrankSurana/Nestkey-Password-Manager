@@ -51,7 +51,7 @@ and "no write commands exist in this binary" are actual compile-time facts, not 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;C:\Strawberry\perl\bin;C:\Strawberry\c\bin;" + $env:PATH
 npm install
-npm run tauri dev        # Main App
+npm run tauri:dev        # Main App
 ```
 
 See [`docs/GETTING-STARTED`](docs/HOW_TO_USE_MAIN_APP.md) below for the other two apps, and

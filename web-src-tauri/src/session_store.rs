@@ -4,12 +4,23 @@ use pwmgr_core::state::AppState;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
+use zeroize::Zeroizing;
 
 /// Opaque session token (256 bits, hex-encoded → 64 chars).
 pub type Token = String;
 
 /// A locked-but-retained entry is pruned once it has been idle this long, bounding memory growth.
 pub const PRUNE_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// A single in-memory upload slot cached on a `UserSession` (SEC-01/D-04): the browser uploads a
+/// CSV or backup file body once, and every downstream step (headers/preview/commit for CSV, or
+/// restore for a backup) reads from this cache instead of a client-supplied filesystem path. Bytes
+/// are held in `Zeroizing<Vec<u8>>` so the plaintext credentials an uploaded file may contain are
+/// wiped from memory the moment the cache is cleared or replaced.
+pub enum UploadCache {
+    Csv(Zeroizing<Vec<u8>>),
+    Backup(Zeroizing<Vec<u8>>),
+}
 
 /// One logged-in browser session. Owns a full `AppState` (its own vault connection + lock timer +
 /// registry connection to the shared registry.db — see the plan's Finding 4) plus a `last_seen`
@@ -18,11 +29,46 @@ pub struct UserSession {
     pub username: String,
     pub app_state: AppState,
     pub last_seen: Mutex<Instant>,
+    /// The session's single cached file upload, if any — see `UploadCache`.
+    pub upload_cache: Mutex<Option<UploadCache>>,
 }
 
 impl UserSession {
     pub fn bump_last_seen(&self, clock: &dyn Clock) {
         *self.last_seen.lock().unwrap() = clock.now();
+    }
+
+    /// Replaces the single upload slot under one critical section on `upload_cache`'s own mutex,
+    /// holding no other lock while doing so. A second upload arriving mid-flight (e.g. two
+    /// concurrent `/api/upload_csv` requests on the same session) therefore always replaces the
+    /// slot atomically rather than appending to or interleaving with the previous buffer — a
+    /// subsequent read always observes exactly one complete upload, never a spliced/partial one.
+    /// There is deliberately no "append to the existing buffer" API.
+    pub fn set_upload(&self, cache: UploadCache) {
+        *self.upload_cache.lock().unwrap() = Some(cache);
+    }
+
+    /// Clones out the cached CSV bytes, if any. Returns `None` if nothing is cached or the cached
+    /// upload is a `Backup`, not a `Csv`.
+    pub fn csv_upload(&self) -> Option<Vec<u8>> {
+        match &*self.upload_cache.lock().unwrap() {
+            Some(UploadCache::Csv(bytes)) => Some(bytes.to_vec()),
+            _ => None,
+        }
+    }
+
+    /// Clones out the cached backup bytes, if any. Returns `None` if nothing is cached or the
+    /// cached upload is a `Csv`, not a `Backup`.
+    pub fn backup_upload(&self) -> Option<Vec<u8>> {
+        match &*self.upload_cache.lock().unwrap() {
+            Some(UploadCache::Backup(bytes)) => Some(bytes.to_vec()),
+            _ => None,
+        }
+    }
+
+    /// Drops the cached upload, if any — the `Zeroizing` wrapper wipes the bytes on drop.
+    pub fn clear_upload(&self) {
+        *self.upload_cache.lock().unwrap() = None;
     }
 }
 
@@ -130,6 +176,7 @@ mod tests {
             username: "alice".into(),
             app_state,
             last_seen: Mutex::new(clock.now()),
+            upload_cache: Mutex::new(None),
         };
         (us, dir)
     }

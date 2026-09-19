@@ -38,8 +38,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Read-Only Viewer** - A structurally read-only fallback app for when the main app is unavailable
 - [x] **Phase 6: Localhost Web Mode** - Full feature set from a browser tab, bound to 127.0.0.1 only, with a responsive layout
 - [x] **Phase 7: Platform Integrations** - Windows Hello biometric unlock and an SSH agent over a named pipe
-- [ ] **Phase 8: New Vault UI (Figma Port)** - Item types, favorites, folders, and per-item health in a redesigned vault UI
-- [ ] **Phase 9: Web Mode Security Hardening** - Close the file-path, rate-limiting, and header gaps a security audit found in Phase 6
+- [x] **Phase 8: New Vault UI (Figma Port)** - Item types, favorites, folders, and per-item health in a redesigned vault UI
+- [x] **Phase 9: Web Mode Security Hardening** - Close the file-path, rate-limiting, and header gaps a security audit found in Phase 6
 
 ## Phase Details
 
@@ -206,7 +206,35 @@ before planning this phase.
   2. Repeated failed login/register attempts against the web server are throttled with backoff/lockout, and Argon2 derivations are bounded so a burst of requests can't exhaust server memory (closes M1/M2).
   3. The web server sends a strict Content-Security-Policy and `X-Content-Type-Options: nosniff` on every response, and the desktop Tauri shell no longer runs with `csp: null` (closes M3).
 
-**Plans**: TBD
+**Scope note (2026-09-19)**: success criterion #1 above describes **path confinement**
+("reject any client-supplied path that isn't a filename inside the app's own backups/exports
+directory"). `09-CONTEXT.md` **D-01 deliberately overrides that** with the stronger fix the audit's
+own text recommends: a full upload/download redesign in which no server-side path is ever named by a
+web client, with no filename-only allowance. The plans implement D-01. Desktop keeps its native
+file-dialog path flow untouched (D-02).
+
+**Plans**: 5/5 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 09-01-PLAN.md — SEC-01: CSV export becomes an HTTP download body; no destination in the request
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 09-02-PLAN.md — SEC-01: CSV import becomes a raw-body upload cached on the session
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 09-03-PLAN.md — SEC-01: backup restore becomes an upload, plus the four-handler H1 closure gate
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 09-04-PLAN.md — SEC-02: login/register/PIN throttle with a doubling lockout window, and a bounded Argon2 semaphore
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 09-05-PLAN.md — SEC-03: strict CSP and security headers on every response, and a real CSP in the desktop shell
 
 ## Progress
 
@@ -222,5 +250,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Read-Only Viewer | v1.0 | N/A (pre-GSD) | Complete | 2026-07-16 |
 | 6. Localhost Web Mode | v1.0 | N/A (pre-GSD) | Complete | 2026-07-19 |
 | 7. Platform Integrations | v1.1 | N/A (pre-GSD) | Complete | 2026-09 (approx.) |
-| 8. New Vault UI (Figma Port) | v2.0 | 12/12 | In Progress|  |
-| 9. Web Mode Security Hardening | v2.0 | 0/TBD | Not started | - |
+| 8. New Vault UI (Figma Port) | v2.0 | 12/12 | Complete    | 2026-09-19 |
+| 9. Web Mode Security Hardening | v2.0 | 5/5 | Complete    | 2026-09-19 |

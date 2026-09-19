@@ -28,7 +28,7 @@ export function ItemList({
       : null;
 
   return (
-    <div className={`${className} shrink-0 flex-col border-r border-[var(--border)] p-2`}>
+    <div className={`${className} min-h-0 shrink-0 flex-col border-r border-[var(--border)] p-2`}>
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-baseline gap-2">
           <h2 className="text-base font-semibold">Vault</h2>
@@ -57,7 +57,7 @@ export function ItemList({
         />
       </div>
 
-      <ul className="flex-1 space-y-1 overflow-y-auto">
+      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto">
         {showLoading && <li className="px-1 py-2 text-sm opacity-70">Loading your sites…</li>}
         {empty && (
           <li className="px-1 py-2">

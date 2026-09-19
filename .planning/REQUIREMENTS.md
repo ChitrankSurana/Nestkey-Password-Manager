@@ -27,10 +27,10 @@ Requirements for this project. Each maps to exactly one roadmap phase.
   username/password pairs and free-text remarks.
 - [x] **VAULT-02**: User can search the vault in real time by site, username, or remarks, with
   results updating within one UI frame of each keystroke at up to ~5,000 entries.
-- [ ] **VAULT-03**: User can create/view Login, Secure Note, Payment Card, and Identity items,
+- [x] **VAULT-03**: User can create/view Login, Secure Note, Payment Card, and Identity items,
   each with its own icon/color and detail fields, filterable by type with a count badge.
-- [ ] **VAULT-04**: User can star any item as a favorite and filter to a "Favorites" view.
-- [ ] **VAULT-05**: User can create folders, assign an item to at most one folder, and filter the
+- [x] **VAULT-04**: User can star any item as a favorite and filter to a "Favorites" view.
+- [x] **VAULT-05**: User can create folders, assign an item to at most one folder, and filter the
   vault by folder.
 
 ### Password Generator (GEN)
@@ -51,7 +51,7 @@ Requirements for this project. Each maps to exactly one roadmap phase.
 - [x] **HEALTH-01**: User can view a Health Dashboard showing weak, reused, and old passwords,
   plus an opt-in (default off) Have I Been Pwned breach check that only ever sends a 5-character
   hash prefix.
-- [ ] **HEALTH-02**: User can view a per-item health card (strength, breach status, reuse status)
+- [x] **HEALTH-02**: User can view a per-item health card (strength, breach status, reuse status)
   directly in that item's detail panel, without triggering a full vault-wide sweep.
 
 ### UX / Appearance (UX)
@@ -80,11 +80,11 @@ Requirements for this project. Each maps to exactly one roadmap phase.
 
 ### Security Hardening (SEC)
 
-- [ ] **SEC-01**: Web-mode export/import/restore endpoints reject any client-supplied path
+- [x] **SEC-01**: Web-mode export/import/restore endpoints reject any client-supplied path
   outside the app's own backups/exports directory — no arbitrary file read or write is possible.
-- [ ] **SEC-02**: Web-mode login/register attempts are throttled (backoff/lockout), and
+- [x] **SEC-02**: Web-mode login/register attempts are throttled (backoff/lockout), and
   concurrent Argon2 derivations are bounded so a request burst cannot exhaust server memory.
-- [ ] **SEC-03**: The web server sends a strict Content-Security-Policy and
+- [x] **SEC-03**: The web server sends a strict Content-Security-Policy and
   `X-Content-Type-Options: nosniff` on every response, and the desktop Tauri shell no longer
   ships with `csp: null`.
 
@@ -133,13 +133,13 @@ Which phases cover which requirements.
 | WEB-01 | Phase 6 | Complete |
 | AUTH-02 | Phase 7 | Complete |
 | INTEG-01 | Phase 7 | Complete |
-| VAULT-03 | Phase 8 | Pending |
-| VAULT-04 | Phase 8 | Pending |
-| VAULT-05 | Phase 8 | Pending |
-| HEALTH-02 | Phase 8 | Pending |
-| SEC-01 | Phase 9 | Pending |
-| SEC-02 | Phase 9 | Pending |
-| SEC-03 | Phase 9 | Pending |
+| VAULT-03 | Phase 8 | Complete |
+| VAULT-04 | Phase 8 | Complete |
+| VAULT-05 | Phase 8 | Complete |
+| HEALTH-02 | Phase 8 | Complete |
+| SEC-01 | Phase 9 | Complete |
+| SEC-02 | Phase 9 | Complete |
+| SEC-03 | Phase 9 | Complete |
 
 **Coverage:**
 

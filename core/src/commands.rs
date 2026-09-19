@@ -16,7 +16,7 @@ pub fn do_login(
     username: &str,
     master_password: &str,
 ) -> Result<AuthSuccess, CommandError> {
-    let vault_path = paths.vault_path(username);
+    let vault_path = paths.checked_vault_path(username)?;
     let key = {
         let registry = state.registry.lock().unwrap();
         crate::auth::login(&registry, &vault_path, username, master_password)?
@@ -84,7 +84,7 @@ pub fn do_unlock_with_pin(
     username: &str,
     pin: &str,
 ) -> Result<AuthSuccess, CommandError> {
-    let vault_path = paths.vault_path(username);
+    let vault_path = paths.checked_vault_path(username)?;
     let key = {
         let registry = state.registry.lock().unwrap();
         crate::auth::unlock_with_pin(&registry, username, pin)?
@@ -167,7 +167,7 @@ pub fn do_unlock_with_biometric(
     key_bytes.copy_from_slice(&raw);
     let key = crate::crypto::VaultKey::from_bytes(key_bytes);
 
-    let vault_path = paths.vault_path(username);
+    let vault_path = paths.checked_vault_path(username)?;
     let conn = crate::vault::open_vault(&vault_path, &key)?;
     state.session.lock().unwrap().unlock(key, username, &SystemClock);
     state.set_vault(conn, vault_path);
@@ -225,7 +225,7 @@ pub fn do_register(
     username: &str,
     master_password: &str,
 ) -> Result<AuthSuccess, CommandError> {
-    let vault_path = paths.vault_path(username);
+    let vault_path = paths.checked_vault_path(username)?;
     let key = {
         let registry = state.registry.lock().unwrap();
         crate::auth::register_user(&registry, &vault_path, username, master_password)?
@@ -587,26 +587,7 @@ pub fn do_create_backup(
     paths: &AppPaths,
     destination_path: Option<&str>,
 ) -> Result<String, CommandError> {
-    let vault_path = {
-        let vault_guard = state.vault.lock().unwrap();
-        let (_, path) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
-        path.clone()
-    };
-    let username = vault_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(crate::error::internal_error)?
-        .to_string();
-
-    let user_record = {
-        let registry = state.registry.lock().unwrap();
-        crate::registry::find_user(&registry, &username)
-            .map_err(|_| crate::error::internal_error())?
-    };
-
-    let vault_bytes = std::fs::read(&vault_path).map_err(|_| crate::error::internal_error())?;
-    let bundle = crate::backup::encode_bundle(&user_record, &vault_bytes);
-
+    let (username, bundle) = build_backup_bundle(state)?;
     let backup_path = match destination_path {
         None => {
             // Millisecond precision: a whole-second timestamp lets two backups made in quick
@@ -627,6 +608,39 @@ pub fn do_create_backup(
     Ok(backup_path.to_string_lossy().to_string())
 }
 
+/// Path-free backup (web download): returns `(filename, bytes)` and touches no destination path.
+pub fn do_create_backup_download(state: &AppState) -> Result<(String, Vec<u8>), CommandError> {
+    let (username, bundle) = build_backup_bundle(state)?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    Ok((format!("{}-{}.bak", username, timestamp), bundle))
+}
+
+fn build_backup_bundle(state: &AppState) -> Result<(String, Vec<u8>), CommandError> {
+    let vault_path = {
+        let vault_guard = state.vault.lock().unwrap();
+        let (_, path) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+        path.clone()
+    };
+    let username = vault_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(crate::error::internal_error)?
+        .to_string();
+
+    let user_record = {
+        let registry = state.registry.lock().unwrap();
+        crate::registry::find_user(&registry, &username)
+            .map_err(|_| crate::error::internal_error())?
+    };
+
+    let vault_bytes = std::fs::read(&vault_path).map_err(|_| crate::error::internal_error())?;
+    let bundle = crate::backup::encode_bundle(&user_record, &vault_bytes);
+    Ok((username, bundle))
+}
+
 pub fn do_restore_backup(
     state: &AppState,
     paths: &AppPaths,
@@ -635,10 +649,20 @@ pub fn do_restore_backup(
 ) -> Result<(), CommandError> {
     let bytes = std::fs::read(backup_file_path)
         .map_err(|_| crate::error::invalid_input_error("Could not read that backup file."))?;
-    let (user_record, vault_bytes) = crate::backup::decode_bundle(&bytes)
+    do_restore_backup_from_bytes(state, paths, &bytes, confirmed)
+}
+
+/// Path-free restore (SEC-01/D-05): the web handler feeds it the bytes the browser uploaded.
+pub fn do_restore_backup_from_bytes(
+    state: &AppState,
+    paths: &AppPaths,
+    bytes: &[u8],
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    let (user_record, vault_bytes) = crate::backup::decode_bundle(bytes)
         .map_err(|_| crate::error::invalid_input_error("That file isn't a valid backup."))?;
 
-    let vault_path = paths.vault_path(&user_record.username);
+    let vault_path = paths.checked_vault_path(&user_record.username)?;
     let already_exists = vault_path.exists() || {
         let registry = state.registry.lock().unwrap();
         crate::registry::find_user(&registry, &user_record.username).is_ok()
@@ -720,13 +744,13 @@ fn append_plaintext_export_log(paths: &AppPaths, path: &str) -> std::io::Result<
     writeln!(file, "{}\t{}", ts, path)
 }
 
-pub fn do_export_csv(
+/// Produces the export bytes for `mode`, performing no filesystem access at all - the byte-producing
+/// half of export shared by both the desktop (path-writing) and web (bytes-over-HTTP) transports.
+pub fn do_export_csv_bytes(
     state: &AppState,
-    paths: &AppPaths,
-    path: &str,
     mode: &ExportMode,
     confirmed: bool,
-) -> Result<(), CommandError> {
+) -> Result<Vec<u8>, CommandError> {
     if matches!(mode, ExportMode::Plaintext) && !confirmed {
         return Err(crate::error::invalid_input_error(
             "Plaintext export requires explicit confirmation.",
@@ -757,6 +781,40 @@ pub fn do_export_csv(
             crate::portio::encode_sealed_csv(Some(&salt), &nonce, &ciphertext)
         }
     };
+    Ok(bytes)
+}
+
+/// Web-mode export: never touches the filesystem for the export target itself (SEC-01/D-01) - the
+/// bytes are handed back for the HTTP response body. The plaintext-export log still gets an entry
+/// (DATA-02), but with a fixed `<web download>` label standing in for the filesystem destination
+/// desktop exports would otherwise record.
+pub fn do_export_csv_download(
+    state: &AppState,
+    paths: &AppPaths,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(String, Vec<u8>), CommandError> {
+    let bytes = do_export_csv_bytes(state, mode, confirmed)?;
+
+    let filename = if matches!(mode, ExportMode::Plaintext) {
+        if let Err(e) = append_plaintext_export_log(paths, "<web download>") {
+            eprintln!("warning: failed to append plaintext export log entry: {e}");
+        }
+        "vault-export.csv"
+    } else {
+        "vault-export.pwenc"
+    };
+    Ok((filename.to_string(), bytes))
+}
+
+pub fn do_export_csv(
+    state: &AppState,
+    paths: &AppPaths,
+    path: &str,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    let bytes = do_export_csv_bytes(state, mode, confirmed)?;
     std::fs::write(path, &bytes).map_err(|_| crate::error::internal_error())?;
 
     if matches!(mode, ExportMode::Plaintext) {
@@ -767,14 +825,37 @@ pub fn do_export_csv(
     Ok(())
 }
 
-pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+/// Path-free header parse (SEC-01/D-01): the web branch reads no filesystem path at all — its
+/// caller decodes the session's cached upload bytes into a `&str` and hands it here directly.
+pub fn do_read_csv_headers_from_str(text: &str) -> Result<Vec<String>, CommandError> {
     let mut reader = csv::Reader::from_reader(text.as_bytes());
     let headers = reader
         .headers()
         .map_err(|_| crate::error::invalid_input_error("That file doesn't look like a CSV."))?;
     Ok(headers.iter().map(|h| h.to_string()).collect())
+}
+
+pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
+    do_read_csv_headers_from_str(&text)
+}
+
+/// Path-free preview parse (SEC-01/D-01/D-03): the web branch reads no filesystem path at all —
+/// its caller decodes the session's cached upload bytes into a `&str` and hands it here directly.
+/// Reading does not consume anything (this takes `&str`, not ownership of the cache), so the same
+/// upload can be previewed again with a different format.
+pub fn do_import_csv_preview_from_str(
+    text: &str,
+    format: &ImportFormat,
+) -> Result<Vec<ImportRecordDto>, CommandError> {
+    let records = match format {
+        ImportFormat::Chromium => crate::portio::parse_chromium_csv(text)?,
+        ImportFormat::Firefox => crate::portio::parse_firefox_csv(text)?,
+        ImportFormat::LastPass => crate::portio::parse_lastpass_csv(text)?,
+        ImportFormat::Generic { mapping } => crate::portio::parse_generic_csv(text, mapping)?,
+    };
+    Ok(records.into_iter().map(ImportRecordDto::from).collect())
 }
 
 pub fn do_import_csv_preview(
@@ -783,13 +864,7 @@ pub fn do_import_csv_preview(
 ) -> Result<Vec<ImportRecordDto>, CommandError> {
     let text = std::fs::read_to_string(path)
         .map_err(|_| crate::error::invalid_input_error("Could not read that file."))?;
-    let records = match format {
-        ImportFormat::Chromium => crate::portio::parse_chromium_csv(&text)?,
-        ImportFormat::Firefox => crate::portio::parse_firefox_csv(&text)?,
-        ImportFormat::LastPass => crate::portio::parse_lastpass_csv(&text)?,
-        ImportFormat::Generic { mapping } => crate::portio::parse_generic_csv(&text, mapping)?,
-    };
-    Ok(records.into_iter().map(ImportRecordDto::from).collect())
+    do_import_csv_preview_from_str(&text, format)
 }
 
 pub fn do_import_csv_commit(

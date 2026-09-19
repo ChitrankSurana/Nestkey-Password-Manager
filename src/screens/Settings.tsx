@@ -3,6 +3,7 @@ import { api, isCommandError, isTauri, RepromptMode, SshKeyDto } from "../lib/ap
 import { refreshRepromptConfig } from "../lib/reprompt";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
+import { MasterPasswordPrompt } from "../components/MasterPasswordPrompt";
 
 const OPTIONS = [1, 5, 15] as const;
 const ALGORITHM_OPTIONS = [
@@ -48,6 +49,7 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   const [repromptGraceSeconds, setRepromptGraceSeconds] = useState<number | null>(null);
   const [pinSet, setPinSet] = useState<boolean | null>(null);
   const [pinInput, setPinInput] = useState("");
+  const [pwPrompt, setPwPrompt] = useState<{ title: string; resolve: (ok: boolean) => void } | null>(null);
   const [biometricEnabled, setBiometricEnabled] = useState<boolean | null>(null);
   const [biometricSet, setBiometricSet] = useState<boolean | null>(null);
   const [sshAgentEnabled, setSshAgentEnabled] = useState<boolean | null>(null);
@@ -97,8 +99,15 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
+  // Re-auth gate for changes to how the vault can be unlocked: resolves true only after a correct
+  // master password, so an unattended unlocked session cannot quietly add or drop an unlock method.
+  function requireMasterPassword(title: string): Promise<boolean> {
+    return new Promise((resolve) => setPwPrompt({ title, resolve }));
+  }
+
   async function handleSetPin(e: FormEvent) {
     e.preventDefault();
+    if (!(await requireMasterPassword("Set PIN"))) return;
     setSubmitting(true);
     try {
       setError(null);
@@ -113,6 +122,7 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   }
 
   async function handleClearPin() {
+    if (!(await requireMasterPassword("Remove PIN"))) return;
     setSubmitting(true);
     try {
       setError(null);
@@ -154,6 +164,7 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   }
 
   async function handleClearBiometric() {
+    if (!(await requireMasterPassword("Remove Windows Hello unlock"))) return;
     setSubmitting(true);
     try {
       setError(null);
@@ -197,6 +208,7 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   }
 
   async function handleDeleteSshKey(id: number) {
+    if (!(await requireMasterPassword("Delete SSH key"))) return;
     setSubmitting(true);
     try {
       setError(null);
@@ -358,7 +370,7 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   return (
     <div className="flex-1 bg-[var(--bg)] text-[var(--fg)] p-4">
       <Tooltip text="Back to vault">
-        <button onClick={onBack} className="mb-4 underline text-sm">
+        <button onClick={onBack} className="mb-4 rounded bg-[var(--accent)] px-3 py-1">
           <Icon name="arrow-left" /> Back
         </button>
       </Tooltip>
@@ -729,6 +741,16 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
           </label>
         </div>
       </details>
+
+      {pwPrompt && (
+        <MasterPasswordPrompt
+          title={pwPrompt.title}
+          onResult={(ok) => {
+            pwPrompt.resolve(ok);
+            setPwPrompt(null);
+          }}
+        />
+      )}
     </div>
   );
 }

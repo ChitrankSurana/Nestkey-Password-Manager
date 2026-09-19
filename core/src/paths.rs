@@ -1,5 +1,22 @@
 use std::path::{Path, PathBuf};
 
+// Blacklist rather than a whitelist so every existing account (any Unicode name that was already a
+// legal filename) keeps working; it only refuses what is unsafe as a single path component.
+fn is_safe_username(name: &str) -> bool {
+    const RESERVED: [&str; 22] = [
+        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+        "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    ];
+    let stem = name.split('.').next().unwrap_or("").to_lowercase();
+    !name.is_empty()
+        && name == name.trim()
+        && !name.contains("..")
+        && !name.starts_with('.')
+        && !name.ends_with('.')
+        && !name.chars().any(|c| c.is_control() || r#"/\:*?"<>|"#.contains(c))
+        && !RESERVED.contains(&stem.as_str())
+}
+
 pub struct AppPaths {
     root: PathBuf,
 }
@@ -29,6 +46,18 @@ impl AppPaths {
 
     pub fn vault_path(&self, username: &str) -> PathBuf {
         self.vaults_dir().join(format!("{}.vault", username))
+    }
+
+    /// `vault_path` for a username that came from outside the process (login/register form, an
+    /// uploaded backup bundle): rejects any name that could escape `vaults_dir` or name a Windows
+    /// device, so the username can never steer a write or read out of the vaults folder.
+    pub fn checked_vault_path(&self, username: &str) -> Result<PathBuf, crate::error::CommandError> {
+        if !is_safe_username(username) {
+            return Err(crate::error::invalid_input_error(
+                "That username contains characters that aren't allowed.",
+            ));
+        }
+        Ok(self.vault_path(username))
     }
 
     pub fn config_path(&self) -> PathBuf {
@@ -122,6 +151,18 @@ mod tests {
             dir.path().join("vaults").join("alice.vault")
         );
         assert_eq!(paths.config_path(), dir.path().join("config.json"));
+    }
+
+    #[test]
+    fn checked_vault_path_rejects_traversal_and_device_names() {
+        let dir = tempdir().unwrap();
+        let paths = AppPaths::new(dir.path().to_path_buf());
+        for bad in ["../x", r"..\x", "a/b", r"a\b", "..", ".hidden", "trail.", " pad", "C:evil", "nul", "COM1", "con.txt", "", "a\u{0}b"] {
+            assert!(paths.checked_vault_path(bad).is_err(), "{bad:?} should be rejected");
+        }
+        for ok in ["alice", "Alice Smith", "j.doe", "user@example.com", "réne"] {
+            assert_eq!(paths.checked_vault_path(ok).unwrap(), paths.vault_path(ok), "{ok:?}");
+        }
     }
 
     #[cfg(unix)]

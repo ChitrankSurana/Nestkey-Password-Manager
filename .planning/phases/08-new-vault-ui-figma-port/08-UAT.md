@@ -37,20 +37,23 @@ note: "Trash restore also confirmed pass, plus the vault-refresh bug found and f
 
 ### 6. Responsive tiers, full capability checklist, and Classic regression check
 expected: Resize the window through all three D-18 tiers (>=1024px full sidebar honoring navCollapsed; 640-1023px icon rail with navCollapsed untouched; <640px mobile nav swap with single visible pane and a working Back). Walk all 18 flows in docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md §1 in the New UI, and separately confirm all six §4 cross-cutting behaviors (30s clipboard auto-clear, reprompt on reveal+copy for both secret types, idle/sleep auto-lock returns to login, theme+all 5 accents load flash-free, all three mobileNavStyle values render correctly below 640px, no credential fetched before a site is opened). Finally set ui_variant back to classic and walk the same 18 flows in Classic to confirm nothing changed.
-result: skipped
-reason: "User will complete this test later"
+result: pass
+note: "Part A (three responsive tiers) pass 2026-09-19. Part B1 (flows 1-9) pass 2026-09-19 after inline fix: Settings now asks for the master password (shared MasterPasswordPrompt modal) before Set PIN, Remove PIN, Remove Windows Hello and Delete SSH key; accepted by user without re-check. Part B2 (flows 10-18) pass 2026-09-19. Part C (cross-cutting behaviors) pass 2026-09-19 except the three mobileNavStyle values below 640px, which the user could not check (unverified). Part D (Classic regression walk) was not performed separately; user closed the test as complete. Both recorded as unverified, not as tested."
 
 ## Summary
 
 total: 6
-passed: 5
+passed: 6
 issues: 0
 pending: 0
-skipped: 1
+skipped: 0
 blocked: 0
 
 ## Deferred Follow-Ups
 
+- test: 6
+  idea: "Unverified: three mobileNavStyle values (icon-rail, bottom-tabs, drawer) below 640px; Classic UI regression walk of the 18 flows."
+  deferred_at: 2026-09-19
 - test: 2
   idea: "Web-mode 'Interface' select banner check (naming /newui.html, no in-tab switch) — postponed until the desktop New UI is considered complete."
   deferred_at: 2026-09-15

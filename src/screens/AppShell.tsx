@@ -69,7 +69,7 @@ export function AppShell({ username }: { username: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] flex">
+    <div className="h-screen overflow-hidden bg-[var(--bg)] text-[var(--fg)] flex">
       <div className="hidden sm:flex">
         <NavRail
           collapsed={collapsed}
@@ -107,7 +107,7 @@ export function AppShell({ username }: { username: string }) {
         />
       )}
 
-      <div className={`flex-1 flex flex-col ${mobileNavStyle === "bottom-tabs" ? "pb-16 sm:pb-0" : ""}`}>
+      <div className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-y-auto ${mobileNavStyle === "bottom-tabs" ? "pb-16 sm:pb-0" : ""}`}>
         {mobileNavStyle === "drawer" && (
           <button
             onClick={() => setDrawerOpen(true)}

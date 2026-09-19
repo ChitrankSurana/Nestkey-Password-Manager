@@ -96,7 +96,7 @@ export function NewShell({ username }: { username: string }) {
   ];
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] flex">
+    <div className="h-screen overflow-hidden bg-[var(--bg)] text-[var(--fg)] flex">
       <div className="hidden lg:flex">
         <Sidebar
           destinations={destinations}
@@ -158,7 +158,7 @@ export function NewShell({ username }: { username: string }) {
       />
 
       <div
-        className={`flex flex-1 flex-col ${mobileNavStyle === "bottom-tabs" ? "pb-16 sm:pb-0" : ""}`}
+        className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto ${mobileNavStyle === "bottom-tabs" ? "pb-16 sm:pb-0" : ""}`}
       >
         {mobileNavStyle === "drawer" && (
           <button
@@ -177,7 +177,7 @@ export function NewShell({ username }: { username: string }) {
           // above can occupy the full width instead; always visible from sm: up, where both
           // panes show side by side (unaffected by this tier).
           <div
-            className={`${vault.selectedSiteId !== null ? "flex" : "hidden"} sm:flex flex-1 flex-col`}
+            className={`${vault.selectedSiteId !== null ? "flex" : "hidden"} sm:flex min-h-0 flex-1 flex-col`}
           >
             {vault.selectedSiteId !== null ? (
               <DetailPanel

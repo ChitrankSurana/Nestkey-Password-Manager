@@ -23,6 +23,7 @@ pub fn status_for(code: &str) -> StatusCode {
         "not_found" => StatusCode::NOT_FOUND,
         "username_taken" | "confirm_required" => StatusCode::CONFLICT,
         "forbidden" => StatusCode::FORBIDDEN,
+        "throttled" | "rate_limited" => StatusCode::TOO_MANY_REQUESTS,
         "internal_error" => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
@@ -48,6 +49,8 @@ mod tests {
         assert_eq!(status_for("username_taken"), StatusCode::CONFLICT);
         assert_eq!(status_for("confirm_required"), StatusCode::CONFLICT);
         assert_eq!(status_for("forbidden"), StatusCode::FORBIDDEN);
+        assert_eq!(status_for("throttled"), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(status_for("rate_limited"), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(status_for("internal_error"), StatusCode::INTERNAL_SERVER_ERROR);
     }
 

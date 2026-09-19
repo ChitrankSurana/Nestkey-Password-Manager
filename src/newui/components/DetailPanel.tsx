@@ -147,7 +147,7 @@ export function DetailPanel({
         <button
           type="button"
           onClick={onBack}
-          className="sm:hidden mb-4 flex items-center gap-1 rounded px-2 py-1 text-sm hover:bg-[var(--surface)]"
+          className="sm:hidden mb-4 rounded bg-[var(--accent)] px-3 py-1"
         >
           <Icon name="chevron-left" /> Back
         </button>

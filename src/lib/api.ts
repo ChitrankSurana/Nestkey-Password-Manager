@@ -10,6 +10,26 @@ export interface CommandError {
   message: string;
 }
 
+export const SESSION_LOCKED_EVENT = "pwmgr-session-locked";
+
+// A restore over the open vault locks the session by design (its file and key are replaced). The
+// Backup screen holds the login redirect so the user can read the outcome, then releases it.
+let lockRedirectHeld = false;
+export function isLockRedirectHeld(): boolean {
+  return lockRedirectHeld;
+}
+export function holdLockRedirect(): void {
+  lockRedirectHeld = true;
+}
+// `redirect` true: go to login now (session was locked). false: nothing locked, just stop holding.
+export function releaseLockRedirect(redirect: boolean): void {
+  lockRedirectHeld = false;
+  if (redirect) window.dispatchEvent(new Event(SESSION_LOCKED_EVENT));
+}
+
+// Commands that legitimately answer 401/locked without meaning "your session expired".
+const PUBLIC_COMMANDS = new Set(["get_config", "login", "register_user", "unlock_with_pin", "logout"]);
+
 export function isCommandError(e: unknown): e is CommandError {
   return typeof e === "object" && e !== null && "code" in e && "message" in e;
 }
@@ -140,22 +160,39 @@ export interface BreachReportDto { breached: HealthEntryDto[]; }
 // biometric unlock, which has no web-mode route - Windows Hello can't run server-side).
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-async function httpPost<T>(command: string, args: Record<string, unknown>): Promise<T> {
-  const res = await fetch(`/api/${command}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-PWMGR-CSRF": "1" },
-    credentials: "same-origin",
-    body: JSON.stringify(args),
-  });
-  if (!res.ok) {
+// One fetch that throws the parsed CommandError on any non-2xx. Retries exactly once, after a short
+// backoff, when the server says `rate_limited` (transient KDF saturation, SEC-02/D-14). `throttled`
+// (a lockout) and every other code are rethrown immediately: retrying a lockout only burns attempts.
+async function fetchOk(command: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`/api/${command}`, init);
+    if (res.ok) return res;
     let err: CommandError = { code: "internal_error", message: "Something went wrong. Please try again." };
     try {
       err = (await res.json()) as CommandError;
     } catch {
       // Non-JSON error body (e.g. a raw 404 from the static layer) - keep the generic fallback.
     }
+    if (err.code === "rate_limited" && attempt === 0) {
+      await new Promise((r) => setTimeout(r, 1500));
+      continue;
+    }
+    if (err.code === "locked" && !PUBLIC_COMMANDS.has(command)) {
+      // Web mode has no `vault-locked` event: an expired/unknown session surfaces only as this 401,
+      // so tell App to drop back to the login screen (desktop gets the Tauri event instead).
+      window.dispatchEvent(new Event(SESSION_LOCKED_EVENT));
+    }
     throw err;
   }
+}
+
+async function httpPost<T>(command: string, args: Record<string, unknown>): Promise<T> {
+  const res = await fetchOk(command, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-PWMGR-CSRF": "1" },
+    credentials: "same-origin",
+    body: JSON.stringify(args),
+  });
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }
@@ -164,6 +201,77 @@ async function httpPost<T>(command: string, args: Record<string, unknown>): Prom
 // and camelCase args are identical on both sides.
 function call<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   return isTauri ? invoke<T>(command, args) : httpPost<T>(command, args);
+}
+
+// Sentinel createBackup resolves with when the browser had no save dialog (plain download).
+export const DOWNLOADED = "downloaded";
+
+export class DownloadCancelled extends Error {}
+
+type SaveHandle = { createWritable: () => Promise<{ write: (b: Blob) => Promise<void>; close: () => Promise<void> }> };
+type SavePicker = (o: { suggestedName: string }) => Promise<SaveHandle>;
+
+// Web-only: posts `args` like `httpPost`, but the response body is the file itself, not JSON. Where
+// the browser has a real "Save as" dialog (Chromium's File System Access API) it is opened FIRST,
+// inside the user's click, so the user picks the location before anything is produced and nothing
+// is reported as saved unless the write actually happened. Elsewhere it falls back to a plain
+// browser download. Resolves "saved" (written to the chosen file) or "downloaded" (handed to the
+// browser, whose own settings decide where it goes). Cancelling the dialog throws DownloadCancelled.
+async function httpDownload(
+  command: string,
+  args: Record<string, unknown>,
+  fallbackName: string,
+): Promise<"saved" | "downloaded"> {
+  const picker = (window as unknown as { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
+  let handle: SaveHandle | null = null;
+  if (picker) {
+    try {
+      handle = await picker.call(window, { suggestedName: fallbackName });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") throw new DownloadCancelled();
+      // Picker unavailable in this context: fall through to the plain download.
+    }
+  }
+
+  const res = await fetchOk(command, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-PWMGR-CSRF": "1" },
+    credentials: "same-origin",
+    body: JSON.stringify(args),
+  });
+  const disposition = res.headers.get("content-disposition");
+  const match = disposition ? /filename="?([^";]+)"?/.exec(disposition) : null;
+  const filename = match?.[1] ?? fallbackName;
+  const blob = await res.blob();
+
+  if (handle) {
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return "saved";
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return "downloaded";
+}
+
+// Web-only: posts a raw file body (not JSON) to a session-scoped upload endpoint - the file's bytes
+// land on the requesting browser's own session cache (SEC-01/D-01/D-03/D-04), reused by every
+// downstream step. Follows the same CommandError-parsing branch `httpPost` uses.
+async function httpUpload(command: string, file: File | Blob): Promise<void> {
+  await fetchOk(command, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream", "X-PWMGR-CSRF": "1" },
+    credentials: "same-origin",
+    body: file,
+  });
 }
 
 export const api = {
@@ -241,15 +349,41 @@ export const api = {
   // No HTTP endpoint for clipboard - the browser has its own API. Desktop keeps the Tauri command.
   copyToClipboard: (text: string) =>
     isTauri ? invoke<void>("copy_to_clipboard", { text }) : webCopyToClipboard(text),
-  createBackup: (destinationPath: string | null = null) =>
-    call<string>("create_backup", { destinationPath }),
-  restoreBackup: (path: string, confirmed: boolean) =>
-    call<void>("restore_backup", { path, confirmed }),
-  exportCsv: (path: string, mode: ExportMode, confirmed: boolean) =>
-    call<void>("export_csv", { path, mode, confirmed }),
-  readCsvHeaders: (path: string) => call<string[]>("read_csv_headers", { path }),
-  importCsvPreview: (path: string, format: ImportFormat) =>
-    call<ImportRecordDto[]>("import_csv_preview", { path, format }),
+  // Desktop writes to the path from the native save dialog; web downloads the bytes (save picker
+  // where the browser supports it) and resolves to the file name instead of a server path.
+  createBackup: async (destinationPath: string | null = null): Promise<string> => {
+    if (isTauri) return invoke<string>("create_backup", { destinationPath });
+    return (await httpDownload("create_backup_download", {}, "vault-backup.bak")) === "saved"
+      ? ""
+      : DOWNLOADED;
+  },
+  // Desktop names a path from the native open dialog (D-02); web restores the bytes uploaded first
+  // via `uploadBackup` and never names a server path (D-05).
+  restoreBackup: (path: string | null, confirmed: boolean) =>
+    isTauri ? invoke<void>("restore_backup", { path, confirmed }) : httpPost<void>("restore_backup", { confirmed }),
+  uploadBackup: (file: File) => httpUpload("upload_backup", file),
+  // Desktop and web legitimately diverge here (D-02): desktop still names a path from the native
+  // save dialog; web mode never names a destination and instead downloads the bytes directly.
+  exportCsv: (path: string | null, mode: ExportMode, confirmed: boolean) =>
+    isTauri
+      ? invoke<void>("export_csv", { path, mode, confirmed })
+      : httpDownload(
+          "export_csv",
+          { mode, confirmed },
+          mode.mode === "plaintext" ? "vault-export.csv" : "vault-export.pwenc",
+        ),
+  // Desktop and web legitimately diverge here (D-02): desktop still names a path from the native
+  // open dialog; web mode has already uploaded the file bytes via `uploadCsv` and reads them back
+  // from its own session cache, so no path is ever sent.
+  uploadCsv: (file: File) => httpUpload("upload_csv", file),
+  // No-op on desktop, which has no upload cache to clear.
+  clearUpload: () => (isTauri ? Promise.resolve() : httpPost<void>("clear_upload", {})),
+  readCsvHeaders: (path: string | null) =>
+    isTauri ? invoke<string[]>("read_csv_headers", { path }) : httpPost<string[]>("read_csv_headers", {}),
+  importCsvPreview: (path: string | null, format: ImportFormat) =>
+    isTauri
+      ? invoke<ImportRecordDto[]>("import_csv_preview", { path, format })
+      : httpPost<ImportRecordDto[]>("import_csv_preview", { format }),
   importCsvCommit: (records: ImportRecordDto[]) =>
     call<ImportSummaryDto>("import_csv_commit", { records }),
   healthReport: () => call<HealthReportDto>("health_report"),
