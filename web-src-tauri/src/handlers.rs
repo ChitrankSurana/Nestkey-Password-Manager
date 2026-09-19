@@ -334,10 +334,16 @@ async fn has_pin(State(ctx): State<AppContext>, Json(body): Json<HasPinRequest>)
 
 async fn unlock_with_pin(
     State(ctx): State<AppContext>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(body): Json<UnlockWithPinRequest>,
 ) -> Result<Response, ApiError> {
+    // Same throttle keys and KDF cap as login: a PIN is a much shorter secret than a master
+    // password, so leaving this route open would make it the cheapest way to brute-force a vault.
+    begin_credential_attempt(&ctx, &body.username, peer)?;
+    let _kdf_permit = ctx.kdf.try_acquire()?;
     let app_state = build_locked_state(&ctx.paths)?;
     do_unlock_with_pin(&app_state, &ctx.paths, &body.username, &body.pin)?;
+    reset_credential_attempts(&ctx, &body.username, peer);
     let session = UserSession {
         username: body.username.clone(),
         app_state,
@@ -653,6 +659,22 @@ async fn create_backup(
     Ok(Json(do_create_backup(&s.app_state, &ctx.paths, None)?))
 }
 
+// Path-free counterpart of `create_backup` (same reasoning): returns the backup bytes in the response
+// body so the browser can offer a save-location picker. Nothing is written server-side.
+async fn create_backup_download(
+    Extension(s): Extension<Arc<UserSession>>,
+) -> Result<Response, ApiError> {
+    let (filename, bytes) = do_create_backup_download(&s.app_state)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\"")),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
 async fn restore_backup(
     Extension(s): Extension<Arc<UserSession>>,
     State(ctx): State<AppContext>,
@@ -810,6 +832,7 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/generate_password", post(generate_password))
         .route("/api/analyze_strength", post(analyze_strength))
         .route("/api/create_backup", post(create_backup))
+        .route("/api/create_backup_download", post(create_backup_download))
         .route("/api/restore_backup", post(restore_backup))
         .route("/api/export_csv", post(export_csv))
         .route(

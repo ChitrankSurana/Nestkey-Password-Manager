@@ -1297,3 +1297,109 @@ async fn a_saturated_kdf_semaphore_returns_429_rate_limited() {
         "expected at least one rate_limited 429: {seen:?}"
     );
 }
+
+#[tokio::test]
+async fn create_backup_download_returns_the_bundle_and_writes_no_server_file() {
+    let (base, dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    register_as(&client, &base, "alice").await;
+    let backups = AppPaths::new(dir.path().to_path_buf()).backups_dir();
+    let before = std::fs::read_dir(&backups).map(|d| d.count()).unwrap_or(0);
+
+    let res = client
+        .post(format!("{base}/api/create_backup_download"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"destinationPath": "/tmp/should-be-ignored"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let disposition = res.headers()["content-disposition"].to_str().unwrap().to_string();
+    assert!(disposition.starts_with("attachment; filename=\"alice-") && disposition.ends_with(".bak\""), "{disposition}");
+    let bytes = res.bytes().await.unwrap();
+    let (user, _vault) = pwmgr_core::backup::decode_bundle(&bytes).expect("body must be a valid bundle");
+    assert_eq!(user.username, "alice");
+    assert_eq!(std::fs::read_dir(&backups).map(|d| d.count()).unwrap_or(0), before, "nothing written server-side");
+}
+
+#[tokio::test]
+async fn create_backup_download_without_a_session_is_unauthorized() {
+    let (base, _dir) = spawn_server().await;
+    let res = reqwest::Client::new()
+        .post(format!("{base}/api/create_backup_download"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 401);
+}
+
+#[tokio::test]
+async fn restore_backup_rejects_a_path_traversal_username() {
+    let (base, dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    register_as(&client, &base, "alice").await;
+    let genuine = backup_bytes(&client, &base).await;
+    let (mut user, vault) = pwmgr_core::backup::decode_bundle(&genuine).unwrap();
+    user.username = "../evil".to_string();
+    let crafted = pwmgr_core::backup::encode_bundle(&user, &vault);
+
+    assert_eq!(upload_backup(&client, &base, crafted).await.status(), 200);
+    let res = restore(&client, &base, true).await;
+    assert_eq!(res.status(), 400);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+    assert!(!dir.path().join("evil.vault").exists(), "nothing may land outside the vaults dir");
+    assert!(!AppPaths::new(dir.path().to_path_buf()).vaults_dir().join("..").join("evil.vault").exists());
+}
+
+#[tokio::test]
+async fn login_and_register_reject_a_path_traversal_username() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    for route in ["register_user", "login"] {
+        let res = post_auth(&client, &base, route, "../evil", "correct horse battery").await;
+        assert_eq!(res.status(), 400, "{route}");
+    }
+}
+
+#[tokio::test]
+async fn five_failed_pin_unlocks_lock_the_key_out_with_429() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    assert_eq!(post_auth(&client, &base, "register_user", "alice", "correct horse battery").await.status(), 200);
+    let set = client
+        .post(format!("{base}/api/set_pin"))
+        .header(CSRF.0, CSRF.1)
+        .json(&serde_json::json!({"pin": "123456"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(set.status(), 200);
+    client.post(format!("{base}/api/logout")).header(CSRF.0, CSRF.1).send().await.unwrap();
+
+    let attempt = |pin: &'static str| {
+        let client = client.clone();
+        let base = base.clone();
+        async move {
+            client
+                .post(format!("{base}/api/unlock_with_pin"))
+                .header(CSRF.0, CSRF.1)
+                .json(&serde_json::json!({"username": "alice", "pin": pin}))
+                .send()
+                .await
+                .unwrap()
+        }
+    };
+    for i in 0..5 {
+        let s = attempt("000000").await.status();
+        assert!(s != 200 && s != 429, "attempt {i} should be a plain failure, got {s}");
+    }
+    let res = attempt("000000").await;
+    assert_eq!(res.status(), 429);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "throttled");
+    // Even the correct PIN is refused while locked out.
+    assert_eq!(attempt("123456").await.status(), 429);
+}

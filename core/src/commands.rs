@@ -16,7 +16,7 @@ pub fn do_login(
     username: &str,
     master_password: &str,
 ) -> Result<AuthSuccess, CommandError> {
-    let vault_path = paths.vault_path(username);
+    let vault_path = paths.checked_vault_path(username)?;
     let key = {
         let registry = state.registry.lock().unwrap();
         crate::auth::login(&registry, &vault_path, username, master_password)?
@@ -84,7 +84,7 @@ pub fn do_unlock_with_pin(
     username: &str,
     pin: &str,
 ) -> Result<AuthSuccess, CommandError> {
-    let vault_path = paths.vault_path(username);
+    let vault_path = paths.checked_vault_path(username)?;
     let key = {
         let registry = state.registry.lock().unwrap();
         crate::auth::unlock_with_pin(&registry, username, pin)?
@@ -167,7 +167,7 @@ pub fn do_unlock_with_biometric(
     key_bytes.copy_from_slice(&raw);
     let key = crate::crypto::VaultKey::from_bytes(key_bytes);
 
-    let vault_path = paths.vault_path(username);
+    let vault_path = paths.checked_vault_path(username)?;
     let conn = crate::vault::open_vault(&vault_path, &key)?;
     state.session.lock().unwrap().unlock(key, username, &SystemClock);
     state.set_vault(conn, vault_path);
@@ -225,7 +225,7 @@ pub fn do_register(
     username: &str,
     master_password: &str,
 ) -> Result<AuthSuccess, CommandError> {
-    let vault_path = paths.vault_path(username);
+    let vault_path = paths.checked_vault_path(username)?;
     let key = {
         let registry = state.registry.lock().unwrap();
         crate::auth::register_user(&registry, &vault_path, username, master_password)?
@@ -587,6 +587,38 @@ pub fn do_create_backup(
     paths: &AppPaths,
     destination_path: Option<&str>,
 ) -> Result<String, CommandError> {
+    let (username, bundle) = build_backup_bundle(state)?;
+    let backup_path = match destination_path {
+        None => {
+            // Millisecond precision: a whole-second timestamp lets two backups made in quick
+            // succession silently collide and overwrite each other.
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            paths.backups_dir().join(format!("{}-{}.bak", username, timestamp))
+        }
+        Some(p) if p.trim().is_empty() => {
+            return Err(crate::error::invalid_input_error("Choose a backup destination."));
+        }
+        Some(p) => std::path::PathBuf::from(p),
+    };
+    std::fs::write(&backup_path, &bundle).map_err(|_| crate::error::internal_error())?;
+
+    Ok(backup_path.to_string_lossy().to_string())
+}
+
+/// Path-free backup (web download): returns `(filename, bytes)` and touches no destination path.
+pub fn do_create_backup_download(state: &AppState) -> Result<(String, Vec<u8>), CommandError> {
+    let (username, bundle) = build_backup_bundle(state)?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    Ok((format!("{}-{}.bak", username, timestamp), bundle))
+}
+
+fn build_backup_bundle(state: &AppState) -> Result<(String, Vec<u8>), CommandError> {
     let vault_path = {
         let vault_guard = state.vault.lock().unwrap();
         let (_, path) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
@@ -606,25 +638,7 @@ pub fn do_create_backup(
 
     let vault_bytes = std::fs::read(&vault_path).map_err(|_| crate::error::internal_error())?;
     let bundle = crate::backup::encode_bundle(&user_record, &vault_bytes);
-
-    let backup_path = match destination_path {
-        None => {
-            // Millisecond precision: a whole-second timestamp lets two backups made in quick
-            // succession silently collide and overwrite each other.
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-            paths.backups_dir().join(format!("{}-{}.bak", username, timestamp))
-        }
-        Some(p) if p.trim().is_empty() => {
-            return Err(crate::error::invalid_input_error("Choose a backup destination."));
-        }
-        Some(p) => std::path::PathBuf::from(p),
-    };
-    std::fs::write(&backup_path, &bundle).map_err(|_| crate::error::internal_error())?;
-
-    Ok(backup_path.to_string_lossy().to_string())
+    Ok((username, bundle))
 }
 
 pub fn do_restore_backup(
@@ -648,7 +662,7 @@ pub fn do_restore_backup_from_bytes(
     let (user_record, vault_bytes) = crate::backup::decode_bundle(bytes)
         .map_err(|_| crate::error::invalid_input_error("That file isn't a valid backup."))?;
 
-    let vault_path = paths.vault_path(&user_record.username);
+    let vault_path = paths.checked_vault_path(&user_record.username)?;
     let already_exists = vault_path.exists() || {
         let registry = state.registry.lock().unwrap();
         crate::registry::find_user(&registry, &user_record.username).is_ok()
