@@ -5,17 +5,17 @@ milestone_name: New Vault UI & Security Hardening (Phases 8-9) — Planned
 current_phase: 09
 current_phase_name: Web Mode Security Hardening
 status: executing
-stopped_at: Completed 09-03-PLAN.md
-last_updated: "2026-09-19T05:55:43.048Z"
+stopped_at: Completed 09-04-PLAN.md
+last_updated: "2026-09-19T06:09:16.524Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 09 execution started
-state_head: f55e27bef935b4db8073b88f421aff2c16e30b65
+state_head: ec8143cddc4cbd72d57b9077470bee44c5f39b2f
 progress:
   total_phases: 2
   completed_phases: 7
   total_plans: 17
-  completed_plans: 15
-  percent: 88
+  completed_plans: 16
+  percent: 94
 ---
 
 # Project State
@@ -31,14 +31,14 @@ zero-knowledge and local-only by default, with no path to recover a forgotten ma
 ## Current Position
 
 Phase: 09 (Web Mode Security Hardening) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-09-19 — Phase 09 execution started
 PROJECT.md/REQUIREMENTS.md/ROADMAP.md/STATE.md. Phases 1-7 (PRD milestones M1-M6 plus biometric
 unlock/SSH agent) retroactively marked Complete based on shipped code, git history, and manual
 test checklists — none were executed through GSD plan-phase/execute-phase.
 
-Progress: [█████████░] 88% (7/9 phases complete; plan-level tracking not applicable to
+Progress: [█████████░] 94% (7/9 phases complete; plan-level tracking not applicable to
 pre-GSD phases)
 
 ## Performance Metrics
@@ -78,6 +78,7 @@ pre-GSD phases)
 | Phase 08 P11 | ~15min | 3 tasks | 8 files |
 | Phase 09 P01 | ~35min | 2 tasks | 5 files |
 | Phase 09 P02 | ~55min | 3 tasks | 7 files |
+| Phase 09 P04 | 30min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,7 @@ Recent decisions affecting current work:
 - [Phase 09]: [Phase 09]: Phase 09 Plan 01: new web-only httpDownload helper in src/lib/api.ts is the established pattern for file-download screens; called directly (bypassing call()'s isTauri dispatch) since desktop invoke() and web fetch() now take divergent argument shapes for export_csv
 - [Phase 09]: [Phase 09] Phase 09 Plan 02: set_upload's single-critical-section replacement guarantee doc comment was written in Task 1 (its first creation) rather than deferred to Task 3 as the plan's task split literally proposed - no functional difference
 - [Phase 09]: [Phase 09] Phase 09 Plan 02: web-mode handleSourceChange clears the server-side upload cache and resets the path label when switching source after uploading, treating a format switch as abandoning the import attempt (D-04 cancel-clears-cache intent) rather than preserving the cache for cross-format reuse from the UI - backend D-03 reuse is still proven directly at the HTTP layer
+- [Phase 09]: 09-04: unlock_with_pin left unthrottled by developer decision (T-09-19); IP throttle key is machine-wide on loopback (T-09-22)
 
 ### Pending Todos
 
@@ -152,8 +154,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-19T05:55:42.937Z
-Stopped at: Completed 09-03-PLAN.md
+Last session: 2026-09-19T06:09:16.410Z
+Stopped at: Completed 09-04-PLAN.md
 (`.planning/intel/SYNTHESIS.md`) plus the existing codebase map (`.planning/codebase/`); ready for
 the orchestrator to present the roadmap for approval and finalize the ingest workflow.
 Resume file: None
