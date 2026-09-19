@@ -62,6 +62,8 @@ export function Vault({
 
   return (
     <div className="flex-1 p-4">
+      {/* Sticky: title, add button, error and search stay put while the site list scrolls. */}
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-2 bg-[var(--bg)] px-4 pb-2 pt-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-semibold">Vault — {username}</h1>
         <Tooltip text="Add a new site">
@@ -74,12 +76,13 @@ export function Vault({
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
       <input
-        className="w-full rounded border px-2 py-1 mb-4 bg-[var(--surface)] border-[var(--border)]"
+        className="w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
         placeholder="Search by site, username, or remarks..."
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         title="Search your vault in real time"
       />
+      </div>
 
       {results !== null ? (
         <ul className="space-y-1">

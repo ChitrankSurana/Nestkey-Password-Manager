@@ -5,7 +5,7 @@ import { Register } from "./screens/Register";
 import { AppShell } from "./screens/AppShell";
 import { ToastHost } from "./components/ToastHost";
 import { useActivityWatcher } from "./hooks/useActivityWatcher";
-import { api } from "./lib/api";
+import { api, isLockRedirectHeld, SESSION_LOCKED_EVENT } from "./lib/api";
 import { clearRepromptGrace } from "./lib/reprompt";
 import "./App.css";
 
@@ -34,6 +34,7 @@ function App() {
 
   useEffect(() => {
     const unlistenPromise = listen("vault-locked", () => {
+      if (isLockRedirectHeld()) return;
       setScreen("login");
       setUsername(null);
       clearRepromptGrace();
@@ -41,6 +42,17 @@ function App() {
     return () => {
       unlistenPromise.then((unlisten) => unlisten());
     };
+  }, []);
+
+  useEffect(() => {
+    function onSessionLocked() {
+      if (isLockRedirectHeld()) return;
+      setScreen("login");
+      setUsername(null);
+      clearRepromptGrace();
+    }
+    window.addEventListener(SESSION_LOCKED_EVENT, onSessionLocked);
+    return () => window.removeEventListener(SESSION_LOCKED_EVENT, onSessionLocked);
   }, []);
 
   let content;

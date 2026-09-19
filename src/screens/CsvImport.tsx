@@ -12,6 +12,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [records, setRecords] = useState<ImportRecordDto[] | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
   const [summary, setSummary] = useState<ImportSummaryDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -36,6 +37,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
       if (typeof picked !== "string") return;
       setPath(picked);
       setRecords(null);
+      setShowPreview(false);
       setSummary(null);
       setError(null);
       setHeaders([]);
@@ -67,6 +69,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
 
     setPath(file.name); // display label only - never sent to the server
     setRecords(null);
+    setShowPreview(false);
     setSummary(null);
     setError(null);
     setHeaders([]);
@@ -89,6 +92,7 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
     }
     setSource(next);
     setRecords(null);
+    setShowPreview(false);
     setSummary(null);
     setError(null);
     setHeaders([]);
@@ -119,19 +123,37 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
     return { format: "generic", mapping };
   }
 
-  async function handlePreview() {
-    // Desktop needs a real path; web mode only needs "a file has been uploaded", which `path`
-    // (the display label set on upload) already signals.
-    if (!path) return;
+  // Desktop needs a real path; web mode only needs "a file has been uploaded", which `path`
+  // (the display label set on upload) already signals. Returns null on failure.
+  // A newer request supersedes an older one, so rapid mapping changes cannot land out of order.
+  const previewSeq = useRef(0);
+  async function fetchRecords(format: ImportFormat = currentFormat()): Promise<ImportRecordDto[] | null> {
+    if (!path) return null;
+    const seq = ++previewSeq.current;
     setBusy(true);
     try {
       setError(null);
-      setRecords(await api.importCsvPreview(isTauri ? path : null, currentFormat()));
+      const next = await api.importCsvPreview(isTauri ? path : null, format);
+      if (seq === previewSeq.current) setRecords(next);
+      return next;
     } catch (err) {
-      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+      if (seq === previewSeq.current) {
+        setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+      }
+      return null;
     } finally {
-      setBusy(false);
+      if (seq === previewSeq.current) setBusy(false);
     }
+  }
+
+  // Toggle: hiding keeps parsed (and user-edited) records so showing again does not re-parse.
+  async function handlePreview() {
+    if (showPreview) {
+      setShowPreview(false);
+      return;
+    }
+    if (records === null && (await fetchRecords()) === null) return;
+    setShowPreview(true);
   }
 
   function updateRecord(index: number, field: keyof ImportRecordDto, value: string) {
@@ -142,11 +164,12 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
   }
 
   async function handleCommit() {
-    if (!records) return;
+    const toCommit = records ?? (await fetchRecords());
+    if (!toCommit) return;
     setBusy(true);
     try {
       setError(null);
-      setSummary(await api.importCsvCommit(records));
+      setSummary(await api.importCsvCommit(toCommit));
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -154,10 +177,13 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
     }
   }
 
+  // Only once a file is uploaded and, for "Other", at least one column is mapped to a field.
+  const canCommit = !!path && (source !== "generic" || Object.values(mapping).some((v) => v !== ""));
+
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] p-4">
       <Tooltip text="Back to vault">
-        <button onClick={handleBack} className="mb-4 underline text-sm"><Icon name="arrow-left" /> Back</button>
+        <button onClick={handleBack} className="mb-4 rounded bg-[var(--accent)] px-3 py-1"><Icon name="arrow-left" /> Back</button>
       </Tooltip>
       <h1 className="text-xl font-semibold mb-4">Import from CSV</h1>
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
@@ -205,9 +231,14 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
               <select
                 className="rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
                 value={mapping[h] ?? ""}
-                onChange={(e) =>
-                  setMapping((m) => ({ ...m, [h]: e.target.value }))
-                }
+                onChange={(e) => {
+                  const nextMapping = { ...mapping, [h]: e.target.value };
+                  setMapping(nextMapping);
+                  // Preview open: keep it open and re-parse live with the new mapping. Otherwise drop
+                  // any stale parsed rows so a later Preview/Commit re-parses.
+                  if (showPreview) void fetchRecords({ format: "generic", mapping: nextMapping });
+                  else setRecords(null);
+                }}
               >
                 <option value="">(ignore)</option>
                 {TARGET_FIELDS.map((f) => (
@@ -221,14 +252,21 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
 
       <Tooltip text="Parse the file without saving anything yet">
         <button onClick={handlePreview} disabled={!path || busy} className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
-          <Icon name="eye-fill" /> Preview
+          <Icon name={showPreview ? "eye-slash-fill" : "eye-fill"} /> {showPreview ? "Hide Preview" : "Preview"}
         </button>
       </Tooltip>
+      {canCommit && (
+        <Tooltip text="Insert these records into your vault">
+          <button onClick={handleCommit} disabled={busy} className="ml-2 rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
+            <Icon name="upload" /> Commit Import
+          </button>
+        </Tooltip>
+      )}
 
-      {records && (
-        <div className="mt-4 overflow-x-auto">
+      {showPreview && records && (
+        <div className="mt-4 max-h-96 overflow-auto rounded border border-[var(--border)]">
           <table className="w-full text-sm border-collapse">
-            <thead>
+            <thead className="sticky top-0 bg-[var(--surface)]">
               <tr>
                 {["Site", "URL", "Username", "Secret", "Remarks"].map((h) => (
                   <th key={h} className="text-left border-b px-2 py-1 border-[var(--border)]">{h}</th>
@@ -247,11 +285,6 @@ export function CsvImport({ onBack }: { onBack: () => void }) {
               ))}
             </tbody>
           </table>
-          <Tooltip text="Insert these records into your vault">
-            <button onClick={handleCommit} disabled={busy} className="mt-3 rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
-              <Icon name="upload" /> Commit Import
-            </button>
-          </Tooltip>
         </div>
       )}
     </div>

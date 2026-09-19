@@ -15,7 +15,7 @@ export function Generator({ onBack }: { onBack: () => void }) {
   return (
     <div className="flex-1 bg-[var(--bg)] text-[var(--fg)] p-4">
       <Tooltip text="Back to vault">
-        <button onClick={onBack} className="mb-4 underline text-sm"><Icon name="arrow-left" /> Back</button>
+        <button onClick={onBack} className="mb-4 rounded bg-[var(--accent)] px-3 py-1"><Icon name="arrow-left" /> Back</button>
       </Tooltip>
       <h1 className="text-xl font-semibold mb-4">Generator</h1>
       <div className="max-w-sm space-y-3">

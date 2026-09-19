@@ -38,7 +38,7 @@ export function SiteDetail({ siteId, onBack }: { siteId: number; onBack: () => v
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <div className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded bg-[var(--surface)] p-4 text-[var(--fg)]">
         <Tooltip text="Close">
-          <button onClick={onBack} className="mb-4 underline text-sm">
+          <button onClick={onBack} className="mb-4 rounded bg-[var(--accent)] px-3 py-1">
             <Icon name="x-lg" /> Close
           </button>
         </Tooltip>

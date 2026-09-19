@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
-import { api, isCommandError, isTauri, ExportMode } from "../lib/api";
+import { api, DownloadCancelled, isCommandError, isTauri, ExportMode } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 
@@ -8,6 +8,7 @@ const CONFIRM_PHRASE = "EXPORT PLAINTEXT";
 
 export function CsvExport({ onBack }: { onBack: () => void }) {
   const [mode, setMode] = useState<"thisDevice" | "withPassword" | "plaintext">("thisDevice");
+  const [masterPassword, setMasterPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [typedConfirm, setTypedConfirm] = useState("");
@@ -17,9 +18,24 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
 
   const passwordModeReady = mode !== "withPassword" || (password.length > 0 && password === confirmPassword);
   const plaintextModeReady = mode !== "plaintext" || typedConfirm === CONFIRM_PHRASE;
-  const canExport = passwordModeReady && plaintextModeReady && !busy;
+  const canExport = masterPassword.length > 0 && passwordModeReady && plaintextModeReady && !busy;
 
   async function handleExport() {
+    // Re-auth gate: exporting hands out every secret, so the master password is required in every
+    // mode, on desktop and web alike.
+    setError(null);
+    setStatus(null);
+    try {
+      if (!(await api.verifyMasterPassword(masterPassword))) {
+        setError("Incorrect master password.");
+        return;
+      }
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+      return;
+    }
+    setMasterPassword("");
+
     let target: string | null = null;
     if (isTauri) {
       const defaultName = mode === "plaintext" ? "vault-export.csv" : "vault-export.pwenc";
@@ -35,9 +51,16 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
         mode === "thisDevice" ? { mode: "thisDevice" } :
         mode === "withPassword" ? { mode: "withPassword", password } :
         { mode: "plaintext" };
-      await api.exportCsv(target, exportMode, mode === "plaintext");
-      setStatus(isTauri ? `Exported to ${target}` : "Export downloaded.");
+      const outcome = await api.exportCsv(target, exportMode, mode === "plaintext");
+      setStatus(
+        isTauri
+          ? `Exported to ${target}`
+          : outcome === "saved"
+            ? "Export saved."
+            : "Export download started - check your browser's downloads.",
+      );
     } catch (err) {
+      if (err instanceof DownloadCancelled) return; // user closed the save dialog
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
       setBusy(false);
@@ -47,11 +70,23 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] p-4">
       <Tooltip text="Back to vault">
-        <button onClick={onBack} className="mb-4 underline text-sm"><Icon name="arrow-left" /> Back</button>
+        <button onClick={onBack} className="mb-4 rounded bg-[var(--accent)] px-3 py-1"><Icon name="arrow-left" /> Back</button>
       </Tooltip>
       <h1 className="text-xl font-semibold mb-4">Export to CSV</h1>
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
       {status && <p className="text-sm text-green-400 mb-4">{status}</p>}
+
+      <div className="mb-4 max-w-xs">
+        <label className="block text-sm mb-1">Master password (required to export)</label>
+        <input
+          type="password"
+          autoComplete="current-password"
+          placeholder="Master password"
+          className="w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
+          value={masterPassword}
+          onChange={(e) => setMasterPassword(e.target.value)}
+        />
+      </div>
 
       <fieldset className="space-y-2 max-w-md">
         <label className="flex items-center gap-2">

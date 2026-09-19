@@ -10,6 +10,26 @@ export interface CommandError {
   message: string;
 }
 
+export const SESSION_LOCKED_EVENT = "pwmgr-session-locked";
+
+// A restore over the open vault locks the session by design (its file and key are replaced). The
+// Backup screen holds the login redirect so the user can read the outcome, then releases it.
+let lockRedirectHeld = false;
+export function isLockRedirectHeld(): boolean {
+  return lockRedirectHeld;
+}
+export function holdLockRedirect(): void {
+  lockRedirectHeld = true;
+}
+// `redirect` true: go to login now (session was locked). false: nothing locked, just stop holding.
+export function releaseLockRedirect(redirect: boolean): void {
+  lockRedirectHeld = false;
+  if (redirect) window.dispatchEvent(new Event(SESSION_LOCKED_EVENT));
+}
+
+// Commands that legitimately answer 401/locked without meaning "your session expired".
+const PUBLIC_COMMANDS = new Set(["get_config", "login", "register_user", "unlock_with_pin", "logout"]);
+
 export function isCommandError(e: unknown): e is CommandError {
   return typeof e === "object" && e !== null && "code" in e && "message" in e;
 }
@@ -157,6 +177,11 @@ async function fetchOk(command: string, init: RequestInit): Promise<Response> {
       await new Promise((r) => setTimeout(r, 1500));
       continue;
     }
+    if (err.code === "locked" && !PUBLIC_COMMANDS.has(command)) {
+      // Web mode has no `vault-locked` event: an expired/unknown session surfaces only as this 401,
+      // so tell App to drop back to the login screen (desktop gets the Tauri event instead).
+      window.dispatchEvent(new Event(SESSION_LOCKED_EVENT));
+    }
     throw err;
   }
 }
@@ -178,14 +203,36 @@ function call<T>(command: string, args: Record<string, unknown> = {}): Promise<T
   return isTauri ? invoke<T>(command, args) : httpPost<T>(command, args);
 }
 
-// Web-only: posts `args` like `httpPost`, but the response body is the file itself, not JSON. Reads
-// the filename off `content-disposition` (falling back to `fallbackName`), then drives the browser's
-// native download via a programmatic anchor click - no server-side path is ever involved (SEC-01).
+// Sentinel createBackup resolves with when the browser had no save dialog (plain download).
+export const DOWNLOADED = "downloaded";
+
+export class DownloadCancelled extends Error {}
+
+type SaveHandle = { createWritable: () => Promise<{ write: (b: Blob) => Promise<void>; close: () => Promise<void> }> };
+type SavePicker = (o: { suggestedName: string }) => Promise<SaveHandle>;
+
+// Web-only: posts `args` like `httpPost`, but the response body is the file itself, not JSON. Where
+// the browser has a real "Save as" dialog (Chromium's File System Access API) it is opened FIRST,
+// inside the user's click, so the user picks the location before anything is produced and nothing
+// is reported as saved unless the write actually happened. Elsewhere it falls back to a plain
+// browser download. Resolves "saved" (written to the chosen file) or "downloaded" (handed to the
+// browser, whose own settings decide where it goes). Cancelling the dialog throws DownloadCancelled.
 async function httpDownload(
   command: string,
   args: Record<string, unknown>,
   fallbackName: string,
-): Promise<void> {
+): Promise<"saved" | "downloaded"> {
+  const picker = (window as unknown as { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
+  let handle: SaveHandle | null = null;
+  if (picker) {
+    try {
+      handle = await picker.call(window, { suggestedName: fallbackName });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") throw new DownloadCancelled();
+      // Picker unavailable in this context: fall through to the plain download.
+    }
+  }
+
   const res = await fetchOk(command, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-PWMGR-CSRF": "1" },
@@ -195,8 +242,15 @@ async function httpDownload(
   const disposition = res.headers.get("content-disposition");
   const match = disposition ? /filename="?([^";]+)"?/.exec(disposition) : null;
   const filename = match?.[1] ?? fallbackName;
-
   const blob = await res.blob();
+
+  if (handle) {
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return "saved";
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -205,6 +259,7 @@ async function httpDownload(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+  return "downloaded";
 }
 
 // Web-only: posts a raw file body (not JSON) to a session-scoped upload endpoint - the file's bytes
@@ -294,8 +349,14 @@ export const api = {
   // No HTTP endpoint for clipboard - the browser has its own API. Desktop keeps the Tauri command.
   copyToClipboard: (text: string) =>
     isTauri ? invoke<void>("copy_to_clipboard", { text }) : webCopyToClipboard(text),
-  createBackup: (destinationPath: string | null = null) =>
-    call<string>("create_backup", { destinationPath }),
+  // Desktop writes to the path from the native save dialog; web downloads the bytes (save picker
+  // where the browser supports it) and resolves to the file name instead of a server path.
+  createBackup: async (destinationPath: string | null = null): Promise<string> => {
+    if (isTauri) return invoke<string>("create_backup", { destinationPath });
+    return (await httpDownload("create_backup_download", {}, "vault-backup.bak")) === "saved"
+      ? ""
+      : DOWNLOADED;
+  },
   // Desktop names a path from the native open dialog (D-02); web restores the bytes uploaded first
   // via `uploadBackup` and never names a server path (D-05).
   restoreBackup: (path: string | null, confirmed: boolean) =>
