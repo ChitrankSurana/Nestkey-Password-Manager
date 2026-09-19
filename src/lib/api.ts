@@ -302,8 +302,11 @@ export const api = {
     isTauri ? invoke<void>("copy_to_clipboard", { text }) : webCopyToClipboard(text),
   createBackup: (destinationPath: string | null = null) =>
     call<string>("create_backup", { destinationPath }),
-  restoreBackup: (path: string, confirmed: boolean) =>
-    call<void>("restore_backup", { path, confirmed }),
+  // Desktop names a path from the native open dialog (D-02); web restores the bytes uploaded first
+  // via `uploadBackup` and never names a server path (D-05).
+  restoreBackup: (path: string | null, confirmed: boolean) =>
+    isTauri ? invoke<void>("restore_backup", { path, confirmed }) : httpPost<void>("restore_backup", { confirmed }),
+  uploadBackup: (file: File) => httpUpload("upload_backup", file),
   // Desktop and web legitimately diverge here (D-02): desktop still names a path from the native
   // save dialog; web mode never names a destination and instead downloads the bytes directly.
   exportCsv: (path: string | null, mode: ExportMode, confirmed: boolean) =>

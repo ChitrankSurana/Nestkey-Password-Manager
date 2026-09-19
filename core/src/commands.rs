@@ -635,7 +635,17 @@ pub fn do_restore_backup(
 ) -> Result<(), CommandError> {
     let bytes = std::fs::read(backup_file_path)
         .map_err(|_| crate::error::invalid_input_error("Could not read that backup file."))?;
-    let (user_record, vault_bytes) = crate::backup::decode_bundle(&bytes)
+    do_restore_backup_from_bytes(state, paths, &bytes, confirmed)
+}
+
+/// Path-free restore (SEC-01/D-05): the web handler feeds it the bytes the browser uploaded.
+pub fn do_restore_backup_from_bytes(
+    state: &AppState,
+    paths: &AppPaths,
+    bytes: &[u8],
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    let (user_record, vault_bytes) = crate::backup::decode_bundle(bytes)
         .map_err(|_| crate::error::invalid_input_error("That file isn't a valid backup."))?;
 
     let vault_path = paths.vault_path(&user_record.username);

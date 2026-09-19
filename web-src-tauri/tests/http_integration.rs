@@ -971,3 +971,144 @@ async fn an_oversized_upload_is_rejected() {
         res.status()
     );
 }
+
+async fn register_as(client: &reqwest::Client, base: &str, name: &str) {
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":name,"masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+}
+
+/// Creates a backup of the logged-in vault over HTTP and returns the bundle bytes.
+async fn backup_bytes(client: &reqwest::Client, base: &str) -> Vec<u8> {
+    let res = client
+        .post(format!("{base}/api/create_backup"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    let path: String = res.json().await.unwrap();
+    std::fs::read(path).unwrap()
+}
+
+async fn upload_backup(client: &reqwest::Client, base: &str, bytes: Vec<u8>) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/upload_backup"))
+        .header("x-pwmgr-csrf", "1")
+        .body(bytes)
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn restore(client: &reqwest::Client, base: &str, confirmed: bool) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/restore_backup"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"confirmed": confirmed}))
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn backup_upload_then_restore_roundtrips_over_http() {
+    let (base, dir) = spawn_server().await;
+    let paths = AppPaths::new(dir.path().to_path_buf());
+    let alice = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    register_as(&alice, &base, "alice").await;
+    let bytes = backup_bytes(&alice, &base).await;
+    alice.post(format!("{base}/api/logout")).header("x-pwmgr-csrf", "1").json(&serde_json::json!({})).send().await.unwrap();
+
+    // Drop alice's vault, then restore it from the upload as another logged-in user.
+    std::fs::remove_file(paths.vault_path("alice")).unwrap();
+    let bob = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    register_as(&bob, &base, "bob").await;
+    assert_eq!(upload_backup(&bob, &base, bytes).await.status(), 200);
+    // confirmed=true: the registry row for alice still exists even though the file is gone.
+    assert_eq!(restore(&bob, &base, true).await.status(), 200);
+    assert!(paths.vault_path("alice").exists(), "restored vault file should exist");
+}
+
+#[tokio::test]
+async fn restore_backup_without_an_upload_is_rejected() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    register_as(&client, &base, "alice").await;
+    let res = restore(&client, &base, false).await;
+    assert_eq!(res.status(), 400);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+}
+
+#[tokio::test]
+async fn restore_backup_rejects_a_non_backup_upload() {
+    let (base, dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    register_as(&client, &base, "alice").await;
+    let vault_dir = AppPaths::new(dir.path().to_path_buf()).vault_path("alice").parent().unwrap().to_path_buf();
+    let before = std::fs::read_dir(&vault_dir).unwrap().count();
+    assert_eq!(upload_backup(&client, &base, b"not a backup".to_vec()).await.status(), 200);
+    let res = restore(&client, &base, true).await;
+    assert_eq!(res.status(), 400);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+    assert_eq!(std::fs::read_dir(&vault_dir).unwrap().count(), before, "no vault file created");
+}
+
+#[tokio::test]
+async fn upload_backup_without_a_session_is_unauthorized() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::new();
+    assert_eq!(upload_backup(&client, &base, vec![1, 2, 3]).await.status(), 401);
+}
+
+#[tokio::test]
+async fn restore_backup_confirm_roundtrip_reuses_the_single_upload() {
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+    register_as(&client, &base, "alice").await;
+    let bytes = backup_bytes(&client, &base).await;
+    client.post(format!("{base}/api/logout")).header("x-pwmgr-csrf", "1").json(&serde_json::json!({})).send().await.unwrap();
+    // A different logged-in user restores alice's backup over her existing (closed) vault; the
+    // acting session stays unlocked so the post-success cache state is observable.
+    register_as(&client, &base, "bob").await;
+
+    assert_eq!(upload_backup(&client, &base, bytes).await.status(), 200);
+    let res = restore(&client, &base, false).await;
+    assert_eq!(res.status(), 409);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "confirm_required");
+
+    // No second upload: the cache survived the confirm_required.
+    assert_eq!(restore(&client, &base, true).await.status(), 200);
+
+    // Cache cleared on success.
+    let res = restore(&client, &base, true).await;
+    assert_eq!(res.status(), 400);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_input");
+}
+
+#[test]
+fn no_web_handler_accepts_a_client_supplied_destination() {
+    // Guards SECURITY_CONCERNS.md H1: none of the four named handlers may take a client-supplied path.
+    let src: String = include_str!("../src/handlers.rs")
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for ty in ["ExportCsvRequest", "RestoreBackupRequest", "ImportCsvPreviewRequest"] {
+        let start = src.find(&format!("struct {ty} {{")).unwrap_or_else(|| panic!("{ty} missing"));
+        let body = &src[start..start + src[start..].find('}').unwrap()];
+        assert!(!body.contains("path"), "SECURITY_CONCERNS.md H1: {ty} must not carry a path field");
+    }
+    assert!(
+        !src.contains("ReadCsvHeadersRequest"),
+        "SECURITY_CONCERNS.md H1: ReadCsvHeadersRequest must not exist"
+    );
+}

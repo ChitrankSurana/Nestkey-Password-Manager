@@ -203,7 +203,6 @@ struct AnalyzeStrengthRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RestoreBackupRequest {
-    path: String,
     confirmed: bool,
 }
 
@@ -597,8 +596,19 @@ async fn restore_backup(
     State(ctx): State<AppContext>,
     Json(b): Json<RestoreBackupRequest>,
 ) -> Result<StatusCode, ApiError> {
-    do_restore_backup(&s.app_state, &ctx.paths, &b.path, b.confirmed)?;
+    // SEC-01/D-05: bytes come from the session's upload cache, never a client-named path. The cache
+    // survives `confirm_required` so the confirmed retry needs no re-upload.
+    let bytes = s
+        .backup_upload()
+        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No backup file uploaded yet."))?;
+    do_restore_backup_from_bytes(&s.app_state, &ctx.paths, &bytes, b.confirmed)?;
+    s.clear_upload();
     Ok(StatusCode::OK)
+}
+
+async fn upload_backup(Extension(s): Extension<Arc<UserSession>>, body: Bytes) -> StatusCode {
+    s.set_upload(UploadCache::Backup(Zeroizing::new(body.to_vec())));
+    StatusCode::OK
 }
 
 // Returns the export bytes directly in the response body (SEC-01/D-01) - this handler performs no
@@ -738,6 +748,10 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route(
             "/api/upload_csv",
             post(upload_csv).layer(axum::extract::DefaultBodyLimit::max(UPLOAD_BODY_LIMIT)),
+        )
+        .route(
+            "/api/upload_backup",
+            post(upload_backup).layer(axum::extract::DefaultBodyLimit::max(UPLOAD_BODY_LIMIT)),
         )
         .route("/api/read_csv_headers", post(read_csv_headers))
         .route("/api/import_csv_preview", post(import_csv_preview))

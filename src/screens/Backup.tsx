@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, isCommandError, isTauri } from "../lib/api";
 import { confirmDialog } from "../lib/confirm";
@@ -9,6 +9,7 @@ export function Backup({ onBack }: { onBack: () => void }) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   async function handleCreate() {
     let target: string | null = null;
@@ -33,14 +34,23 @@ export function Backup({ onBack }: { onBack: () => void }) {
     }
   }
 
+  // Desktop: native open dialog gives a path. Web: the hidden file input hands us a File to upload.
   async function handleRestore() {
-    const picked = await open({ multiple: false, filters: [{ name: "Backup", extensions: ["bak"] }] });
-    if (typeof picked !== "string") return; // cancelled
+    if (isTauri) {
+      const picked = await open({ multiple: false, filters: [{ name: "Backup", extensions: ["bak"] }] });
+      if (typeof picked !== "string") return; // cancelled
+      await runRestore(picked);
+    } else {
+      fileInput.current?.click();
+    }
+  }
 
+  async function runRestore(picked: string | null, file?: File) {
     setBusy(true);
     setError(null);
     setStatus(null);
     try {
+      if (file) await api.uploadBackup(file);
       await api.restoreBackup(picked, false);
       setStatus("Backup restored. Log in with that account's master password.");
     } catch (err) {
@@ -69,6 +79,17 @@ export function Backup({ onBack }: { onBack: () => void }) {
       <h1 className="text-xl font-semibold mb-4">Backup</h1>
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
       {status && <p className="text-sm text-green-400 mb-4">{status}</p>}
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".bak"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) void runRestore(null, f);
+        }}
+      />
       <div className="space-x-2">
         <Tooltip text="Write an encrypted backup of this vault - you'll be asked where to save it">
           <button onClick={handleCreate} disabled={busy} className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50">
