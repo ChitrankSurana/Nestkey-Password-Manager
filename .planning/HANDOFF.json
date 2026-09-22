@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-22T16:48:35.978Z",
+  "phase": null,
+  "phase_name": "Modern UI Overhaul (Make variant) - not a GSD phase; ad-hoc on feature/modern-ui-overhaul",
+  "phase_dir": null,
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": "plan-steps-1-10", "name": "All 10 sequencing steps of docs/Plans/Modern_UI_Overhaul_Plan_2026-09-22_0019.md", "status": "done", "commit": "5efd40b (and a383a75, c248b0f, 4d623c6 before it)"},
+    {"id": "csv-warning", "name": "CSV export gap warning (plan's own 'document this in the export UI' instruction, line 140)", "status": "done", "commit": "d1eb2bf"},
+    {"id": "trash-architecture", "name": "Trash rebuilt as native src/makeui/components/TrashView.tsx (section view, not a reused Classic full-width page - matches Figma's actual pattern)", "status": "done", "commit": "d1eb2bf"}
+  ],
+  "remaining_tasks": [
+    {"id": "restyle-4-screens", "name": "Restyle Health Dashboard, Password Generator, Data Hub, Settings onto mk-* tokens/Figma markup (App.tsx:946/1121/1303/1523) - currently reused Classic screens, functionally fine, visually a clean miss vs Figma. ~2000 lines across 9 files (HealthDashboard.tsx 162, Generator.tsx 35 + PasswordGeneratorPanel.tsx 221, Data.tsx 54 + Backup.tsx 142 + CsvExport.tsx 157 + CsvImport.tsx 292, Settings.tsx 838). User explicitly chose 'do it now, all 5' when asked - Trash (the 5th) is already done.", "status": "not_started"},
+    {"id": "tauri-dev-check", "name": "Desktop launch verification (npm run tauri:dev, ui_variant: make) - never manually tested this session (all QA was web-mode via pwmgr-web + Playwright, no interactive browser tool connected). I can confirm the process launches without crashing and that the Rust boot-routing logic is correct (already read/tested), but CANNOT visually confirm the native WebView2 window's rendered content - no devtools bridge wired up, no window-automation tool available. Needs either the user looking at their own screen, or scoping down to process-launch-only proof.", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "Context budget hit ~65-66% used mid-session; stopped before starting the 4-screen restyle (a task of comparable size to everything done across steps 6-9 today) rather than risk running out of context mid-file with broken/half-ported markup left behind.", "type": "technical", "workaround": "Resume in a fresh session/context window for the restyle work specifically."}
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "Decide how deep the tauri:dev check should go, given the visual-confirmation limit (no window-automation tool)", "context": "Can prove process launches + routing logic is correct; cannot prove the window renders correctly without the user's own eyes on it", "blocking": false},
+    {"action": "Review/delete docs/make-ui-capture/ (29 screenshots from step 10's visual diff pass) - deliberately left uncommitted as throwaway QA artifacts with fake sample data", "context": "Not tracked by git; safe to delete whenever, or keep for reference", "blocking": false},
+    {"action": "A few orphaned registry.db rows exist for throwaway screenshot-test usernames (vault files already deleted, so these can never successfully log in)", "context": "Harmless dead entries; not cleaned up, no tool available to safely edit registry.db without a custom script", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Trash rebuilt as a native component (TrashView.tsx) rather than restyled from Classic's Trash.tsx", "rationale": "Figma prototype has no separate Trash page at all (App.tsx:705-715,2203) - it's a filter on the normal list/detail chrome. Classic's Trash.tsx is architecturally a full-width page, so restyling it in place would preserve the wrong shape. TrashView can't literally reuse ItemList/DetailPanel either since listSites excludes every trashed row while list_trash returns its own credential-level DTO shape - built as a second, smaller list+detail pair in the same visual language instead.", "phase": "n/a"},
+    {"decision": "Per-item permanent delete not added to Trash", "rationale": "Backend only has bulk purge_trash (no purge_one_credential command); adding one would be new backend scope beyond 'restyle/fix the architecture', which is out of bounds for this round", "phase": "n/a"},
+    {"decision": "Full restyle scope confirmed 'do it now, all 5' by explicit user choice via AskUserQuestion, before hitting the context wall", "rationale": "User was given the honest size estimate (~2000 lines, comparable to steps 6-9) and chose the full option anyway", "phase": "n/a"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Read docs/Plans/Modern_UI_Overhaul_Plan_2026-09-22_0019.md's Figma line references (App.tsx:946 Health, :1121 Generator, :1303 Data Hub, :1523 Settings), then port each screen's markup onto the mk-* tokens the same way DetailPanel/Sidebar/ItemList were ported in steps 6-9 - real data via the same api.ts calls the Classic screens already use, restyle only. Settings.tsx (838 lines) is the largest single piece; consider doing it last or splitting into its own sub-session. After all 4, re-run the step-10-style Playwright capture to confirm visual fidelity, same as before.",
+  "context_notes": "Working tree is fully clean and committed (d1eb2bf) except the deliberately-uncommitted docs/make-ui-capture/ screenshots. All 10 original plan steps are done and closed - everything from here is user-requested follow-on work discovered by asking 'what's left from the plan', not gaps in the original 10-step scope. Caveman+ponytail response style active in session; docs/commits stay normal prose. User wants explanations before implementation on non-trivial items - the CSV+Trash explanation-then-build pattern from this session should be repeated for the restyle work too, given its size."
+}
