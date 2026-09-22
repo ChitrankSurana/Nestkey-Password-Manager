@@ -13,11 +13,16 @@ export function ItemList({
   section,
   onAdd,
   onSelect,
+  className = "flex w-[280px]",
 }: {
   vault: ReturnType<typeof useMakeVault>;
   section: Section;
   onAdd: () => void;
   onSelect: (siteId: number) => void;
+  /** Display + width classes only (B3-8) - MakeApp is the sole breakpoint owner, mirroring
+   * src/newui/components/ItemList.tsx's own className prop, so this component never branches on
+   * viewport width itself. Defaults to today's always-visible fixed width. */
+  className?: string;
 }) {
   const { visibleSites, folders, query, setQuery, results, error, selectedSiteId, sitesLoading } = vault;
   const filtered = sitesForSection(visibleSites, section);
@@ -26,7 +31,7 @@ export function ItemList({
   const empty = !showLoading && filtered.length === 0 ? listEmptyState(results === null ? "browse" : "search") : null;
 
   return (
-    <div className="w-[280px] flex-shrink-0 flex flex-col h-full bg-mk-panel border-r border-mk-border">
+    <div className={`${className} min-h-0 flex-shrink-0 flex-col h-full bg-mk-panel border-r border-mk-border`}>
       <div className="h-14 px-3 flex items-center justify-between border-b border-mk-border">
         <h2 className="text-sm font-semibold text-mk-fg">{sectionLabel(section, folders)}</h2>
         <div className="flex items-center gap-1">

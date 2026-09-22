@@ -1,5 +1,6 @@
 import { useState, type ComponentType } from "react";
-import type { SiteDto, FolderDto } from "../../lib/api";
+import { api, isCommandError, type SiteDto, type FolderDto } from "../../lib/api";
+import { confirmDialog } from "../../lib/confirm";
 import {
   IconActivity,
   IconCard,
@@ -11,6 +12,7 @@ import {
   IconMoon,
   IconNote,
   IconPerson,
+  IconPlus,
   IconSettings,
   IconShield,
   IconStar,
@@ -23,6 +25,106 @@ import type { Section } from "../lib/vaultSelectors";
 
 export type NavTarget = Section | "health" | "generator" | "data" | "trash" | "settings";
 
+// One folder row: click navigates like any other nav item, hover reveals Rename/Delete (B3-9 gap
+// surface - the prototype's own Folders list is fixed with no CRUD UI at all, so this has no
+// direct Figma reference; kept in the same visual language as navItem). Rename edits in place via
+// a plain input (Enter/blur commits, Escape cancels) rather than a modal - one folder, one small
+// change, doesn't need drawer-weight chrome. Delete unfiles rather than deletes its sites
+// (do_delete_folder's own contract), so both callbacks refresh sites too, not just folders.
+function FolderRow({
+  folder,
+  active,
+  onSelect,
+  onChanged,
+}: {
+  folder: FolderDto;
+  active: boolean;
+  onSelect: () => void;
+  onChanged: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [nameInput, setNameInput] = useState(folder.name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function commitRename() {
+    const trimmed = nameInput.trim();
+    if (trimmed === "" || trimmed === folder.name) {
+      setEditing(false);
+      setNameInput(folder.name);
+      return;
+    }
+    setBusy(true);
+    try {
+      setError(null);
+      await api.renameFolder(folder.id, trimmed);
+      setEditing(false);
+      onChanged();
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Couldn't rename folder.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!(await confirmDialog(`Delete folder "${folder.name}"? Its items will be unfiled, not deleted.`))) return;
+    setBusy(true);
+    try {
+      setError(null);
+      await api.deleteFolder(folder.id);
+      onChanged();
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Couldn't delete folder.");
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={nameInput}
+        disabled={busy}
+        onChange={(e) => setNameInput(e.target.value)}
+        onBlur={commitRename}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commitRename();
+          if (e.key === "Escape") {
+            setEditing(false);
+            setNameInput(folder.name);
+          }
+        }}
+        className="w-full px-3 py-1.5 text-sm rounded-lg bg-mk-input border border-mk-accent text-mk-fg focus:outline-none"
+      />
+    );
+  }
+
+  return (
+    <div>
+      <div
+        className={`group w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors duration-150 ${
+          active ? "bg-mk-accent-muted text-mk-accent-light" : "text-mk-muted hover:bg-mk-hover hover:text-mk-fg2"
+        }`}
+      >
+        <button onClick={onSelect} className="flex-1 flex items-center gap-2.5 min-w-0 text-left">
+          <IconFolder size={15} />
+          <span className="truncate">{folder.name}</span>
+        </button>
+        <div className="hidden group-hover:flex items-center gap-2 flex-shrink-0">
+          <button onClick={() => setEditing(true)} title="Rename folder" className="text-[10px] hover:text-mk-fg2">
+            Rename
+          </button>
+          <button onClick={handleDelete} title="Delete folder" className="hover:text-mk-red">
+            <IconTrash size={11} />
+          </button>
+        </div>
+      </div>
+      {error && <p className="px-3 text-[10px] text-mk-red">{error}</p>}
+    </div>
+  );
+}
+
 // Ported from figma-make/src/App.tsx:438-560 (Sidebar) onto real data: counts come from the
 // fetched site list (no VAULT_ITEMS mock), folders are the real per-vault list from useMakeVault
 // (no hardcoded FOLDERS array), and theme/lock use the real api - src/newui/hooks/useVault.ts has
@@ -32,6 +134,7 @@ export function Sidebar({
   onNavigate,
   sites,
   folders,
+  onFoldersChanged,
   dark,
   onToggleTheme,
   onLock,
@@ -40,11 +143,32 @@ export function Sidebar({
   onNavigate: (target: NavTarget) => void;
   sites: SiteDto[];
   folders: FolderDto[];
+  onFoldersChanged: () => void;
   dark: boolean;
   onToggleTheme: () => void;
   onLock: () => void;
 }) {
   const [foldersOpen, setFoldersOpen] = useState(false);
+  const [addingFolder, setAddingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
+
+  async function commitAddFolder() {
+    const trimmed = newFolderName.trim();
+    if (trimmed === "") {
+      setAddingFolder(false);
+      return;
+    }
+    try {
+      setAddError(null);
+      await api.addFolder(trimmed);
+      setNewFolderName("");
+      setAddingFolder(false);
+      onFoldersChanged();
+    } catch (err) {
+      setAddError(isCommandError(err) ? err.message : "Couldn't add folder.");
+    }
+  }
 
   const live = sites; // trash is not modeled as a site state here - soft-deleted sites drop out of listSites
   const counts = {
@@ -109,17 +233,48 @@ export function Sidebar({
         {navItem("identities", "Identities", IconPerson, counts.identity)}
 
         <div className="pt-2">
-          <button
-            onClick={() => setFoldersOpen(!foldersOpen)}
-            className="w-full flex items-center gap-2 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-widest text-mk-label transition-colors"
-          >
-            <IconChevron size={10} className={`transition-transform duration-200 ${foldersOpen ? "rotate-90" : ""}`} />
-            Folders
-          </button>
+          <div className="flex items-center justify-between px-2 py-1">
+            <button
+              onClick={() => setFoldersOpen(!foldersOpen)}
+              className="flex items-center gap-2 rounded text-[10px] font-semibold uppercase tracking-widest text-mk-label transition-colors"
+            >
+              <IconChevron size={10} className={`transition-transform duration-200 ${foldersOpen ? "rotate-90" : ""}`} />
+              Folders
+            </button>
+            <button onClick={() => { setFoldersOpen(true); setAddingFolder(true); }} title="Add folder" className="text-mk-faint hover:text-mk-fg2">
+              <IconPlus size={11} />
+            </button>
+          </div>
           {foldersOpen && (
             <div className="mt-0.5 space-y-0.5">
-              {folders.length === 0 && <p className="px-3 py-1 text-xs text-mk-faint">No folders yet</p>}
-              {folders.map((f) => navItem(`folder:${f.id}`, f.name, IconFolder))}
+              {addingFolder && (
+                <input
+                  autoFocus
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onBlur={commitAddFolder}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitAddFolder();
+                    if (e.key === "Escape") {
+                      setAddingFolder(false);
+                      setNewFolderName("");
+                    }
+                  }}
+                  placeholder="Folder name"
+                  className="w-full px-3 py-1.5 text-sm rounded-lg bg-mk-input border border-mk-accent text-mk-fg focus:outline-none"
+                />
+              )}
+              {addError && <p className="px-3 text-[10px] text-mk-red">{addError}</p>}
+              {!addingFolder && folders.length === 0 && <p className="px-3 py-1 text-xs text-mk-faint">No folders yet</p>}
+              {folders.map((f) => (
+                <FolderRow
+                  key={f.id}
+                  folder={f}
+                  active={active === `folder:${f.id}`}
+                  onSelect={() => onNavigate(`folder:${f.id}`)}
+                  onChanged={onFoldersChanged}
+                />
+              ))}
             </div>
           )}
         </div>

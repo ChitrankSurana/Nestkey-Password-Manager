@@ -27,6 +27,7 @@ export function DetailPanel({
   onOpenHealth,
   onSiteDeleted,
   onFavoriteToggled,
+  onBack,
 }: {
   site: SiteDto | null;
   folders: FolderDto[];
@@ -40,6 +41,9 @@ export function DetailPanel({
   onOpenHealth: () => void;
   onSiteDeleted: () => void;
   onFavoriteToggled: () => void;
+  /** Below md: (B3-8), the detail column is the only thing on screen - this is its way back to
+   * the list. Meaningless at md: and up, where both panes are already visible side by side. */
+  onBack: () => void;
 }) {
   const [othersOpen, setOthersOpen] = useState(false);
   const [expandedOthers, setExpandedOthers] = useState<Set<number>>(new Set());
@@ -210,6 +214,9 @@ export function DetailPanel({
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-mk-base">
       <div className="h-14 px-5 flex items-center justify-between flex-shrink-0 border-b border-mk-border">
         <div className="flex items-center gap-3 min-w-0">
+          <button onClick={onBack} className="md:hidden -ml-1 mr-1 p-1 rounded-lg text-mk-muted hover:bg-mk-hover flex-shrink-0" title="Back to your vault">
+            <IconChevron size={16} style={{ transform: "rotate(180deg)" }} />
+          </button>
           <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${cfg.bg}`}>
             <Icon size={16} className={cfg.fg} />
           </div>

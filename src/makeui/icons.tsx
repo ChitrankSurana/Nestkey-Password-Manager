@@ -93,3 +93,12 @@ export function IconPalette({ size = 16, className = "", style }: IconProps) {
 export function IconMonitor({ size = 16, className = "", style }: IconProps) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}><rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>;
 }
+// Not in the original 30 - the prototype has no responsive/mobile chrome at all (App.tsx:479,616
+// are fixed widths), so a mobile sidebar toggle has no direct source to port. Same drawing
+// convention as every icon above (24x24, stroke-based) so it doesn't stand out as foreign (B3-8).
+export function IconMenu({ size = 16, className = "", style }: IconProps) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>;
+}
+export function IconX({ size = 16, className = "", style }: IconProps) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>;
+}
