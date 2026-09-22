@@ -7,7 +7,7 @@ pub const VALID_STRENGTH_ALGORITHMS: [&str; 2] = ["simple", "zxcvbn"];
 pub const VALID_ACCENT_COLORS: [&str; 5] = ["indigo", "sky", "teal", "purple", "pink"];
 pub const VALID_OLD_PASSWORD_DAYS: [u32; 3] = [90, 180, 365];
 pub const VALID_MOBILE_NAV_STYLES: [&str; 3] = ["icon-rail", "bottom-tabs", "drawer"];
-pub const VALID_UI_VARIANTS: [&str; 2] = ["classic", "new"];
+pub const VALID_UI_VARIANTS: [&str; 3] = ["classic", "new", "make"];
 // Exact camelCase spellings the UAT's locked decision names and the frontend compares against
 // directly - keeping one spelling end to end avoids a translation layer.
 pub const VALID_REPROMPT_MODES: [&str; 2] = ["perCredential", "global"];
@@ -100,7 +100,8 @@ pub struct Config {
     #[serde(default = "default_ssh_agent_enabled")]
     pub ssh_agent_enabled: bool,
     // Selects which frontend entry the desktop window builds from at boot (Phase 8, D-02/D-03):
-    // "classic" -> index.html (today's UI, unchanged), "new" -> newui.html (Figma port). Read
+    // "classic" -> index.html (today's UI, unchanged), "new" -> newui.html (Figma port), "make" ->
+    // makeui.html (Figma Make port). Read
     // once at startup in src-tauri/src/lib.rs, applied on next launch after a Settings change.
     #[serde(default = "default_ui_variant")]
     pub ui_variant: String,
@@ -441,6 +442,18 @@ mod tests {
         let loaded = Config::load(&path).unwrap();
 
         assert_eq!(loaded.ui_variant, "new");
+    }
+
+    #[test]
+    fn save_then_load_roundtrips_make_ui_variant() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let config = Config { ui_variant: "make".to_string(), ..Config::default() };
+
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+
+        assert_eq!(loaded.ui_variant, "make");
     }
 
     #[test]

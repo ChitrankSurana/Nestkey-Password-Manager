@@ -15,11 +15,33 @@ pub struct SiteDto {
     pub name: String,
     pub url: Option<String>,
     pub notes: Option<String>,
+    pub favorite: bool,
+    pub folder_id: Option<i64>,
+    pub item_type: String,
+    pub card_brand: Option<String>,
+    pub card_last4: Option<String>,
 }
 
 impl From<Site> for SiteDto {
     fn from(s: Site) -> Self {
-        SiteDto { id: s.id, name: s.name, url: s.url, notes: s.notes }
+        SiteDto {
+            id: s.id, name: s.name, url: s.url, notes: s.notes,
+            favorite: s.favorite, folder_id: s.folder_id, item_type: s.item_type,
+            card_brand: s.card_brand, card_last4: s.card_last4,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderDto {
+    pub id: i64,
+    pub name: String,
+}
+
+impl From<crate::vault::Folder> for FolderDto {
+    fn from(f: crate::vault::Folder) -> Self {
+        FolderDto { id: f.id, name: f.name }
     }
 }
 
@@ -155,6 +177,26 @@ pub struct TrashedCredentialDto {
     pub site_name: String,
     pub username: Option<String>,
     pub deleted_at: String,
+    pub item_type: String,
+}
+
+#[derive(Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryEntryDto {
+    pub secret: Zeroizing<String>,
+    pub changed_at: String,
+}
+
+impl std::fmt::Debug for HistoryEntryDto {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HistoryEntryDto").field("secret", &"<redacted>").field("changed_at", &self.changed_at).finish()
+    }
+}
+
+impl From<crate::vault::HistoryEntry> for HistoryEntryDto {
+    fn from(h: crate::vault::HistoryEntry) -> Self {
+        HistoryEntryDto { secret: Zeroizing::new(h.secret), changed_at: h.changed_at }
+    }
 }
 
 impl From<TrashedCredential> for TrashedCredentialDto {
@@ -165,6 +207,7 @@ impl From<TrashedCredential> for TrashedCredentialDto {
             site_name: t.site_name,
             username: t.username,
             deleted_at: t.deleted_at,
+            item_type: t.item_type,
         }
     }
 }
@@ -321,8 +364,14 @@ mod tests {
 
     #[test]
     fn site_dto_from_core_site_maps_all_fields() {
-        let site = Site { id: 1, name: "example.com".into(), url: Some("https://example.com".into()), notes: None };
+        let site = Site {
+            id: 1, name: "example.com".into(), url: Some("https://example.com".into()), notes: None,
+            favorite: true, folder_id: Some(7), item_type: "card".into(),
+            card_brand: Some("Visa".into()), card_last4: Some("3921".into()),
+        };
         let dto = SiteDto::from(site);
+        assert_eq!((dto.favorite, dto.folder_id, dto.item_type.as_str()), (true, Some(7), "card"));
+        assert_eq!((dto.card_brand.as_deref(), dto.card_last4.as_deref()), (Some("Visa"), Some("3921")));
         assert_eq!(dto.id, 1);
         assert_eq!(dto.name, "example.com");
         assert_eq!(dto.url.as_deref(), Some("https://example.com"));

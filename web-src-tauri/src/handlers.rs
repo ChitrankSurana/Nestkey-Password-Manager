@@ -9,7 +9,7 @@ use axum::{Extension, Json, Router};
 use pwmgr_core::commands::*;
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
-    HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
+    FolderDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
 use crate::kdf_guard::KdfGuard;
@@ -118,8 +118,63 @@ struct SiteIdRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetFavoriteRequest {
+    site_id: i64,
+    favorite: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetItemTypeRequest {
+    site_id: i64,
+    item_type: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetCardHintRequest {
+    site_id: i64,
+    brand: Option<String>,
+    last4: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetSiteFolderRequest {
+    site_id: i64,
+    folder_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FolderNameRequest {
+    name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameFolderRequest {
+    folder_id: i64,
+    name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FolderIdRequest {
+    folder_id: i64,
+}
+
+#[derive(Deserialize)]
 struct SearchRequest {
     query: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangeMasterPasswordRequest {
+    current_password: String,
+    new_password: String,
 }
 
 #[derive(Deserialize)]
@@ -446,6 +501,65 @@ async fn soft_delete_site(
     Ok(StatusCode::OK)
 }
 
+async fn set_site_favorite(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetFavoriteRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_site_favorite(&s.app_state, b.site_id, b.favorite)?;
+    Ok(StatusCode::OK)
+}
+
+async fn set_site_item_type(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetItemTypeRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_site_item_type(&s.app_state, b.site_id, &b.item_type)?;
+    Ok(StatusCode::OK)
+}
+
+async fn set_site_card_hint(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetCardHintRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_site_card_hint(&s.app_state, b.site_id, b.brand.as_deref(), b.last4.as_deref())?;
+    Ok(StatusCode::OK)
+}
+
+async fn set_site_folder(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetSiteFolderRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_site_folder(&s.app_state, b.site_id, b.folder_id)?;
+    Ok(StatusCode::OK)
+}
+
+async fn list_folders(Extension(s): Extension<Arc<UserSession>>) -> Result<Json<Vec<FolderDto>>, ApiError> {
+    Ok(Json(do_list_folders(&s.app_state)?))
+}
+
+async fn add_folder(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<FolderNameRequest>,
+) -> Result<Json<i64>, ApiError> {
+    Ok(Json(do_add_folder(&s.app_state, &b.name)?))
+}
+
+async fn rename_folder(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<RenameFolderRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_rename_folder(&s.app_state, b.folder_id, &b.name)?;
+    Ok(StatusCode::OK)
+}
+
+async fn delete_folder(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<FolderIdRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_delete_folder(&s.app_state, b.folder_id)?;
+    Ok(StatusCode::OK)
+}
+
 async fn add_credential(
     Extension(s): Extension<Arc<UserSession>>,
     Json(b): Json<AddCredentialRequest>,
@@ -510,6 +624,13 @@ async fn totp_code(
     Json(b): Json<CredentialIdRequest>,
 ) -> Result<Json<Option<TotpCodeDto>>, ApiError> {
     Ok(Json(do_totp_code(&s.app_state, b.credential_id)?))
+}
+
+async fn list_credential_history(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<CredentialIdRequest>,
+) -> Result<Json<Vec<HistoryEntryDto>>, ApiError> {
+    Ok(Json(do_list_credential_history(&s.app_state, b.credential_id)?))
 }
 
 async fn list_trash(
@@ -645,6 +766,15 @@ async fn analyze_strength(
     Json(b): Json<AnalyzeStrengthRequest>,
 ) -> Json<StrengthDto> {
     Json(do_analyze_strength(&b.password))
+}
+
+async fn change_master_password(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<ChangeMasterPasswordRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_change_master_password(&s.app_state, &ctx.paths, &b.current_password, &b.new_password)?;
+    Ok(StatusCode::OK)
 }
 
 // Deliberately does not accept a client-supplied destination, unlike the desktop `create_backup`
@@ -800,12 +930,21 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/lock", post(lock))
         .route("/api/touch", post(touch))
         .route("/api/verify_master_password", post(verify_master_password))
+        .route("/api/change_master_password", post(change_master_password))
         .route("/api/set_pin", post(set_pin))
         .route("/api/clear_pin", post(clear_pin))
         .route("/api/list_sites", post(list_sites))
         .route("/api/add_site", post(add_site))
         .route("/api/update_site", post(update_site))
         .route("/api/soft_delete_site", post(soft_delete_site))
+        .route("/api/set_site_favorite", post(set_site_favorite))
+        .route("/api/set_site_item_type", post(set_site_item_type))
+        .route("/api/set_site_card_hint", post(set_site_card_hint))
+        .route("/api/set_site_folder", post(set_site_folder))
+        .route("/api/list_folders", post(list_folders))
+        .route("/api/add_folder", post(add_folder))
+        .route("/api/rename_folder", post(rename_folder))
+        .route("/api/delete_folder", post(delete_folder))
         .route("/api/add_credential", post(add_credential))
         .route("/api/update_credential", post(update_credential))
         .route("/api/list_credentials_for_site", post(list_credentials_for_site))
@@ -814,6 +953,7 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/set_totp_secret", post(set_totp_secret))
         .route("/api/clear_totp_secret", post(clear_totp_secret))
         .route("/api/totp_code", post(totp_code))
+        .route("/api/list_credential_history", post(list_credential_history))
         .route("/api/list_trash", post(list_trash))
         .route("/api/restore_credential", post(restore_credential))
         .route("/api/purge_trash", post(purge_trash))

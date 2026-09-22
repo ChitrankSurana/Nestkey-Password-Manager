@@ -25,24 +25,25 @@ pub fn run() {
             // D-03: the window is no longer declared in tauri.conf.json's static `windows` array
             // (emptied below) - it is built here from the persisted ui_variant preference instead.
             // The config value is matched against the fixed allowlist below and mapped to one of
-            // two compiled-in filenames - never interpolated into a path (T-08-01).
-            let entry = match ui_variant.as_str() {
-                "new" => {
-                    // Checkpoint decision (Task 2, 08-01-PLAN.md): "asset-guard, extended". Before
-                    // pointing the window at the New UI's entry, confirm the bundled asset actually
-                    // exists - a missing/stale build must never produce a blank window (T-08-03).
-                    // AssetResolver::get() reads the embedded production bundle, or `dist/` directly
-                    // in dev mode (requires at least one `npm run build`, same caveat Tauri's own
-                    // docs state for this API in dev mode).
-                    if app.asset_resolver().get("newui.html".to_string()).is_some() {
-                        "newui.html"
-                    } else {
-                        eprintln!(
-                            "warning: ui_variant is \"new\" but the newui.html asset is missing; falling back to Classic"
-                        );
-                        "index.html"
-                    }
+            // the compiled-in filenames below - never interpolated into a path (T-08-01).
+            // Checkpoint decision (Task 2, 08-01-PLAN.md): "asset-guard, extended". Before pointing
+            // the window at a variant's entry, confirm the bundled asset actually exists - a
+            // missing/stale build must never produce a blank window (T-08-03). AssetResolver::get()
+            // reads the embedded production bundle, or `dist/` directly in dev mode (requires at
+            // least one `npm run build`, same caveat Tauri's own docs state for this API in dev mode).
+            let guarded = |asset: &'static str| -> &'static str {
+                if app.asset_resolver().get(asset.to_string()).is_some() {
+                    asset
+                } else {
+                    eprintln!(
+                        "warning: ui_variant needs {asset} but that asset is missing; falling back to Classic"
+                    );
+                    "index.html"
                 }
+            };
+            let entry = match ui_variant.as_str() {
+                "new" => guarded("newui.html"),
+                "make" => guarded("makeui.html"),
                 // Catch-all: "classic", empty/absent (already snapped by Config::load), or any
                 // value that slipped past validation resolves to Classic - never a dead window.
                 _ => "index.html",
@@ -111,6 +112,14 @@ pub fn run() {
             commands::add_site,
             commands::update_site,
             commands::soft_delete_site,
+            commands::set_site_favorite,
+            commands::set_site_item_type,
+            commands::set_site_card_hint,
+            commands::set_site_folder,
+            commands::list_folders,
+            commands::add_folder,
+            commands::rename_folder,
+            commands::delete_folder,
             commands::add_credential,
             commands::update_credential,
             commands::list_credentials_for_site,
@@ -119,6 +128,8 @@ pub fn run() {
             commands::set_totp_secret,
             commands::clear_totp_secret,
             commands::totp_code,
+            commands::list_credential_history,
+            commands::change_master_password,
             commands::list_trash,
             commands::restore_credential,
             commands::purge_trash,

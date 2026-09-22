@@ -22,7 +22,7 @@ fn full_lifecycle_register_use_lock_reopen() {
     let cred_id = vault::add_credential(&vault_conn, &key, site_id, Some("alice"), "s3cret!", Some("work"), &[], false).unwrap();
 
     // Search finds it.
-    let results = vault::search(&vault_conn, "github").unwrap();
+    let results = vault::search(&vault_conn, &key, "github").unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].credential_id, cred_id);
 

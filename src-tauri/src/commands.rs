@@ -1,9 +1,10 @@
 use crate::biometric_provider::WindowsHelloProvider;
 use pwmgr_core::commands::{
-    do_add_credential, do_add_site, do_add_ssh_key, do_analyze_strength, do_check_breach,
+    do_add_credential, do_add_folder, do_add_site, do_delete_folder, do_list_folders, do_rename_folder,
+    do_set_site_card_hint, do_set_site_favorite, do_set_site_folder, do_set_site_item_type, do_add_ssh_key, do_analyze_strength, do_check_breach,
     do_clear_biometric, do_clear_pin, do_clear_totp_secret, do_create_backup, do_delete_ssh_key,
     do_export_csv, do_generate_password, do_get_config, do_has_biometric, do_has_pin,
-    do_health_report, do_import_csv_commit, do_import_csv_preview, do_list_credentials_for_site,
+    do_change_master_password, do_health_report, do_import_csv_commit, do_import_csv_preview, do_list_credential_history, do_list_credentials_for_site,
     do_list_sites, do_list_ssh_keys, do_list_trash, do_lock, do_login, do_purge_trash,
     do_read_csv_headers, do_register, do_restore_backup, do_restore_credential, do_search,
     do_set_biometric, do_set_pin, do_set_totp_secret, do_soft_delete_credential,
@@ -17,7 +18,7 @@ use pwmgr_core::commands::{
 };
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
-    HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
+    FolderDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     SshKeyDto, StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
 use pwmgr_core::error::CommandError;
@@ -188,6 +189,51 @@ pub fn update_site(
 }
 
 #[tauri::command]
+pub fn set_site_favorite(state: State<AppState>, site_id: i64, favorite: bool) -> Result<(), CommandError> {
+    do_set_site_favorite(&state, site_id, favorite)
+}
+
+#[tauri::command]
+pub fn set_site_item_type(state: State<AppState>, site_id: i64, item_type: String) -> Result<(), CommandError> {
+    do_set_site_item_type(&state, site_id, &item_type)
+}
+
+#[tauri::command]
+pub fn set_site_card_hint(
+    state: State<AppState>,
+    site_id: i64,
+    brand: Option<String>,
+    last4: Option<String>,
+) -> Result<(), CommandError> {
+    do_set_site_card_hint(&state, site_id, brand.as_deref(), last4.as_deref())
+}
+
+#[tauri::command]
+pub fn set_site_folder(state: State<AppState>, site_id: i64, folder_id: Option<i64>) -> Result<(), CommandError> {
+    do_set_site_folder(&state, site_id, folder_id)
+}
+
+#[tauri::command]
+pub fn list_folders(state: State<AppState>) -> Result<Vec<FolderDto>, CommandError> {
+    do_list_folders(&state)
+}
+
+#[tauri::command]
+pub fn add_folder(state: State<AppState>, name: String) -> Result<i64, CommandError> {
+    do_add_folder(&state, &name)
+}
+
+#[tauri::command]
+pub fn rename_folder(state: State<AppState>, folder_id: i64, name: String) -> Result<(), CommandError> {
+    do_rename_folder(&state, folder_id, &name)
+}
+
+#[tauri::command]
+pub fn delete_folder(state: State<AppState>, folder_id: i64) -> Result<(), CommandError> {
+    do_delete_folder(&state, folder_id)
+}
+
+#[tauri::command]
 pub fn soft_delete_site(state: State<AppState>, site_id: i64) -> Result<(), CommandError> {
     do_soft_delete_site(&state, site_id)
 }
@@ -249,6 +295,11 @@ pub fn clear_totp_secret(state: State<AppState>, credential_id: i64) -> Result<(
 #[tauri::command]
 pub fn totp_code(state: State<AppState>, credential_id: i64) -> Result<Option<TotpCodeDto>, CommandError> {
     do_totp_code(&state, credential_id)
+}
+
+#[tauri::command]
+pub fn list_credential_history(state: State<AppState>, credential_id: i64) -> Result<Vec<HistoryEntryDto>, CommandError> {
+    do_list_credential_history(&state, credential_id)
 }
 
 #[tauri::command]
@@ -376,6 +427,16 @@ pub fn create_backup(
     destination_path: Option<String>,
 ) -> Result<String, CommandError> {
     do_create_backup(&state, &paths, destination_path.as_deref())
+}
+
+#[tauri::command]
+pub fn change_master_password(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    current_password: String,
+    new_password: String,
+) -> Result<(), CommandError> {
+    do_change_master_password(&state, &paths, &current_password, &new_password)
 }
 
 #[tauri::command]

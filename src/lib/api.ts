@@ -39,6 +39,18 @@ export interface SiteDto {
   name: string;
   url: string | null;
   notes: string | null;
+  favorite: boolean;
+  folderId: number | null;
+  /** "login" | "note" | "card" | "identity" (Make UI). */
+  itemType: string;
+  /** Non-secret card display hints; the full number lives only in the sealed custom-fields blob. */
+  cardBrand: string | null;
+  cardLast4: string | null;
+}
+
+export interface FolderDto {
+  id: number;
+  name: string;
 }
 
 export type CustomFieldType = "text" | "hidden" | "boolean";
@@ -76,12 +88,18 @@ export interface SearchResultDto {
   username: string | null;
 }
 
+export interface HistoryEntryDto {
+  secret: string;
+  changedAt: string;
+}
+
 export interface TrashedCredentialDto {
   credentialId: number;
   siteId: number;
   siteName: string;
   username: string | null;
   deletedAt: string;
+  itemType: string;
 }
 
 export interface ConfigDto {
@@ -297,6 +315,8 @@ export const api = {
   touch: () => call<void>("touch"),
   verifyMasterPassword: (masterPassword: string) =>
     call<boolean>("verify_master_password", { masterPassword }),
+  changeMasterPassword: (currentPassword: string, newPassword: string) =>
+    call<void>("change_master_password", { currentPassword, newPassword }),
   unlockStatus: () => call<boolean>("unlock_status"),
   listSites: () => call<SiteDto[]>("list_sites"),
   addSite: (name: string, url: string | null, notes: string | null) =>
@@ -304,6 +324,15 @@ export const api = {
   updateSite: (siteId: number, name: string, url: string | null, notes: string | null) =>
     call<void>("update_site", { siteId, name, url, notes }),
   softDeleteSite: (siteId: number) => call<void>("soft_delete_site", { siteId }),
+  setSiteFavorite: (siteId: number, favorite: boolean) => call<void>("set_site_favorite", { siteId, favorite }),
+  setSiteItemType: (siteId: number, itemType: string) => call<void>("set_site_item_type", { siteId, itemType }),
+  setSiteCardHint: (siteId: number, brand: string | null, last4: string | null) =>
+    call<void>("set_site_card_hint", { siteId, brand, last4 }),
+  setSiteFolder: (siteId: number, folderId: number | null) => call<void>("set_site_folder", { siteId, folderId }),
+  listFolders: () => call<FolderDto[]>("list_folders"),
+  addFolder: (name: string) => call<number>("add_folder", { name }),
+  renameFolder: (folderId: number, name: string) => call<void>("rename_folder", { folderId, name }),
+  deleteFolder: (folderId: number) => call<void>("delete_folder", { folderId }),
   addCredential: (
     siteId: number,
     username: string | null,
@@ -329,6 +358,7 @@ export const api = {
     call<void>("set_totp_secret", { credentialId, secret }),
   clearTotpSecret: (credentialId: number) => call<void>("clear_totp_secret", { credentialId }),
   totpCode: (credentialId: number) => call<TotpCodeDto | null>("totp_code", { credentialId }),
+  listCredentialHistory: (credentialId: number) => call<HistoryEntryDto[]>("list_credential_history", { credentialId }),
   listTrash: () => call<TrashedCredentialDto[]>("list_trash"),
   restoreCredential: (credentialId: number) => call<void>("restore_credential", { credentialId }),
   purgeTrash: () => call<number>("purge_trash"),

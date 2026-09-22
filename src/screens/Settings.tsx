@@ -25,6 +25,7 @@ const MOBILE_NAV_STYLE_OPTIONS = [
 const UI_VARIANT_OPTIONS = [
   { value: "classic", label: "Classic" },
   { value: "new", label: "New" },
+  { value: "make", label: "Make" },
 ] as const;
 const OLD_PASSWORD_DAYS_OPTIONS = [90, 180, 365] as const;
 const REPROMPT_MODE_OPTIONS = [
@@ -59,6 +60,11 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const editedRef = useRef(false);
+  const [currentPwInput, setCurrentPwInput] = useState("");
+  const [newPwInput, setNewPwInput] = useState("");
+  const [confirmPwInput, setConfirmPwInput] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordChanged, setPasswordChanged] = useState(false);
 
   function refreshSshKeys() {
     if (isTauri) {
@@ -132,6 +138,35 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // B1-6: the change-master-password command re-verifies currentPwInput itself server-side (same
+  // invalid_credentials error every other wrong-password path returns), so there's no separate
+  // requireMasterPassword() reprompt here - typing it IS the re-auth. Clears the PIN/biometric
+  // inputs client-side too since the backend already dropped both records (they wrapped the old
+  // key) - refreshing pinSet/biometricSet from a stale local "true" would show a Remove button
+  // for an unlock method that no longer exists.
+  async function handleChangeMasterPassword(e: FormEvent) {
+    e.preventDefault();
+    if (newPwInput !== confirmPwInput) {
+      setError("New passwords don't match.");
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      setError(null);
+      await api.changeMasterPassword(currentPwInput, newPwInput);
+      setCurrentPwInput("");
+      setNewPwInput("");
+      setConfirmPwInput("");
+      setPinSet(false);
+      setBiometricSet(false);
+      setPasswordChanged(true);
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setChangingPassword(false);
     }
   }
 
@@ -516,6 +551,53 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
               )}
             </div>
           )}
+
+          <div className="border-t pt-4" style={{ borderColor: "var(--border)" }}>
+            <span className="text-sm font-medium">Change master password</span>
+            <p className="text-sm opacity-70 mt-0.5">
+              Re-seals every stored secret under the new password (a backup is taken automatically
+              first). Removes PIN and biometric unlock - set them up again afterward.
+            </p>
+            <form onSubmit={handleChangeMasterPassword} className="mt-2 space-y-2 max-w-xs">
+              <input
+                type="password"
+                placeholder="Current master password"
+                autoComplete="current-password"
+                className="w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)] text-sm disabled:opacity-50"
+                value={currentPwInput}
+                onChange={(e) => setCurrentPwInput(e.target.value)}
+                disabled={changingPassword}
+              />
+              <input
+                type="password"
+                placeholder="New master password"
+                autoComplete="new-password"
+                className="w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)] text-sm disabled:opacity-50"
+                value={newPwInput}
+                onChange={(e) => setNewPwInput(e.target.value)}
+                disabled={changingPassword}
+              />
+              <input
+                type="password"
+                placeholder="Confirm new master password"
+                autoComplete="new-password"
+                className="w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)] text-sm disabled:opacity-50"
+                value={confirmPwInput}
+                onChange={(e) => setConfirmPwInput(e.target.value)}
+                disabled={changingPassword}
+              />
+              <Tooltip text="Re-encrypts the whole vault under the new password - takes a moment on a large vault">
+                <button
+                  type="submit"
+                  disabled={changingPassword || !currentPwInput || !newPwInput || !confirmPwInput}
+                  className="rounded bg-[var(--accent)] px-3 py-1 text-sm disabled:opacity-50"
+                >
+                  {changingPassword ? "Changing…" : "Change Password"}
+                </button>
+              </Tooltip>
+              {passwordChanged && <p className="text-sm text-green-400">Master password changed.</p>}
+            </form>
+          </div>
         </div>
       </details>
 
@@ -671,7 +753,7 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
               Interface changed to {UI_VARIANT_OPTIONS.find((o) => o.value === uiVariant)?.label}.{" "}
               {isTauri
                 ? "Restart the app to see it."
-                : "Open /newui.html in this browser to use it."}
+                : `Open /${uiVariant === "classic" ? "index" : `${uiVariant}ui`}.html in this browser to use it.`}
             </p>
           )}
         </div>

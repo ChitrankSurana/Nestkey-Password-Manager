@@ -1,5 +1,5 @@
 use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_REPROMPT_GRACE_SECONDS, VALID_REPROMPT_MODES, VALID_STRENGTH_ALGORITHMS, VALID_UI_VARIANTS};
-use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, FolderDto, GenerateRequest, HealthEntryDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::session::SystemClock;
@@ -196,8 +196,84 @@ pub fn do_list_credentials_for_site(
 pub fn do_search(state: &AppState, query: &str) -> Result<Vec<SearchResultDto>, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
-    let results = crate::vault::search(conn, query)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let results = crate::vault::search(conn, key, query)?;
     Ok(results.into_iter().map(SearchResultDto::from).collect())
+}
+
+pub fn do_list_credential_history(
+    state: &AppState,
+    credential_id: i64,
+) -> Result<Vec<HistoryEntryDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let history = crate::vault::list_credential_history(conn, key, credential_id)?;
+    Ok(history.into_iter().map(HistoryEntryDto::from).collect())
+}
+
+/// B1-6, the orchestrator: three sequential, non-overlapping lock windows (registry, then vault,
+/// then registry again), matching the "never hold `vault` and `registry` at once" discipline every
+/// other function in this file already follows (see `do_set_pin`'s own comment on its one
+/// deliberate exception, which this is not - this function never holds two of these locks
+/// simultaneously). See `auth::PasswordChangeMaterial`, `vault::reseal_all_blobs` and
+/// `vault::rekey_vault`'s doc comments for why this exact ordering and the pre-flight backup are
+/// both load-bearing, not defensive extras.
+pub fn do_change_master_password(
+    state: &AppState,
+    paths: &AppPaths,
+    current_password: &str,
+    new_password: &str,
+) -> Result<(), CommandError> {
+    if new_password.is_empty() {
+        return Err(crate::error::invalid_input_error("Choose a new master password."));
+    }
+
+    let username = {
+        let session = state.session.lock().unwrap();
+        session.username().ok_or_else(crate::error::locked_error)?.to_string()
+    };
+
+    // Step 1 (registry only): verify current_password, derive old/new keys and the new registry
+    // record. No vault access yet.
+    let material = {
+        let registry = state.registry.lock().unwrap();
+        crate::auth::prepare_password_change(&registry, &username, current_password, new_password)?
+    };
+
+    // Pre-flight backup - same bundle format the Data Hub's own backup command writes - taken
+    // BEFORE any mutation. The one recovery path if step 2 fails partway: restore this file and
+    // the vault is fully consistent again under the OLD password (registry hasn't changed yet).
+    let (backup_username, bundle) = build_backup_bundle(state)?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let backup_path = paths.backups_dir().join(format!("{}-premasterchange-{}.bak", backup_username, timestamp));
+    std::fs::write(&backup_path, &bundle).map_err(|_| crate::error::internal_error())?;
+
+    // Step 2 (vault only): re-seal every sealed blob under the new key, then re-key the file
+    // itself. Order matters - see vault::reseal_all_blobs's doc comment.
+    {
+        let vault_guard = state.vault.lock().unwrap();
+        let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+        crate::vault::reseal_all_blobs(conn, &material.old_vault_key, &material.new_vault_key)?;
+        crate::vault::rekey_vault(conn, &material.new_vault_key)?;
+    }
+
+    // Step 3 (registry only): commit the new salts/verifier/sentinel, clear PIN + biometric (both
+    // wrap the old key). Only reached once the vault is fully consistent under the new key.
+    {
+        let registry = state.registry.lock().unwrap();
+        crate::auth::commit_password_change(&registry, &username, &material)?;
+    }
+
+    // Re-arm the session with the new key so the vault stays usable without a fresh login.
+    state.session.lock().unwrap().unlock(material.new_vault_key, &username, &SystemClock);
+
+    Ok(())
 }
 
 pub fn do_get_config(state: &AppState) -> ConfigDto {
@@ -257,6 +333,60 @@ pub fn do_update_site(
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     Ok(crate::vault::update_site(conn, site_id, name, url, notes)?)
+}
+
+pub fn do_set_site_favorite(state: &AppState, site_id: i64, favorite: bool) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::set_site_favorite(conn, site_id, favorite)?)
+}
+
+pub fn do_set_site_item_type(state: &AppState, site_id: i64, item_type: &str) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::set_site_item_type(conn, site_id, item_type)?)
+}
+
+pub fn do_set_site_card_hint(
+    state: &AppState,
+    site_id: i64,
+    brand: Option<&str>,
+    last4: Option<&str>,
+) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::set_site_card_hint(conn, site_id, brand, last4)?)
+}
+
+pub fn do_set_site_folder(state: &AppState, site_id: i64, folder_id: Option<i64>) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::set_site_folder(conn, site_id, folder_id)?)
+}
+
+pub fn do_list_folders(state: &AppState) -> Result<Vec<FolderDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::list_folders(conn)?.into_iter().map(FolderDto::from).collect())
+}
+
+pub fn do_add_folder(state: &AppState, name: &str) -> Result<i64, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::add_folder(conn, name)?)
+}
+
+pub fn do_rename_folder(state: &AppState, folder_id: i64, name: &str) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::rename_folder(conn, folder_id, name)?)
+}
+
+/// Unfiles the folder's items; never deletes them (see vault::delete_folder).
+pub fn do_delete_folder(state: &AppState, folder_id: i64) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::delete_folder(conn, folder_id)?)
 }
 
 pub fn do_soft_delete_site(state: &AppState, site_id: i64) -> Result<(), CommandError> {
@@ -2391,6 +2521,8 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_update_ui_variant(&state, &paths, "new").unwrap();
         assert_eq!(do_get_config(&state).ui_variant, "new");
+        do_update_ui_variant(&state, &paths, "make").unwrap();
+        assert_eq!(do_get_config(&state).ui_variant, "make");
         assert_eq!(do_update_ui_variant(&state, &paths, "figma-preview").unwrap_err().code(), "invalid_input");
     }
 
@@ -2442,5 +2574,47 @@ mod tests {
         let result = do_update_reprompt_mode(&state, &bad_paths, "global");
         assert!(result.is_err());
         assert_eq!(do_get_config(&state).reprompt_mode, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn make_ui_item_commands_require_unlock_and_roundtrip_through_dtos() {
+        let (state, paths, _dir) = test_state_and_paths();
+        assert!(format!("{:?}", do_list_folders(&state).unwrap_err()).contains("locked"));
+        assert!(format!("{:?}", do_set_site_favorite(&state, 1, true).unwrap_err()).contains("locked"));
+
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site = do_add_site(&state, "Chase", None, None).unwrap();
+        let folder = do_add_folder(&state, "Finance").unwrap();
+
+        do_set_site_favorite(&state, site, true).unwrap();
+        do_set_site_item_type(&state, site, "card").unwrap();
+        do_set_site_card_hint(&state, site, Some("Visa"), Some("3921")).unwrap();
+        do_set_site_folder(&state, site, Some(folder)).unwrap();
+
+        let s = &do_list_sites(&state).unwrap()[0];
+        assert!(s.favorite);
+        assert_eq!(s.item_type, "card");
+        assert_eq!(s.folder_id, Some(folder));
+        assert_eq!(s.card_last4.as_deref(), Some("3921"));
+        assert_eq!(do_list_folders(&state).unwrap()[0].name, "Finance");
+
+        do_rename_folder(&state, folder, "Money").unwrap();
+        assert_eq!(do_list_folders(&state).unwrap()[0].name, "Money");
+        do_delete_folder(&state, folder).unwrap();
+        assert!(do_list_folders(&state).unwrap().is_empty());
+        assert_eq!(do_list_sites(&state).unwrap()[0].folder_id, None);
+    }
+
+    #[test]
+    fn make_ui_item_commands_surface_invalid_input_and_not_found_codes() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site = do_add_site(&state, "a.com", None, None).unwrap();
+
+        assert_eq!(do_set_site_item_type(&state, site, "passport").unwrap_err().code(), "invalid_input");
+        assert_eq!(do_set_site_card_hint(&state, site, None, Some("12")).unwrap_err().code(), "invalid_input");
+        assert_eq!(do_add_folder(&state, " ").unwrap_err().code(), "invalid_input");
+        assert_eq!(do_set_site_favorite(&state, 999, true).unwrap_err().code(), "not_found");
+        assert_eq!(do_delete_folder(&state, 999).unwrap_err().code(), "not_found");
     }
 }
