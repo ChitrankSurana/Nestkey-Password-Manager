@@ -6,7 +6,6 @@ import { useActivityWatcher } from "../hooks/useActivityWatcher";
 import { Login } from "../screens/Login";
 import { Register } from "../screens/Register";
 import { CredentialEditor } from "../screens/CredentialEditor";
-import { Settings } from "../screens/Settings";
 import { ToastHost } from "../components/ToastHost";
 import { useMakeVault } from "./hooks/useMakeVault";
 import { Sidebar, type NavTarget } from "./components/Sidebar";
@@ -17,6 +16,7 @@ import { TrashView } from "./components/TrashView";
 import { HealthDashboard } from "./components/HealthDashboard";
 import { Generator } from "./components/Generator";
 import { DataHub } from "./components/DataHub";
+import { Settings } from "./components/Settings";
 import { IconMenu, IconShield, IconX } from "./icons";
 import type { Section } from "./lib/vaultSelectors";
 import "./makeui.css";
@@ -100,10 +100,6 @@ export default function MakeApp() {
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     }
-  }
-
-  function goVault() {
-    setNav("all");
   }
 
   if (screen === "login") {
@@ -252,7 +248,7 @@ export default function MakeApp() {
         {nav === "generator" && <Generator />}
         {nav === "trash" && <TrashView onRestored={refreshAfterSave} />}
         {nav === "data" && <DataHub />}
-        {nav === "settings" && <Settings onBack={goVault} username={username!} />}
+        {nav === "settings" && <Settings username={username!} />}
       </div>
 
       {addingSite && (
