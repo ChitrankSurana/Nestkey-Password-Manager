@@ -1,0 +1,136 @@
+/* Make variant stylesheet. Entry: src/makeui-main.tsx imports this file ONLY (never App.css directly).
+   Loaded by makeui.html alone, so nothing here can leak into the Classic or New variants.
+
+   Ported from figma-make/src/App.tsx DARK/LIGHT palette objects (:15-30) as CSS variables (D-B), so
+   the app's `.dark` class + `data-accent` system keeps working. Tailwind utilities are exposed as
+   `bg-mk-*` / `text-mk-*` / `border-mk-*` (see @theme block) instead of ~110 inline style objects. */
+
+/* Fonts ship in the bundle via npm (@fontsource) - no CDN, works offline (B2-8). All @import rules
+   must precede any other statement. The Google Fonts @import lines in figma-make/src/index.css
+   are deliberately NOT ported. */
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource-variable/jetbrains-mono";
+/* Pulls in bootstrap-icons, Tailwind, the @source globs, the `dark` variant and the shared tokens. */
+@import "../App.css";
+
+/* D-A: default accent is the prototype's Bitwarden blue. Scoped here, so Classic/New stay indigo.
+   The other four hues keep their App.css values and follow the same token derivation below. */
+[data-accent="indigo"] { --accent: #175ddc; --accent-hover: #1252b8; }
+
+/* ---- Light (default, matches LIGHT in App.tsx:23-30) ---- */
+:root {
+  --mk-bg-base: #f4f5f9;
+  --mk-bg-sidebar: #ffffff;
+  --mk-bg-panel: #f0f1f6;
+  --mk-bg-card: #ffffff;
+  --mk-bg-input: #f4f5f9;
+  --mk-border: rgba(0, 0, 0, 0.07);
+  --mk-border-hover: rgba(0, 0, 0, 0.14);
+  --mk-text-primary: #1a1c2a;
+  --mk-text-secondary: #383c54;
+  --mk-text-muted: #6b6f88;
+  --mk-text-faint: #b0b4cc;
+  --mk-item-hover: rgba(0, 0, 0, 0.03);
+  --mk-section-label: #b0b4cc;
+  --mk-badge: rgba(0, 0, 0, 0.06);
+  --mk-panel-tint: rgba(0, 0, 0, 0.02);
+  /* Accent-derived: at #175ddc these land on LIGHT.accentLight/accentMuted/badgeActive (#1252b8, 10%, 15%). */
+  --mk-accent-light: color-mix(in srgb, var(--accent) 80%, black);
+  --mk-accent-muted: color-mix(in srgb, var(--accent) 10%, transparent);
+  --mk-badge-active: color-mix(in srgb, var(--accent) 15%, transparent);
+  --mk-accent-border: color-mix(in srgb, var(--accent) 20%, transparent);
+
+  /* Status colours - fixed, never accent-derived (same rule as --danger in App.css). */
+  --mk-green: #2dcc8f;
+  --mk-yellow: #f7b731;
+  --mk-red: #f84e4e;
+  --mk-red-hover: #d93e3e;
+  --mk-orange: #f0a056;
+
+  /* Item-type tiles. Prototype hardcodes the dark pairs (App.tsx:306-309); light pairs are new so
+     the tiles don't sit as dark blocks on a light surface. */
+  --mk-type-login-bg: #dce8fc;   --mk-type-login-fg: #1252b8;
+  --mk-type-note-bg: #e3f1e3;    --mk-type-note-fg: #3f8f3f;
+  --mk-type-card-bg: #fbe8d4;    --mk-type-card-fg: #b8641a;
+  --mk-type-identity-bg: #ece0fa; --mk-type-identity-fg: #7a3fd0;
+}
+
+/* ---- Dark (matches DARK in App.tsx:15-22) ---- */
+.dark {
+  --mk-bg-base: #13151c;
+  --mk-bg-sidebar: #1a1d27;
+  --mk-bg-panel: #1e2130;
+  --mk-bg-card: #252839;
+  --mk-bg-input: #13151c;
+  --mk-border: rgba(255, 255, 255, 0.06);
+  --mk-border-hover: rgba(255, 255, 255, 0.14);
+  --mk-text-primary: #dde1ef;
+  --mk-text-secondary: #c0c6e0;
+  --mk-text-muted: #7c82a0;
+  --mk-text-faint: #3a3f58;
+  --mk-item-hover: rgba(255, 255, 255, 0.03);
+  --mk-section-label: #3a3f58;
+  --mk-badge: rgba(255, 255, 255, 0.06);
+  --mk-panel-tint: rgba(255, 255, 255, 0.02);
+  /* At #175ddc: #5b9cf6-ish, 18%, 30% (DARK.accentLight/accentMuted/badgeActive). */
+  --mk-accent-light: color-mix(in srgb, var(--accent) 60%, white);
+  --mk-accent-muted: color-mix(in srgb, var(--accent) 18%, transparent);
+  --mk-badge-active: color-mix(in srgb, var(--accent) 30%, transparent);
+  --mk-accent-border: color-mix(in srgb, var(--accent) 20%, transparent);
+
+  --mk-type-login-bg: #1e3a6e;   --mk-type-login-fg: #5b9cf6;
+  --mk-type-note-bg: #2d3a1e;    --mk-type-note-fg: #7ec87e;
+  --mk-type-card-bg: #3a2d1e;    --mk-type-card-fg: #f0a056;
+  --mk-type-identity-bg: #2d1e3a; --mk-type-identity-fg: #b07ef0;
+}
+
+@theme inline {
+  --color-mk-base: var(--mk-bg-base);
+  --color-mk-sidebar: var(--mk-bg-sidebar);
+  --color-mk-panel: var(--mk-bg-panel);
+  --color-mk-card: var(--mk-bg-card);
+  --color-mk-input: var(--mk-bg-input);
+  --color-mk-border: var(--mk-border);
+  --color-mk-border-hover: var(--mk-border-hover);
+  --color-mk-fg: var(--mk-text-primary);
+  --color-mk-fg2: var(--mk-text-secondary);
+  --color-mk-muted: var(--mk-text-muted);
+  --color-mk-faint: var(--mk-text-faint);
+  --color-mk-hover: var(--mk-item-hover);
+  --color-mk-label: var(--mk-section-label);
+  --color-mk-badge: var(--mk-badge);
+  --color-mk-tint: var(--mk-panel-tint);
+  --color-mk-accent: var(--accent);
+  --color-mk-accent-hover: var(--accent-hover);
+  --color-mk-accent-light: var(--mk-accent-light);
+  --color-mk-accent-muted: var(--mk-accent-muted);
+  --color-mk-badge-active: var(--mk-badge-active);
+  --color-mk-accent-border: var(--mk-accent-border);
+  --color-mk-green: var(--mk-green);
+  --color-mk-yellow: var(--mk-yellow);
+  --color-mk-red: var(--mk-red);
+  --color-mk-red-hover: var(--mk-red-hover);
+  --color-mk-orange: var(--mk-orange);
+  --color-mk-login-bg: var(--mk-type-login-bg);       --color-mk-login-fg: var(--mk-type-login-fg);
+  --color-mk-note-bg: var(--mk-type-note-bg);         --color-mk-note-fg: var(--mk-type-note-fg);
+  --color-mk-card-bg: var(--mk-type-card-bg);         --color-mk-card-fg: var(--mk-type-card-fg);
+  --color-mk-identity-bg: var(--mk-type-identity-bg); --color-mk-identity-fg: var(--mk-type-identity-fg);
+  --font-mk-sans: "Inter", system-ui, sans-serif;
+  --font-mk-mono: "JetBrains Mono Variable", "JetBrains Mono", "Fira Code", monospace;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--mk-bg-base);
+  color: var(--mk-text-primary);
+  font-family: "Inter", system-ui, sans-serif; /* literal: @theme inline vars are not emitted to :root */
+}
+
+/* Thin scrollbars, ported from figma-make/src/index.css:26-48 but theme-aware. */
+* { scrollbar-width: thin; scrollbar-color: var(--mk-border-hover) transparent; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--mk-border-hover); border-radius: 2px; }
