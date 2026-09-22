@@ -9,7 +9,6 @@ import { CredentialEditor } from "../screens/CredentialEditor";
 import { Generator } from "../screens/Generator";
 import { HealthDashboard } from "../screens/HealthDashboard";
 import { Data } from "../screens/Data";
-import { Trash } from "../screens/Trash";
 import { Settings } from "../screens/Settings";
 import { ToastHost } from "../components/ToastHost";
 import { useMakeVault } from "./hooks/useMakeVault";
@@ -17,6 +16,7 @@ import { Sidebar, type NavTarget } from "./components/Sidebar";
 import { ItemList } from "./components/ItemList";
 import { DetailPanel } from "./components/DetailPanel";
 import { ItemDrawer } from "./components/ItemDrawer";
+import { TrashView } from "./components/TrashView";
 import { IconMenu, IconShield, IconX } from "./icons";
 import type { Section } from "./lib/vaultSelectors";
 import "./makeui.css";
@@ -251,7 +251,7 @@ export default function MakeApp() {
           />
         )}
         {nav === "generator" && <Generator onBack={goVault} />}
-        {nav === "trash" && <Trash onBack={goVault} onRestored={refreshAfterSave} />}
+        {nav === "trash" && <TrashView onRestored={refreshAfterSave} />}
         {nav === "data" && <Data onBack={goVault} />}
         {nav === "settings" && <Settings onBack={goVault} username={username!} />}
       </div>

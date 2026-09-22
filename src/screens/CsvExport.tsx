@@ -72,7 +72,12 @@ export function CsvExport({ onBack }: { onBack: () => void }) {
       <Tooltip text="Back to vault">
         <button onClick={onBack} className="mb-4 rounded bg-[var(--accent)] px-3 py-1"><Icon name="arrow-left" /> Back</button>
       </Tooltip>
-      <h1 className="text-xl font-semibold mb-4">Export to CSV</h1>
+      <h1 className="text-xl font-semibold mb-1">Export to CSV</h1>
+      <p className="text-xs opacity-70 mb-4 max-w-md">
+        CSV only carries site name, URL, notes, username, password, and remarks. Favorites,
+        folders, item type, custom fields, TOTP, and password history are not included in any CSV
+        export. For a complete, lossless copy of your vault, use Backup instead.
+      </p>
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
       {status && <p className="text-sm text-green-400 mb-4">{status}</p>}
 
