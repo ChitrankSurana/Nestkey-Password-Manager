@@ -6,7 +6,6 @@ import { useActivityWatcher } from "../hooks/useActivityWatcher";
 import { Login } from "../screens/Login";
 import { Register } from "../screens/Register";
 import { CredentialEditor } from "../screens/CredentialEditor";
-import { Generator } from "../screens/Generator";
 import { Data } from "../screens/Data";
 import { Settings } from "../screens/Settings";
 import { ToastHost } from "../components/ToastHost";
@@ -17,6 +16,7 @@ import { DetailPanel } from "./components/DetailPanel";
 import { ItemDrawer } from "./components/ItemDrawer";
 import { TrashView } from "./components/TrashView";
 import { HealthDashboard } from "./components/HealthDashboard";
+import { Generator } from "./components/Generator";
 import { IconMenu, IconShield, IconX } from "./icons";
 import type { Section } from "./lib/vaultSelectors";
 import "./makeui.css";
@@ -249,7 +249,7 @@ export default function MakeApp() {
             }}
           />
         )}
-        {nav === "generator" && <Generator onBack={goVault} />}
+        {nav === "generator" && <Generator />}
         {nav === "trash" && <TrashView onRestored={refreshAfterSave} />}
         {nav === "data" && <Data onBack={goVault} />}
         {nav === "settings" && <Settings onBack={goVault} username={username!} />}
