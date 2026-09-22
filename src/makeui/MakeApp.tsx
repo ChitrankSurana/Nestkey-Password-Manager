@@ -7,7 +7,6 @@ import { Login } from "../screens/Login";
 import { Register } from "../screens/Register";
 import { CredentialEditor } from "../screens/CredentialEditor";
 import { Generator } from "../screens/Generator";
-import { HealthDashboard } from "../screens/HealthDashboard";
 import { Data } from "../screens/Data";
 import { Settings } from "../screens/Settings";
 import { ToastHost } from "../components/ToastHost";
@@ -17,6 +16,7 @@ import { ItemList } from "./components/ItemList";
 import { DetailPanel } from "./components/DetailPanel";
 import { ItemDrawer } from "./components/ItemDrawer";
 import { TrashView } from "./components/TrashView";
+import { HealthDashboard } from "./components/HealthDashboard";
 import { IconMenu, IconShield, IconX } from "./icons";
 import type { Section } from "./lib/vaultSelectors";
 import "./makeui.css";
@@ -243,7 +243,6 @@ export default function MakeApp() {
         )}
         {nav === "health" && (
           <HealthDashboard
-            onBack={goVault}
             onNavigateToSite={(siteId) => {
               setNav("all");
               vault.selectSite(siteId);
