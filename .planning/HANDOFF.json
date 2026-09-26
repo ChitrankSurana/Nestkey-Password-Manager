@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-26T14:11:11.000Z",
+  "phase": "none",
+  "phase_name": "UAT — Modern UI Overhaul, Phase B setup (ad-hoc, not a GSD phase)",
+  "phase_dir": "none",
+  "plan": "docs/Plans/UAT_Modern_UI_Overhaul_Plan_2026-09-23.md",
+  "task": "Phase B (desktop D click-through) — setup only, not yet started",
+  "total_tasks": "Phase A (done, committed 6c39905) + Phase B (D click-through, this task) + user's independent D+W run + joint review",
+  "status": "paused",
+  "completed_tasks": [
+    {"id": "PhaseA", "name": "Full Phase A: automated (A1-A3) + web (W) manual M1-M13 + D3 shell check", "status": "done", "commit": "6c39905", "result": "4 Blocker, 4 Major, 14 Minor findings recorded; 6 Blocked (session tooling limits, not app bugs); 1 N/A (New UI has no Favorites feature at all)"},
+    {"id": "PlanDocCheck", "name": "Checked docs/Plans/UAT_Modern_UI_Overhaul_Plan_2026-09-23.md for user-testing instructions", "status": "done", "result": "Confirmed the plan already covers this: Part 3 (M1-M13) is the same script for both D and W modes, and Process step 3 explicitly says the user runs the same script independently on D+W and fills the User column. Told the user this — no new doc needed, docs/testing/UAT_MODERN_UI_OVERHAUL.md is the frozen script to hand them."},
+    {"id": "PhaseB-setup-1", "name": "Stopped pwmgr-web server and its cargo processes (D and W share ~/.pwmgr, can't run both)", "status": "done"},
+    {"id": "PhaseB-setup-2", "name": "Wiped %USERPROFILE%\\.pwmgr per plan's Part 0.6 (pre-authorized: 'User decisions: %USERPROFILE%\\.pwmgr\\ holds only test data, fine to wipe')", "status": "done", "result": "Confirmed gone"}
+  ],
+  "remaining_tasks": [
+    {"id": "PhaseB-setup-3", "name": "Regenerate SSH key fixture for D2 (uat_key) — %TEMP%\\uat\\ only still has chrome.csv, the uat_key from an earlier session's Part 0.7 setup is gone (not re-run this session)", "status": "not_started"},
+    {"id": "PhaseB-1", "name": "Confirm with user: Computer Use is ON in Claude desktop app Settings, private windows closed/minimized (plan's Phase B prerequisite, step 1) — NOT YET CONFIRMED", "status": "not_started"},
+    {"id": "PhaseB-2", "name": "Launch app via `npm run tauri:dev`, wait for window", "status": "not_started"},
+    {"id": "PhaseB-3", "name": "Request computer-use access for only: the app window (titled 'tauri-app') tier full, and Notepad tier full (for M6.4 clipboard check only)", "status": "not_started"},
+    {"id": "PhaseB-4", "name": "Run full Part 3 (M1-M13) on D via clicking/typing, screenshot marked steps, fill Claude/D column in docs/testing/UAT_FINDINGS_2026-09-23.md", "status": "not_started"},
+    {"id": "PhaseB-5", "name": "D1 Windows Hello: user performs themselves (biometric), Claude records", "status": "not_started"},
+    {"id": "PhaseB-6", "name": "D2 SSH agent: enable in Settings, add uat_key, ssh-add -l check, delete-requires-master-password check", "status": "not_started"},
+    {"id": "PhaseB-7", "name": "D3 window title: already confirmed via source read in Phase A (M13.3... no, D3 row), no need to redo — just re-verify visually if convenient", "status": "not_started"},
+    {"id": "UserRun", "name": "User's own independent D+W run (plan Process step 3) — hand them docs/testing/UAT_MODERN_UI_OVERHAUL.md", "status": "not_started"},
+    {"id": "JointReview", "name": "Joint review of all findings -> fix now / defer to docs/DEFERRED.md / accept. No fixes before this step", "status": "not_started"}
+  ],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "Confirm Computer Use is enabled in Claude desktop app Settings before Phase B starts", "context": "plan's Phase B prerequisite #1 — not yet confirmed this session", "blocking": true},
+    {"action": "Close/minimize all private windows before Phase B starts", "context": "plan's Phase B prerequisite #1, privacy during screen interaction", "blocking": true},
+    {"action": "Run own independent D+W pass using docs/testing/UAT_MODERN_UI_OVERHAUL.md once both Phase A and B are done", "context": "plan Process step 3", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Told the user the plan doc already has full user-testing instructions (Part 3 script, Process step 3) rather than writing a new doc", "rationale": "docs/Plans/UAT_Modern_UI_Overhaul_Plan_2026-09-23.md Part 3 is explicitly mode-agnostic (same M1-M13 cases for D and W), and Process step 3 already assigns the user their own independent run of the same script — a new doc would just duplicate it", "phase": "none"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Resume Phase B setup: regenerate the uat_key SSH fixture (ssh-keygen -t ed25519 -N '\"\"' -f \"$env:TEMP\\uat\\uat_key\" -C uat, per plan Part 0.7), then confirm with the user that Computer Use is enabled and private windows are closed, then launch `npm run tauri:dev`, request computer-use access for the app window + Notepad only, and begin the D click-through of Part 3 (M1-M13).",
+  "context_notes": "This is UAT execution per docs/Plans/UAT_Modern_UI_Overhaul_Plan_2026-09-23.md, now starting Phase B (Process step 2: 'desktop click-through via computer use'). Phase A is fully done and committed (6c39905) on feature/modern-ui-overhaul, not pushed, not touched main. Record-only rule still applies during Phase B too: no fixes during UAT. pwmgr-web and its cargo processes were killed this session specifically to free up ~/.pwmgr for the desktop app's exclusive use (D and W modes share the same underlying vault files and can't run concurrently per the plan's own note). .pwmgr was wiped fresh per Part 0.6 — Phase B's D run starts from a clean vault, same as Phase A's W run did. The chrome.csv CSV-import fixture in %TEMP%\\uat\\ is still present and already fixed (4-column Chromium format, not the original 5-column one) from Phase A's M10.3 correction — reuse it for Phase B's M10.3, don't recreate from the plan's own (incorrect) 5-column spec. Findings doc docs/testing/UAT_FINDINGS_2026-09-23.md already has a Claude/W column filled for all cases; this session will fill the Claude/D column alongside it, same rows, not new rows."
+}
