@@ -23,11 +23,11 @@ Script: [`UAT_MODERN_UI_OVERHAUL.md`](UAT_MODERN_UI_OVERHAUL.md). Result values:
 | M1.4 | D | N/A — not reproducible without code change | | No Make render error surfaced naturally during this session's D pass (the M1.1 lock-banner bug is a stale-state display issue, not a render/load failure, and did not trigger the "Switch to Classic UI" recovery screen) | | | |
 | M1.4 | W | Blocked | | Load-failure recovery button needs deliberately breaking asset load (e.g. offline/blocked network) which this session has no reliable way to simulate via Claude in Chrome without also breaking the tool's own connectivity. Left for user's manual run (DevTools "offline" throttle) | | | User to test manually via DevTools offline mode |
 | M1.5 | W | Blocked | | Offline fonts check needs DevTools network throttling, not exposed as a Claude-in-Chrome tool in this session. Left for user's manual run | | | User to test manually via DevTools network throttle |
-| M2.1 | D | | | | | | TBD |
+| M2.1 | D | Fail | | Done via M1.1 (fresh register uatuser/pw v1). Same deviations as W: "Log in" screen shown first not "Register" directly, and no "no recovery" warning on Register screen. Step 3 (empty vault, correct detail pane text) confirmed correct | | Minor | TBD |
 | M2.1 | W | | | | | | TBD |
-| M2.2 | D | | | | | | TBD |
+| M2.2 | D | Pass | | Wrong password: "Incorrect master password." Nonexistent username + any password: identical "Incorrect master password." (no hint which field wrong) | | | |
 | M2.2 | W | Pass | | Wrong password and nonexistent-username both give identical "Incorrect master password." | | | |
-| M2.3 | D | | | | | | TBD |
+| M2.3 | D | Pass | | "Logging in..." spinner shown, vault opens correctly (empty, All Items=0). Reproduces the M1.1 sticky "Vault is locked" banner bug every time (cosmetic, vault fully functional underneath) | | | |
 | M2.3 | W | Pass | | Vault opens correctly with uatuser/pw v1 | | | |
 | M3.1 | D | | | | | | TBD |
 | M3.1 | W | Fail | | Steps 1-7 pass (drawer, 4 type tabs, Generate produces real password via api.generatePassword, custom fields, TOTP, list shows correct counts). Step 8: Boolean custom field value input is a free-text box, not a toggle/checkbox; typed "Yes" per test data but detail view shows "2FA ON: No" (input parsed as false unless literally "true"). Everything else in detail view correct: website+copy, username, 8-bullet masked password, live TOTP counting down, Recovery code masked+reveal, Team text field, remarks, strength meter, password history link | M3.1-detail.png | Major | TBD |
