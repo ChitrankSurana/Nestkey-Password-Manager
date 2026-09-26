@@ -1,0 +1,125 @@
+# UAT Findings — `feature/modern-ui-overhaul`
+
+Script: [`UAT_MODERN_UI_OVERHAUL.md`](UAT_MODERN_UI_OVERHAUL.md). Result values: `Pass`, `Fail`, `N/A` (with reason), `Blocked` (by which ID).
+
+## Part 1 — Automated
+
+| ID | Result | Notes |
+|---|---|---|
+| A1 `cargo test --workspace` | Pass | 420 tests total across crates (348+2+26+44), `test result: ok`, 0 failed |
+| A2 `npm test` | Pass | 7 test files, 40 tests, all passed |
+| A3 `npm run build` | Pass | no tsc errors; `dist\` has index.html, viewer.html, newui.html, makeui.html |
+
+## Part 3 — Manual cases
+
+| ID | Mode | Claude result | User result | Observation | Screenshot | Severity | Action |
+|---|---|---|---|---|---|---|---|
+| M1.1 | D | | | | | | TBD |
+| M1.1 | W | Fail | | Step 1: fresh vault shows "Log in" screen, not "Register" (link to Register present). Steps 2-5 all pass: Interface select shows Classic/New/Make; selecting Make shows correct message naming `/makeui.html`; makeui.html loads with sidebar header "LocalVault"/"Personal", empty state | | Minor | TBD |
+| M2.1 | W (partial, done via M1.1) | Fail | | "No recovery" warning not shown on Register screen (Classic-reused). Step 3 (empty vault detail pane text) confirmed correct | | Minor | TBD |
+| M1.2 | D | | | | | | TBD |
+| M1.2 | W | Pass | | New UI loads; Classic loads; Make loads again, login required each time (fresh page load, no session) | | | |
+| M1.3 | D | | | | | | TBD |
+| M1.4 | D | | | | | | TBD |
+| M1.4 | W | | | | | | TBD |
+| M1.5 | W | | | | | | TBD |
+| M2.1 | D | | | | | | TBD |
+| M2.1 | W | | | | | | TBD |
+| M2.2 | D | | | | | | TBD |
+| M2.2 | W | Pass | | Wrong password and nonexistent-username both give identical "Incorrect master password." | | | |
+| M2.3 | D | | | | | | TBD |
+| M2.3 | W | Pass | | Vault opens correctly with uatuser/pw v1 | | | |
+| M3.1 | D | | | | | | TBD |
+| M3.1 | W | Fail | | Steps 1-7 pass (drawer, 4 type tabs, Generate produces real password via api.generatePassword, custom fields, TOTP, list shows correct counts). Step 8: Boolean custom field value input is a free-text box, not a toggle/checkbox; typed "Yes" per test data but detail view shows "2FA ON: No" (input parsed as false unless literally "true"). Everything else in detail view correct: website+copy, username, 8-bullet masked password, live TOTP counting down, Recovery code masked+reveal, Team text field, remarks, strength meter, password history link | M3.1-detail.png | Major | TBD |
+| M3.2 | D | | | | | | TBD |
+| M3.2 | W | Pass | | Note tile in list, Secure Notes count 1, detail shows masked Note with reveal showing full body correctly | | | |
+| M3.3 | D | | | | | | TBD |
+| M3.3 | W | Fail | | Step 2: list row shows only "Payment Card" label, no brand+last-4 hint (e.g. no "Visa •••• 1111"). Step 3: card number masked/reveals correctly (full PAN), expiry plain, CVV masked; but Card brand field entered ("Visa") is never shown anywhere in read-only detail (only visible again when editing). Step 4: edited card number to invalid short "41111" (not 16 digits) — accepted with no validation error, no rejection, saved and displayed as-is | | Minor | TBD |
+| M3.4 | D | | | | | | TBD |
+| M3.4 | W | Pass | | Identities count 1, detail shows Full name correctly | | | |
+| M3.5 | D | | | | | | TBD |
+| M3.5 | W | Pass | | All Items=7, Logins=4 | | | |
+| M3.6 | D | | | | | | TBD |
+| M3.6 | W | Fail | | Step 1 pass: item type shown read-only ("Type: Payment Card (fixed after creation)"). Step 2 pass: name change to "Visa Primary" saves and updates list+detail. Step 3 SECURITY BUG (see below), but data confirmed intact/persisted after a real reload+relogin. Step 4 pass: GitHub site-level Edit drawer only shows Name/Folder/Favorite/Website URL with note "Username, password, and other credential fields are edited from the credential's own Edit button" | | Blocker | TBD |
+| M3.6-lockbug | W | Fail | | SECURITY BUG: clicking "Lock Vault" shows toast "Vault is locked. Please log in again." but does NOT navigate to login or clear the vault UI — item list, detail pane, and reveal buttons remain fully interactive; clicking reveal on a card number after "locking" still displayed the plaintext value. A hard page reload does correctly require login (backend session was actually invalidated), so the SPA simply fails to react to the lock, leaving a stale, still-interactive, secret-revealing UI on screen indefinitely until manual reload | | Blocker | TBD |
+| M3.7 | D | | | | | | TBD |
+| M3.7 | W | Pass | | Detail shows primary + "Other logins (1)" expandable second credential block with own Edit/Delete/Copy username | | | |
+| M4.1 | D | | | | | | TBD |
+| M4.1 | W | Pass | | Star toggles Favorite/Unfavorite tooltip correctly; Favorites nav shows only GitHub when set, empty when unset; persists across reload+relogin | | | |
+| M4.2 | D | | | | | | TBD |
+| M4.2 | W | Pass | | Work, Personal both created via inline input | | | |
+| M4.3 | D | | | | | | TBD |
+| M4.3 | W | Pass | | Blank/spaces-only rejected silently; duplicate lowercase "work" shows "A folder with that name already exists." | | | |
+| M4.4 | D | | | | | | TBD |
+| M4.4 | W | Fail | | Core check passes: Work folder view shows exactly GitHub+Wifi, detail shows Folder chip "Work". Minor: the "A folder with that name already exists." error from M4.3 never cleared and is still rendered in the Folders sidebar section long after navigating away/completing unrelated actions | | Minor | TBD |
+| M4.5 | D | | | | | | TBD |
+| M4.5 | W | Fail | | Step 1 pass: Escape cancels rename-in-progress before Enter, name stays Work. Step 2 pass: rename Work→Job via Enter works, detail chip updates. Step 3: duplicate rejection itself works correctly (renaming Job→"Personal" is rejected, folder stays "Job", data not corrupted) but the inline rename input gets stuck open showing the rejected value; pressing Escape after a rejected (post-Enter) rename does NOT close/revert the input as it does pre-Enter — only a full page reload cleared the stuck editor | | Minor | TBD |
+| M4.6 | D | | | | | | TBD |
+| M4.6 | W | Fail | | Confirm dialog behavior: see M4.6-nativedialog below. After confirming, core check passes: Job folder gone, view fell back to All Items (not broken), GitHub/Wifi still exist with no Folder shown in detail, All Items count unchanged (7) | | Major | TBD |
+| M4.6-nativedialog | W | Fail | | Clicking "Delete folder" triggers a native browser `confirm()` dialog instead of the app's own custom confirm-dialog component (used elsewhere for site/credential delete, Empty Trash). This freezes the entire page/renderer until manually dismissed — inconsistent UX, and breaks any automation not specifically wired for native dialogs (Playwright, Claude in Chrome, likely also screen readers/a11y tooling) | | Major | TBD |
+| M5.1 | D | | | | | | TBD |
+| M5.1 | W | Pass | | All 6 positive matches confirmed live: site name, username, remarks, hidden custom field value, text custom field, sealed note body | | | |
+| M5.2 | D | | | | | | TBD |
+| M5.2 | W | Pass | | Password not searchable ("No matches" for exact password); card number "4111" matches Visa Primary (expected per design, sealed custom field is searchable); clearing box restores full list | | | |
+| M6.1 | D | | | | | | TBD |
+| M6.1 | W | Pass | | Once the reprompt checkbox was actually saved (see modal-overflow bug below for why that needed a workaround), all 7 steps pass: reprompt mode Per-credential by default; enabling flag + reveal shows custom "Re-enter your master password" modal (not native); wrong password rejected with masked password unchanged; correct password reveals; non-flagged ShopA reveals with no prompt; Copy on flagged GitHub password also triggers the prompt. Visual bonus: "PROTECTED — REQUIRES MASTER PASSWORD" banner + "PROTECTED" chip shown | | | |
+| M6.1-modaloverflow | W | Fail | | LAYOUT BUG: the "Edit credential" modal (`.fixed inset-0 ... flex items-center justify-center` backdrop) has no scroll container — its form content measured 892px tall while the modal backdrop is only as tall as the viewport, `overflow-y: visible` throughout, no scrollbar, `scrollIntoView` on the Save/Cancel row has no effect. On any viewport shorter than ~900px (a real possibility on laptops/smaller windows), Save and Cancel become completely unreachable once a credential has enough custom fields/TOTP/reprompt-checkbox to push content past the fold. Confirmed via DOM inspection, not a testing-tool artifact | | Blocker | TBD |
+| M6.2 | D | | | | | | TBD |
+| M6.2 | W | Fail | | Global mode + 15s grace set correctly in Settings. Step 2 pass: reveal ShopA prompts, entering pw v1 confirms. Step 3 FAIL: revealing ShopB immediately after (well under 15s, only a few seconds of tool actions elapsed) still triggered the prompt — grace window is not honored, every reveal prompts regardless of the configured window. Step 4: OldForum after ~10s+ also prompts (expected either way given the bug). Mode reset to Per-credential afterward | | Major | TBD |
+| M6.3 | D | | | | | | TBD |
+| M6.3 | W | Pass | | Confirmed via DOM: OldForum (8-char pw) and GitHub (12-char pw + recovery code) all render exactly 8 bullet characters, length-hiding confirmed | | | |
+| M6.4 | D | | | | | | TBD |
+| M6.4 | W | Blocked | | Not automatable here: `navigator.clipboard.readText()` hangs indefinitely (CDP eval timeout) in this automated/unfocused tab context — needs a real user with a focused window + Notepad, or Phase B computer-use. Left for user's independent run | | | User to test manually |
+| M6.5 | D | | | | | | TBD |
+| M6.5 | W | Fail | | 6-digit code is correct and does change at real TOTP period boundaries (553044→987055→029024→692711 observed over ~30s), so the underlying TOTP generation is correct. But the countdown display does not tick smoothly per second: observed stuck at "30s" for a full 10s window, then stuck at "1s" across two separate code rollovers (11+ seconds combined) instead of counting down 30→29→…→1→0. Countdown number is unreliable/not live, though code correctness and rollover timing are fine | | Minor | TBD |
+| M7.1 | D | | | | | | TBD |
+| M7.1 | W | Pass | | ShopA password changed 6× (Hist-1..Hist-6). Password history expanded to exactly 5 entries, newest-first by timestamp (Hist-5, Hist-4, Hist-3, Hist-2, Hist-1); original `Reuse-Me-123` rolled off as expected, cap-at-5 confirmed | | | |
+| M7.2 | D | | | | | | TBD |
+| M7.2 | W | Pass | | Changed only ShopA's username (blank→`histuser`), password left at `Hist-6`. Password history unchanged after save: same 5 entries, same 5 timestamps — confirms username-only edits do not create a history entry | | | |
+| M8.1 | D | | | | | | TBD |
+| M8.1 | W | Pass | | Deleted GitHub's second credential `octo-alt` — no confirm dialog (credential-level delete doesn't trigger one, only site/folder/Empty-Trash do), removed cleanly from detail. Trash showed the entry with item type + "Select an item to restore it" note; selecting it showed Username/Email + bulk-empty-trash note. Restored, `octo-alt` reappeared correctly under GitHub's "Other logins (1)" | | | |
+| M8.2 | D | | | | | | TBD |
+| M8.2 | W | Pass | | Deleted `OldForum` site — triggered the same native `confirm()` freeze as M4.6 (`M4.6-nativedialog`, not re-logged separately). After user manually confirmed: OldForum gone from All Items (6), its credential (`u1`) present in Trash. Restored that credential → OldForum site reappeared correctly in All Items | | | |
+| M8.3 | D | | | | | | TBD |
+| M8.3 | W | Pass | | Deleted `ShopB` site (native-confirm freeze again, user confirmed). Empty Trash: first click → user **cancelled** → ShopB still listed in Trash, nothing removed (confirmed). Second click → user **confirmed** → "Trash is empty", All Items stayed at 6. Fresh full-page reload + re-login: ShopB still absent, does not return | | | |
+| M9.0 | D | | | | | | TBD |
+| M9.0 | W | Pass | | PIN `2468` set (Security section shows "A PIN is set up for quick unlock", master-password confirm prompt required and honored). SSH key step (D-only) skipped. Deleted ShopA's `histuser` credential to seed Trash | | | |
+| M9.1 | D | | | | | | TBD |
+| M9.1 | W | Fail | | Step 1 pass: all-empty form is a no-op (no navigation, no request). Step 2: "New passwords don't match." error correctly triggered on mismatch, but renders at `y:-152` (off-screen above viewport, confirmed via DOM `getBoundingClientRect`) — invisible to the user without inspecting devtools, even though `display/visibility/opacity` are all normal and text color is the expected red. Step 3 pass: empty New field is rejected (no-op, stayed on Settings) | M9.1-offscreen-error | Minor | TBD |
+| M9.2 | D | | | | | | TBD |
+| M9.2 | W | Fail | | Wrong current password submitted (New/Confirm = pw v2) — correctly rejected (master password unchanged, verified via full reload + pw v1 login succeeding after). But the error shown was the generic "Vault is locked. Please log in again." (same off-screen-at-y:-152 rendering as M9.1) instead of an invalid-current-password message — misleading, since the vault was not actually locked and stayed fully interactive/browsable throughout | M9.2-wrongpw-wrongmsg | Minor | TBD |
+| M9.3 | D | | | | | | TBD |
+| M9.3 | W | Pass | | Current pw v1, New/Confirm pw v2 submitted. "Master password changed." shown (visible this time, not off-screen). Stayed logged in (no logout). PIN reverted to unset ("Unlock with a short PIN instead..." + New PIN field shown again). Backup file `uatuser-premasterchange-<digits>.bak` confirmed present in `%USERPROFILE%\.pwmgr\backups\` | | | |
+| M9.4 | D | | | | | | TBD |
+| M9.4 | W | Pass | | pw v1 correctly rejected post-change ("Incorrect master password.", visible). pw v2 logs in successfully. All items decrypt correctly: GitHub password `Gh!Pass-0001` + recovery code `RC-ALPHA-7788` + TOTP ticking; ShopA's Trash-restored credential still had its 5-entry password history with `Hist-5` intact; Wifi note `SSID home / key wifi-secret-99`; Visa card number `41111` + CVV `123`; identity full name `Uat Tester`. Trash-item restore-then-reveal flow itself also decrypts correctly | | | |
+| M9.5 | D | | | | | | TBD |
+| M9.5 | W | Fail | | Changed pw v2 -> pw v2 (same-as-old). Backend accepted silently: no "Master password changed." success message, no error, no new file in `%USERPROFILE%\.pwmgr\backups\` (still only the one M9.3 backup). Vault still fully decrypts and logs in with pw v2 afterward, so no data corruption — but the UI gives the user zero feedback either way, leaving them unable to tell whether a same-as-old submission did anything | M9.5-silent-noop | Minor | TBD |
+| M9.6 | D | | | | | | TBD |
+| M9.6 | W | Pass | | Switched Interface to Classic, reloaded at `/`, logged in with pw v2. Classic's Settings has the identical Change-master-password form as Make. Changed pw v2 -> pw v1 (reverting to original): "Master password changed." shown correctly **in-flow and visible** this time (unlike Make's M9.1/M9.2 off-screen rendering — same message, different layout context, so the bug may be Make-specific). Second backup file confirmed created (`uatuser-premasterchange-1790361765749.bak`). Switched Interface back to Make afterward per script instruction | | | |
+| M10.1 | D | | | | | | TBD |
+| M10.1 | W | Blocked | | Create Backup: clicking it does fire a real request (`POST /api/create_backup_download`, HTTP 200; a direct unauthenticated fetch to the same endpoint correctly returns 403 "Missing CSRF header", confirming the CSRF guard works), but the resulting browser download's file cannot be located from this session — no `chrome://downloads` access via Claude in Chrome, and no new file appeared anywhere under `C:\Users` in the 10 minutes after clicking. Without the downloaded `.bak` file, step 3 (Restore Backup with that file) can't be exercised either. Left for the user's manual run or Phase B | | | User to test manually (download + restore round-trip) |
+| M10.2 | D | | | | | | TBD |
+| M10.2 | W | Fail | | Step 1 pass: gap note visible verbatim ("CSV only carries site name, URL, notes, username, password, and remarks... use Backup instead"). Step 2 pass: blank master pw is a silent no-op (no request fires); wrong pw shows "Incorrect master password." correctly, in-flow and visible. Step 3: Encrypted(this device) + correct pw accepted (no error, form cleared) but the actual download can't be verified (same tooling limitation as M10.1). Step 4 Fail: Encrypted-with-password mode, mismatched export passwords (`Exp-1`/`Exp-2`) produced **no mismatch error at all** — confirmed via full-page DOM scan, nothing red/error-shaped anywhere; the click is a silent no-op both for mismatched and matching export passwords (no `export`-pattern network request fires either time) — the button ("Choose where to save the export") likely opens a native File-System-Access save picker that a CDP-driven click doesn't satisfy as a trusted user gesture, so this is inconclusive rather than a confirmed app bug, but the complete absence of a mismatch-error UI is still worth a developer's own manual check. Step 5 pass: Plaintext mode's Export button is `disabled` with empty confirmation text and becomes enabled only once `EXPORT PLAINTEXT` is typed exactly (verified via DOM `disabled` property). Step 6 (Classic gap-note parity) and file-content verification for steps 3-5 not completed — same download-visibility limitation | M10.2-noexport-mismatch-silent | Minor | TBD |
+| M10.3 | D | | | | | | TBD |
+| M10.3 | W | Pass | | Note: `%TEMP%\uat\chrome.csv` fixture had a `note` column that isn't part of the real Chrome/Chromium export format (`core/src/portio.rs` `CHROMIUM_HEADER` is exactly `name,url,username,password`, 4 columns) — correctly rejected with "CSV header does not match the expected Chromium format" (that's the app being correct, not a bug; fixture needed fixing, used a 4-column version for the actual test). Preview showed all 3 rows, editable, All Items unchanged (still 6) before commit. Edited ImportB's username cell to `bobby`. Commit Import: "Imported 2, skipped 1 duplicate(s)." All Items became 8; ImportA and ImportB each added exactly once; ImportB confirmed username `bobby`, type Login | | | Flag fixture `%TEMP%\uat\chrome.csv` for correction (drop the `note` column) |
+| M11.2b-health | D | | | | | | TBD |
+| M11.2b-health | W | Fail | | Step 1 pass: Weak Passwords includes OldForum, Unsecured Site lists OldForum, Old Passwords 0. Step 2 pass: clicking a Weak-Passwords entry's "View" navigates correctly to that item's detail (confirmed with OldForum). Step 3: with HIBP off, Breached card correctly prompts "Enable Breach check (HIBP) in Settings first" (no premature network call). First attempt: enabled the toggle then immediately navigated to Health Dashboard (in-app nav, no reload) — card still showed the disabled-state prompt; a subsequent full reload+relogin also showed the toggle reverted to off in Settings. Re-enabled it, this time it stuck (Health Dashboard showed the enabled "Check now" state), breach check ran correctly ("4 exposed logins found" including OldForum), and a later full reload+relogin (for M11.4) confirmed it as still ON and persisted correctly. Net effect looks like a save race when the toggle is flipped and the page is navigated away from immediately, rather than the setting being fundamentally non-persistent — worth a developer look but not a hard reproduce-every-time bug. Step 4 pass: threshold 90 days saves without error and persisted after reload | M11.2-hibp-toggle-save-race | Minor | TBD |
+| M11.1 | D | | | | | | TBD |
+| M11.1 | W | Pass | | Dark theme, all 5 screens (Health Dashboard, Password Generator, Data Hub, Settings, Trash): Make palette consistent (indigo accent, dark navy panels, not Classic's flat list), headings match verbatim ("Health Dashboard / Security analysis of your vault", "Settings / Preferences and security configuration", etc.). Light theme via sidebar sun/moon toggle: all screens checked readable with good contrast, no dark-only leftovers. Accent cycled through all 5 (Indigo/Sky/Teal/Purple/Pink): logo, nav pill, buttons, icons all updated consistently. Step 4 (pixel diff against `docs/make-ui-capture/` and `figma-make/screenshots/`) not done — out of scope for this session's tooling; the live checks above cover the same intent functionally. Reset to Indigo/Dark afterward | | | User to do side-by-side visual diff against reference screenshots if needed |
+| M11.3-generator | D | | | | | | TBD |
+| M11.3-generator | W | Pass | | Generate fills field + strength bar for all 4 methods: Random (`gJ8gf*Mm%YdDvMVR507:`), Pattern with custom template `Cvc#` produced `Heh8` (matches template shape), Memorable produced 4 dash-separated words (`stir-clock-royal-charm`), Pronounceable produced a lowercase pronounceable string. Copy/30s-clear not verified — same clipboard-read automation limitation as M6.4. Settings -> strength algorithm Simple->Advanced (zxcvbn): saved without error, Health Dashboard's Weak Passwords count stayed at 5 (unaffected), confirming the page-level note "'Weak' is always scored with the advanced algorithm regardless of Settings" | | | |
+| M11.4 | D | | | | | | TBD |
+| M11.4 | W | Fail | | Step 1 pass: theme, accent color, and "old" threshold all confirmed persisted after a full reload+relogin (Dark/Indigo/90 days all still set; HIBP toggle now also correctly persisted, see M11.2b-health). Step 2 Fail/inconclusive: set auto-lock to 1 minute, then idled ~2 minutes (no clicks/keys) via repeated tool waits — vault stayed fully unlocked and interactive, never dropped to the login screen. Could be a genuine auto-lock timer bug, or the automated tab not registering as "idle" the same way a real user session would (no independent way to rule that out from this session) — flagging for the user's manual verification rather than a confirmed bug. Reset auto-lock back to 5 minutes afterward | M11.4-autolock-not-triggering | Minor | User to verify 1-minute auto-lock manually |
+| M12.1 | D | | | | | | TBD |
+| M12.1 | W | Blocked | | `resize_window` (Claude in Chrome) reports success but the tab's actual viewport stays at the OS-maximized 1920x851 regardless of the requested size (confirmed via `window.innerWidth`/`innerHeight` before and after two different resize attempts) — no way to force a genuinely narrow viewport in this session to exercise the <768px breakpoint. Left for the user's manual run with real window resizing or DevTools device toolbar | | | User to test manually (resize window or DevTools device toolbar) |
+| M12.2 | D | | | | | | TBD |
+| M12.2 | W | Blocked | | Same tooling limitation as M12.1 — wide-viewport behavior wasn't distinguishable from the already-tested default (1920px is already "wide") so nothing new to check, but the narrow/wide comparison itself couldn't be completed | | | |
+| M13.1 | D | | | | | | TBD |
+| M13.1 | W | | | | | | TBD |
+| M13.2 | D | | | | | | TBD |
+| M13.2 | W | | | | | | TBD |
+| M13.3 | D | | | | | | TBD |
+| M13.3 | W | | | | | | TBD |
+| D1 | D | | | | | | TBD |
+| D2 | D | | | | | | TBD |
+| D3 | D | | | | | | TBD |
