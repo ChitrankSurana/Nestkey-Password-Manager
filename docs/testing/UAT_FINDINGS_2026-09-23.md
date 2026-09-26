@@ -21,8 +21,8 @@ Script: [`UAT_MODERN_UI_OVERHAUL.md`](UAT_MODERN_UI_OVERHAUL.md). Result values:
 | M1.2 | W | Pass | | New UI loads; Classic loads; Make loads again, login required each time (fresh page load, no session) | | | |
 | M1.3 | D | | | | | | TBD |
 | M1.4 | D | | | | | | TBD |
-| M1.4 | W | | | | | | TBD |
-| M1.5 | W | | | | | | TBD |
+| M1.4 | W | Blocked | | Load-failure recovery button needs deliberately breaking asset load (e.g. offline/blocked network) which this session has no reliable way to simulate via Claude in Chrome without also breaking the tool's own connectivity. Left for user's manual run (DevTools "offline" throttle) | | | User to test manually via DevTools offline mode |
+| M1.5 | W | Blocked | | Offline fonts check needs DevTools network throttling, not exposed as a Claude-in-Chrome tool in this session. Left for user's manual run | | | User to test manually via DevTools network throttle |
 | M2.1 | D | | | | | | TBD |
 | M2.1 | W | | | | | | TBD |
 | M2.2 | D | | | | | | TBD |
@@ -115,11 +115,11 @@ Script: [`UAT_MODERN_UI_OVERHAUL.md`](UAT_MODERN_UI_OVERHAUL.md). Result values:
 | M12.2 | D | | | | | | TBD |
 | M12.2 | W | Blocked | | Same tooling limitation as M12.1 — wide-viewport behavior wasn't distinguishable from the already-tested default (1920px is already "wide") so nothing new to check, but the narrow/wide comparison itself couldn't be completed | | | |
 | M13.1 | D | | | | | | TBD |
-| M13.1 | W | | | | | | TBD |
+| M13.1 | W | Fail | | Add site+credential, search, delete-to-Trash-and-restore, Generator, theme change: all work correctly. GitHub opens with custom fields/TOTP/recovery code/second credential all rendering with no errors from the newer item_type/folder schema. Site-level delete triggers the same native `confirm()` freeze as Make UI (M4.6/M8), confirmed here too. One new finding: auto-lock, reset to 5 minutes in Make UI's Settings earlier this session, showed back at 1 minute when checked in Classic's Settings after a session gap+relogin — consistent with the same kind of settings-persistence race seen at M11.2b/M11.4, not confirmed reproducible on demand | M13.1-autolock-reverted | Minor | TBD |
 | M13.2 | D | | | | | | TBD |
-| M13.2 | W | | | | | | TBD |
+| M13.2 | W | N/A | | Switched Interface to New, logged in at `/newui.html`. All 9 items list with no crash. Wifi (Secure Note), Visa Primary (Payment Card), and Me (Identity) all open and render correctly as generic site/credential rows (fields like Card Number, Full Name shown as plain labeled rows) — no crash from the newer item types. Could not verify "Favorites shows GitHub" — New UI has no Favorites nav item, star icon, or any favorite-toggle affordance anywhere (checked GitHub's detail view and the full accessibility tree); this looks like a pre-existing feature gap in this legacy UI (New UI predates folders/favorites) rather than a regression, so not counted as a Fail | | | |
 | M13.3 | D | | | | | | TBD |
-| M13.3 | W | | | | | | TBD |
+| M13.3 | W | Fail | | The Viewer app is also web-servable (`viewer.html`, title "Password Manager — Viewer"), not just the separate desktop Tauri app — used that path since a desktop Tauri launch isn't possible from this session. Login: pass (lands on "Vault — uatuser (read-only)"). Read-only confirmed genuinely: no Add/Edit/Delete anywhere, no nav rail at all (just the list + Lock button). Search `git` correctly returned only GitHub. Reveal on a credential correctly showed the real password. Wrong-password rejection: pass, same generic "Incorrect master password." shown correctly and visibly. **Fail**: clicking **Lock** does not tear down the UI — the vault list, the already-revealed plaintext password, and Copy buttons all stayed fully visible and interactive after clicking Lock; only a full page reload actually returned to the Login screen (and confirmed the backend session really was invalidated). This is the same failure shape as `M3.6-lockbug` in the Make UI, now also present in the read-only Viewer — arguably higher severity here since revealing a password specifically to hand off read-only access is the app's core use case for this surface | M13.3-viewer-lockbug | Blocker | TBD |
 | D1 | D | | | | | | TBD |
 | D2 | D | | | | | | TBD |
-| D3 | D | | | | | | TBD |
+| D3 | D-shell | Pass | | Checked `src-tauri/src/lib.rs:54` directly: `.title("tauri-app")` — confirmed, window title is the literal generic string "tauri-app", not a branded name like "LocalVault". Matches the script's own note that this is cosmetic. D1/D2 need actual hardware/desktop session, left for Phase B | | Minor | TBD |
