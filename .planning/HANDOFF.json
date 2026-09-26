@@ -1,42 +1,45 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-26T14:11:11.000Z",
+  "timestamp": "2026-09-26T18:46:46.000Z",
   "phase": "none",
-  "phase_name": "UAT — Modern UI Overhaul, Phase B setup (ad-hoc, not a GSD phase)",
+  "phase_name": "UAT — Modern UI Overhaul, Phase B (ad-hoc, not a GSD phase)",
   "phase_dir": "none",
   "plan": "docs/Plans/UAT_Modern_UI_Overhaul_Plan_2026-09-23.md",
-  "task": "Phase B (desktop D click-through) — setup only, not yet started",
-  "total_tasks": "Phase A (done, committed 6c39905) + Phase B (D click-through, this task) + user's independent D+W run + joint review",
+  "task": "M6 (Security gates) — M6.1-M6.4(password) done, M6.4(username) + M6.5 remaining",
+  "total_tasks": "Part 3 script M1-M13 + D1-D3 on D; M1-M5 fully done, M6 partial",
   "status": "paused",
   "completed_tasks": [
-    {"id": "PhaseA", "name": "Full Phase A: automated (A1-A3) + web (W) manual M1-M13 + D3 shell check", "status": "done", "commit": "6c39905", "result": "4 Blocker, 4 Major, 14 Minor findings recorded; 6 Blocked (session tooling limits, not app bugs); 1 N/A (New UI has no Favorites feature at all)"},
-    {"id": "PlanDocCheck", "name": "Checked docs/Plans/UAT_Modern_UI_Overhaul_Plan_2026-09-23.md for user-testing instructions", "status": "done", "result": "Confirmed the plan already covers this: Part 3 (M1-M13) is the same script for both D and W modes, and Process step 3 explicitly says the user runs the same script independently on D+W and fills the User column. Told the user this — no new doc needed, docs/testing/UAT_MODERN_UI_OVERHAUL.md is the frozen script to hand them."},
-    {"id": "PhaseB-setup-1", "name": "Stopped pwmgr-web server and its cargo processes (D and W share ~/.pwmgr, can't run both)", "status": "done"},
-    {"id": "PhaseB-setup-2", "name": "Wiped %USERPROFILE%\\.pwmgr per plan's Part 0.6 (pre-authorized: 'User decisions: %USERPROFILE%\\.pwmgr\\ holds only test data, fine to wipe')", "status": "done", "result": "Confirmed gone"}
+    {"id": "M1", "name": "Interface switching & launch", "status": "done", "commit": "227ae6b", "result": "Fail: same Login-not-Register deviation as W, plus new D-only sticky 'Vault is locked' banner bug after fresh Make login (cosmetic, clears on next CRUD action)"},
+    {"id": "M2", "name": "Auth", "status": "done", "commit": "43a6701", "result": "Pass/Fail matching W's known deviations, no new bugs"},
+    {"id": "M3", "name": "Item types & Add/Edit drawer", "status": "done", "commit": "20e33db", "result": "Reproduces W's Boolean-field and Payment-Card bugs. Notable: M3.6's Lock-vault security Blocker does NOT reproduce on D (Lock works correctly on desktop, browser-only regression)"},
+    {"id": "M4", "name": "Favorites & folders", "status": "done", "commit": "55876a1", "result": "New D-only regression: Escape during folder rename COMMITS instead of canceling (opposite of W). Reproduces W's stuck-rename-input bug. M4.6 native OS confirm dialog is correct per design, not a bug (W flagged the web version's window.confirm as inconsistent, that critique doesn't apply to D)"},
+    {"id": "M5", "name": "Search", "status": "done", "commit": "3e9dc47", "result": "All pass, matches W exactly, no new findings"},
+    {"id": "M6.1-M6.3", "name": "Security gates: per-credential reprompt, global+grace, mask length", "status": "done", "commit": "6edeb0d", "result": "M6.1 Pass. M6.2: grace window correctly honored on D (W had this broken) but NEW bug found: Cancel on reprompt dialog leaves an already-revealed value in plaintext instead of re-masking. M6.3 Pass"},
+    {"id": "M6.4-password", "name": "Clipboard 30s clear (password)", "status": "done", "commit": "6edeb0d", "result": "Pass — verified via PowerShell Get-Clipboard: value present immediately after Copy, empty after 35s"}
   ],
   "remaining_tasks": [
-    {"id": "PhaseB-setup-3", "name": "Regenerate SSH key fixture for D2 (uat_key) — %TEMP%\\uat\\ only still has chrome.csv, the uat_key from an earlier session's Part 0.7 setup is gone (not re-run this session)", "status": "not_started"},
-    {"id": "PhaseB-1", "name": "Confirm with user: Computer Use is ON in Claude desktop app Settings, private windows closed/minimized (plan's Phase B prerequisite, step 1) — NOT YET CONFIRMED", "status": "not_started"},
-    {"id": "PhaseB-2", "name": "Launch app via `npm run tauri:dev`, wait for window", "status": "not_started"},
-    {"id": "PhaseB-3", "name": "Request computer-use access for only: the app window (titled 'tauri-app') tier full, and Notepad tier full (for M6.4 clipboard check only)", "status": "not_started"},
-    {"id": "PhaseB-4", "name": "Run full Part 3 (M1-M13) on D via clicking/typing, screenshot marked steps, fill Claude/D column in docs/testing/UAT_FINDINGS_2026-09-23.md", "status": "not_started"},
-    {"id": "PhaseB-5", "name": "D1 Windows Hello: user performs themselves (biometric), Claude records", "status": "not_started"},
-    {"id": "PhaseB-6", "name": "D2 SSH agent: enable in Settings, add uat_key, ssh-add -l check, delete-requires-master-password check", "status": "not_started"},
-    {"id": "PhaseB-7", "name": "D3 window title: already confirmed via source read in Phase A (M13.3... no, D3 row), no need to redo — just re-verify visually if convenient", "status": "not_started"},
-    {"id": "UserRun", "name": "User's own independent D+W run (plan Process step 3) — hand them docs/testing/UAT_MODERN_UI_OVERHAUL.md", "status": "not_started"},
-    {"id": "JointReview", "name": "Joint review of all findings -> fix now / defer to docs/DEFERRED.md / accept. No fixes before this step", "status": "not_started"}
+    {"id": "M6.4-username", "name": "Repeat clipboard 30s-clear check for Copy username (not password)", "status": "not_started"},
+    {"id": "M6.5", "name": "TOTP: 6-digit code correctness, countdown ticking, rollover", "status": "not_started"},
+    {"id": "M7", "name": "Password history (cap at 5, no entry for username-only change)", "status": "not_started"},
+    {"id": "M8", "name": "Trash (credential delete/restore, site cascade, empty trash)", "status": "not_started"},
+    {"id": "M9", "name": "Master-password change (Make + Classic forms) — includes D-only SSH key add via M9.0", "status": "not_started"},
+    {"id": "M10", "name": "Data Hub (backup/restore, CSV export, CSV import)", "status": "not_started"},
+    {"id": "M11", "name": "Restyled screens (mk-* tokens) — dark/light theme, accents, Health content, Generator, Settings persistence", "status": "not_started"},
+    {"id": "M12", "name": "Responsive (narrow/wide window resize)", "status": "not_started"},
+    {"id": "M13", "name": "Regression: Classic smoke, New UI, Viewer app", "status": "not_started"},
+    {"id": "D1", "name": "Windows Hello biometric — user performs themselves, Claude records", "status": "not_started"},
+    {"id": "D2", "name": "SSH agent — enable in Settings, add uat_key, ssh-add -l, delete requires master password", "status": "not_started"},
+    {"id": "D3", "name": "Window title (already confirmed via source read in Phase A: lib.rs:54, literal 'tauri-app') — just eyeball live, no need to redo", "status": "not_started"},
+    {"id": "PostPhaseB", "name": "Report Phase B summary to user, then hand off UAT_MODERN_UI_OVERHAUL.md for user's own independent D+W run, then joint review of all findings (not before that gate)", "status": "not_started"}
   ],
   "blockers": [],
   "async_jobs": [],
-  "human_actions_pending": [
-    {"action": "Confirm Computer Use is enabled in Claude desktop app Settings before Phase B starts", "context": "plan's Phase B prerequisite #1 — not yet confirmed this session", "blocking": true},
-    {"action": "Close/minimize all private windows before Phase B starts", "context": "plan's Phase B prerequisite #1, privacy during screen interaction", "blocking": true},
-    {"action": "Run own independent D+W pass using docs/testing/UAT_MODERN_UI_OVERHAUL.md once both Phase A and B are done", "context": "plan Process step 3", "blocking": false}
-  ],
+  "human_actions_pending": [],
   "decisions": [
-    {"decision": "Told the user the plan doc already has full user-testing instructions (Part 3 script, Process step 3) rather than writing a new doc", "rationale": "docs/Plans/UAT_Modern_UI_Overhaul_Plan_2026-09-23.md Part 3 is explicitly mode-agnostic (same M1-M13 cases for D and W), and Process step 3 already assigns the user their own independent run of the same script — a new doc would just duplicate it", "phase": "none"}
+    {"decision": "M4.6's native OS confirm dialog on D is NOT a bug — it matches the documented cross-platform confirm-seam design (native plugin-dialog on desktop, window.confirm on web) already recorded in project decisions/STATE.md", "rationale": "Avoids mis-flagging intended platform-specific behavior as a regression just because W flagged its own web-only confirm() as inconsistent", "phase": "none"},
+    {"decision": "Used PowerShell Get-Clipboard to verify M6.4's clipboard-clear behavior instead of pasting into the user's real Notepad session", "rationale": "The Notepad window that came to foreground when launched was the user's own real session with unrelated pinned tabs (npm audit report, personal notes) — pasting a live app secret into it and leaving it there was inappropriate; PowerShell verification is equivalent and non-invasive. A fresh 'Untitled' Notepad tab was opened first but ctrl+v silently failed (0 characters) — likely a computer-use clipboard permission gap (clipboardRead/Write not requested in the original grant), not an app bug", "phase": "none"}
   ],
   "uncommitted_files": [],
-  "next_action": "Resume Phase B setup: regenerate the uat_key SSH fixture (ssh-keygen -t ed25519 -N '\"\"' -f \"$env:TEMP\\uat\\uat_key\" -C uat, per plan Part 0.7), then confirm with the user that Computer Use is enabled and private windows are closed, then launch `npm run tauri:dev`, request computer-use access for the app window + Notepad only, and begin the D click-through of Part 3 (M1-M13).",
-  "context_notes": "This is UAT execution per docs/Plans/UAT_Modern_UI_Overhaul_Plan_2026-09-23.md, now starting Phase B (Process step 2: 'desktop click-through via computer use'). Phase A is fully done and committed (6c39905) on feature/modern-ui-overhaul, not pushed, not touched main. Record-only rule still applies during Phase B too: no fixes during UAT. pwmgr-web and its cargo processes were killed this session specifically to free up ~/.pwmgr for the desktop app's exclusive use (D and W modes share the same underlying vault files and can't run concurrently per the plan's own note). .pwmgr was wiped fresh per Part 0.6 — Phase B's D run starts from a clean vault, same as Phase A's W run did. The chrome.csv CSV-import fixture in %TEMP%\\uat\\ is still present and already fixed (4-column Chromium format, not the original 5-column one) from Phase A's M10.3 correction — reuse it for Phase B's M10.3, don't recreate from the plan's own (incorrect) 5-column spec. Findings doc docs/testing/UAT_FINDINGS_2026-09-23.md already has a Claude/W column filled for all cases; this session will fill the Claude/D column alongside it, same rows, not new rows."
+  "next_action": "App is at the Login screen (relaunched after a spontaneous machine reboot cleared prior session state; data/settings persisted in ~/.pwmgr, confirmed intact). Log in as uatuser/pw v1, verify Reprompt mode reads back as Per-credential (was reset there at end of M6.2), then finish M6.4's Copy-username clipboard-clear check (any unflagged login, e.g. ShopA — it has no username; use OldForum's 'u1' instead), then M6.5 (TOTP on GitHub: 6-digit code correctness + live countdown + rollover), then continue M7 onward per docs/testing/UAT_MODERN_UI_OVERHAUL.md.",
+  "context_notes": "This is UAT Phase B (D desktop click-through) execution, ad-hoc work on feature/modern-ui-overhaul, not a GSD-tracked phase. Mid-M6, the host machine spontaneously rebooted (date rolled from 2026-09-26 evening to 2026-09-27 00:1x, ~3.5hr gap, all windows/processes gone, computer-use session had to re-establish). First relaunch attempt of pwmgr-app.exe showed a persistent blank BLACK window that never rendered content even after several seconds — had to force-kill and relaunch a second time, which then worked normally (login screen appeared). This blank-window-on-launch failure was NOT part of the formal M1.3/M1.4 script (those test a missing-asset scenario, not a cold-boot race) and wasn't logged as a UAT finding, but is worth the user's awareness as a real desktop-launch reliability issue if it recurs — consider filing it separately if it happens again. Record-only rule still applies: no fixes during UAT. Reprompt mode was deliberately reset to Per-credential at the end of M6.2 (its default/expected state for the rest of the script) — verify this stuck across the reboot before continuing."
 }
