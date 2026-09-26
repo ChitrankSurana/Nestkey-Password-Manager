@@ -14,13 +14,13 @@ Script: [`UAT_MODERN_UI_OVERHAUL.md`](UAT_MODERN_UI_OVERHAUL.md). Result values:
 
 | ID | Mode | Claude result | User result | Observation | Screenshot | Severity | Action |
 |---|---|---|---|---|---|---|---|
-| M1.1 | D | | | | | | TBD |
+| M1.1 | D | Fail | | Same deviation as W: fresh vault shows "Log in" screen (with Register link), not "Register" directly; Register screen itself also has no "no recovery" warning. Steps 2-5 pass: Interface select shows Classic/New/Make; selecting Make shows correct message ("takes effect on next launch" wording, D-appropriate); after close+relaunch+login, Make UI loads with sidebar header "LocalVault"/"Personal", empty state. NEW BUG (D, not seen on W): immediately after a fresh login into Make, list pane shows a persistent red "Vault is locked. Please log in again." banner even though the vault is demonstrably unlocked and fully functional (nav works, Add Item drawer opens and would save) — banner never clears, survives nav changes, purely cosmetic but wrong/alarming | | Major | TBD |
 | M1.1 | W | Fail | | Step 1: fresh vault shows "Log in" screen, not "Register" (link to Register present). Steps 2-5 all pass: Interface select shows Classic/New/Make; selecting Make shows correct message naming `/makeui.html`; makeui.html loads with sidebar header "LocalVault"/"Personal", empty state | | Minor | TBD |
 | M2.1 | W (partial, done via M1.1) | Fail | | "No recovery" warning not shown on Register screen (Classic-reused). Step 3 (empty vault detail pane text) confirmed correct | | Minor | TBD |
-| M1.2 | D | | | | | | TBD |
+| M1.2 | D | Pass | | New UI loads (icon-rail sidebar, "Vault 0 items", no lock-banner bug here); Classic loads (standard sidebar, no bug); switched back to Make, relaunched, login required (fresh session each relaunch, as expected) | | | |
 | M1.2 | W | Pass | | New UI loads; Classic loads; Make loads again, login required each time (fresh page load, no session) | | | |
-| M1.3 | D | | | | | | TBD |
-| M1.4 | D | | | | | | TBD |
+| M1.3 | D | Blocked | | Installed debug bundle (NSIS-installed to `%LOCALAPPDATA%\tauri-app\`) embeds frontend assets inside the exe at build time — no on-disk `dist\makeui.html` exists to rename (only `pwmgr-app.exe` + `uninstall.exe` in the install dir). Not reproducible without a source change to break the embedded fallback logic itself | | | Would need code-level fault injection to test |
+| M1.4 | D | N/A — not reproducible without code change | | No Make render error surfaced naturally during this session's D pass (the M1.1 lock-banner bug is a stale-state display issue, not a render/load failure, and did not trigger the "Switch to Classic UI" recovery screen) | | | |
 | M1.4 | W | Blocked | | Load-failure recovery button needs deliberately breaking asset load (e.g. offline/blocked network) which this session has no reliable way to simulate via Claude in Chrome without also breaking the tool's own connectivity. Left for user's manual run (DevTools "offline" throttle) | | | User to test manually via DevTools offline mode |
 | M1.5 | W | Blocked | | Offline fonts check needs DevTools network throttling, not exposed as a Claude-in-Chrome tool in this session. Left for user's manual run | | | User to test manually via DevTools network throttle |
 | M2.1 | D | | | | | | TBD |
