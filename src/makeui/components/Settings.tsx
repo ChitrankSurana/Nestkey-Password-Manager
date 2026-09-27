@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { api, isCommandError, isTauri, type RepromptMode, type SshKeyDto } from "../../lib/api";
 import { refreshRepromptConfig } from "../../lib/reprompt";
+import { getRememberLastUsername, setRememberLastUsername as setRememberLastUsernameStored } from "../../lib/lastUsername";
 import { MasterPasswordPrompt } from "../../components/MasterPasswordPrompt";
 import { IconChevron, IconDatabase, IconLock, IconMonitor, IconPalette, IconTerminal, IconTrash, type IconProps } from "../icons";
 
@@ -125,6 +126,7 @@ export function Settings({ username }: { username: string }) {
   const [sshKeys, setSshKeys] = useState<SshKeyDto[] | null>(null);
   const [sshLabelInput, setSshLabelInput] = useState("");
   const [sshKeyInput, setSshKeyInput] = useState("");
+  const [rememberLastUsername, setRememberLastUsername] = useState(() => getRememberLastUsername());
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const editedRef = useRef(false);
@@ -552,6 +554,15 @@ export function Settings({ username }: { username: string }) {
                     )}
                   </Field>
                 )}
+                <Field label="Remember last username" desc="Shows the Windows Hello / PIN option for that username immediately on the Login screen, without waiting for it to be typed. Stored on this device only, not synced or encrypted - a username isn't a secret.">
+                  <Toggle
+                    checked={rememberLastUsername}
+                    onChange={(v) => {
+                      setRememberLastUsername(v);
+                      setRememberLastUsernameStored(v);
+                    }}
+                  />
+                </Field>
               </>
             )}
             <Divider />
