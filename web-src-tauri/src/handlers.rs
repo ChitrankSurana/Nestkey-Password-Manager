@@ -387,6 +387,13 @@ async fn has_pin(State(ctx): State<AppContext>, Json(body): Json<HasPinRequest>)
     Ok(Json(do_has_pin(&app_state, &body.username)?))
 }
 
+// N1: same "public, pre-session" rationale as has_pin above - the Login/Register choice happens
+// before any session exists.
+async fn vault_exists(State(ctx): State<AppContext>) -> Result<Json<bool>, ApiError> {
+    let app_state = build_locked_state(&ctx.paths)?;
+    Ok(Json(do_vault_exists(&app_state)?))
+}
+
 async fn unlock_with_pin(
     State(ctx): State<AppContext>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -998,6 +1005,7 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/login", post(login))
         .route("/api/register_user", post(register))
         .route("/api/has_pin", post(has_pin))
+        .route("/api/vault_exists", post(vault_exists))
         .route("/api/unlock_with_pin", post(unlock_with_pin))
         .route("/api/logout", post(logout));
 

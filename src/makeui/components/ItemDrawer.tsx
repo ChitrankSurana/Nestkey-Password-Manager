@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { api, isCommandError, type CredentialDto, type CustomField, type CustomFieldType, type FolderDto, type SiteDto } from "../../lib/api";
 import { confirmDialog, siteDeleteMessage } from "../../lib/confirm";
+import { isPlausibleTotpSecret } from "../../lib/totp";
+import { deriveCardBrand, formatCardExpiry, isValidCardNumber, lastFourDigits } from "../../lib/card";
 import { PasswordGeneratorPanel } from "../../components/PasswordGeneratorPanel";
 import { RESERVED_LABEL } from "../lib/vaultSelectors";
 
@@ -99,29 +101,52 @@ export function ItemDrawer({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    // J2: validate before starting the multi-step add sequence (addSite -> ...-> addCredential ->
+    // setTotpSecret) - previously a bad secret's rejection only arrived after the site (and
+    // credential) were already created, leaving an orphan behind that a retry would then duplicate.
+    if (type === "login" && totpSecretInput.trim() !== "" && !isPlausibleTotpSecret(totpSecretInput)) {
+      setError("TOTP secret must be a valid base32 string.");
+      return;
+    }
+    if (type === "card" && cardNumber.trim() !== "" && !isValidCardNumber(cardNumber)) {
+      setError("Doesn't look like a valid card number.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       if (mode === "add") {
         const siteId = await api.addSite(name, url.trim() || null, notes.trim() || null);
-        if (favorite) await api.setSiteFavorite(siteId, true);
-        if (type !== "login") await api.setSiteItemType(siteId, type);
-        if (folderId !== null) await api.setSiteFolder(siteId, folderId);
-        if (type === "card" && (cardBrand.trim() !== "" || cardLast4.trim() !== "")) {
-          await api.setSiteCardHint(siteId, cardBrand.trim() || null, cardLast4.trim() || null);
-        }
-        if (type === "login") {
-          const customFields: CustomField[] = fields
-            .filter((f) => f.label.trim() !== "")
-            .map(({ label, value, fieldType }) => ({ label, value, fieldType }));
-          const credentialId = await api.addCredential(siteId, username.trim() || null, secret, remarks.trim() || null, customFields, repromptExempt);
-          if (totpSecretInput.trim() !== "") await api.setTotpSecret(credentialId, totpSecretInput.trim());
-        } else {
-          // B7: this last `false` is repromptExempt, not the old "require reprompt" flag - it
-          // means "not exempt", i.e. gated by default like every other credential. Notes and cards
-          // have no UI to set this per-item (their own secrets aren't optional to protect), so they
-          // always get the safe default.
-          await api.addCredential(siteId, null, "", null, sealedFieldsFor(type), false);
+        // J2: addSite through setTotpSecret is six separate commands with no transaction. A
+        // failure partway through previously left the site (and, for logins, the credential)
+        // already persisted, with no way to tell from the drawer alone - the site "appeared" in
+        // the list even though the whole Add didn't succeed, and retrying created a second one on
+        // top. Soft-deleting the just-created site on any failure here means a retry starts clean
+        // (the failed attempt lands in Trash instead of floating as a live orphan) - not a real DB
+        // transaction, but it removes both symptoms the finding described.
+        try {
+          if (favorite) await api.setSiteFavorite(siteId, true);
+          if (type !== "login") await api.setSiteItemType(siteId, type);
+          if (folderId !== null) await api.setSiteFolder(siteId, folderId);
+          if (type === "card" && (cardBrand.trim() !== "" || cardLast4.trim() !== "")) {
+            await api.setSiteCardHint(siteId, cardBrand.trim() || null, cardLast4.trim() || null);
+          }
+          if (type === "login") {
+            const customFields: CustomField[] = fields
+              .filter((f) => f.label.trim() !== "")
+              .map(({ label, value, fieldType }) => ({ label, value, fieldType }));
+            const credentialId = await api.addCredential(siteId, username.trim() || null, secret, remarks.trim() || null, customFields, repromptExempt);
+            if (totpSecretInput.trim() !== "") await api.setTotpSecret(credentialId, totpSecretInput.trim());
+          } else {
+            // B7: this last `false` is repromptExempt, not the old "require reprompt" flag - it
+            // means "not exempt", i.e. gated by default like every other credential. Notes and
+            // cards have no UI to set this per-item (their own secrets aren't optional to
+            // protect), so they always get the safe default.
+            await api.addCredential(siteId, null, "", null, sealedFieldsFor(type), false);
+          }
+        } catch (err) {
+          await api.softDeleteSite(siteId).catch(() => {});
+          throw err;
         }
       } else if (existingSite) {
         await api.updateSite(existingSite.id, name, url.trim() || null, notes.trim() || null);
@@ -334,10 +359,16 @@ export function ItemDrawer({
             <div className="flex gap-3">
               <label className="flex-1 block">
                 <span className="text-sm text-mk-fg2">Card brand (optional)</span>
+                {/* N6: auto-derived from the card number's IIN prefix (fully offline, no lookup)
+                    on every number change, but this field stays a plain editable input - the
+                    derived value is a starting point, not locked in. */}
                 <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg" value={cardBrand} onChange={(e) => setCardBrand(e.target.value)} placeholder="Visa" />
               </label>
               <label className="w-28 block">
                 <span className="text-sm text-mk-fg2">Last 4</span>
+                {/* N6: also auto-derived from the card number below, also still editable - was
+                    entirely separate hand-typed state from the number, so the two could disagree
+                    (list hint showing a different last-4 than the stored PAN actually ends in). */}
                 <input
                   className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg font-mono"
                   value={cardLast4}
@@ -348,11 +379,35 @@ export function ItemDrawer({
             </div>
             <label className="block">
               <span className="text-sm text-mk-fg2">Card number</span>
-              <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg font-mono" value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} />
+              <input
+                className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg font-mono"
+                value={cardNumber}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setCardNumber(value);
+                  const derivedBrand = deriveCardBrand(value);
+                  if (derivedBrand) setCardBrand(derivedBrand);
+                  setCardLast4(lastFourDigits(value));
+                }}
+              />
+              {/* N5: previously zero validation - a 5-digit "41111" saved with no warning. Digit
+                  count + Luhn checksum, same as any real card-entry form; still just a UI nudge,
+                  not enforced server-side (the field is a free-text sealed custom field). */}
+              {cardNumber.trim() !== "" && !isValidCardNumber(cardNumber) && (
+                <p className="mt-1 text-xs text-mk-red">Doesn't look like a valid card number.</p>
+              )}
             </label>
             <label className="block">
               <span className="text-sm text-mk-fg2">Expiration date</span>
-              <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg" value={cardExpiry} onChange={(e) => setCardExpiry(e.target.value)} placeholder="MM/YY" />
+              {/* N4: was a bare input with only a placeholder hint - auto-inserts the "/" as the
+                  user types digits, instead of requiring them to type it themselves. */}
+              <input
+                className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg"
+                value={cardExpiry}
+                onChange={(e) => setCardExpiry(formatCardExpiry(e.target.value))}
+                placeholder="MM/YY"
+                maxLength={5}
+              />
             </label>
             <label className="block">
               <span className="text-sm text-mk-fg2">Security code (CVV)</span>

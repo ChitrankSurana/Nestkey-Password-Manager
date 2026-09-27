@@ -1403,3 +1403,43 @@ async fn five_failed_pin_unlocks_lock_the_key_out_with_429() {
     // Even the correct PIN is refused while locked out.
     assert_eq!(attempt("123456").await.status(), 429);
 }
+
+#[tokio::test]
+async fn vault_exists_route_reflects_registration_state() {
+    // N1: the Login/Register choice needs this before any session exists - same "public,
+    // pre-session" contract as has_pin, verified end-to-end here over real HTTP.
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    let before: bool = client
+        .post(format!("{base}/api/vault_exists"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(before, false);
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let after: bool = client
+        .post(format!("{base}/api/vault_exists"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(after, true);
+}

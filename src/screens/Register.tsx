@@ -56,6 +56,12 @@ export function Register({
             title="This encrypts your vault - there is no recovery if you forget it"
           />
         </label>
+        {/* N1: was a `title=` tooltip attribute only (hover-only, invisible until the user
+            happens to hover the password field) - real visible warning copy instead. */}
+        <p className="text-xs text-yellow-500">
+          There is no password recovery. If you forget this master password, your vault cannot be
+          decrypted by anyone, including you.
+        </p>
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <Tooltip text="Create your account and vault" className="w-full">
           <button

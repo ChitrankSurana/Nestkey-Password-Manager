@@ -8,6 +8,7 @@ import {
   markRepromptSuccess,
   subscribeToRepromptExpiry,
 } from "../lib/reprompt";
+import { maskString, randomMaskLength } from "../lib/mask";
 import { Icon } from "./Icon";
 import { Spinner } from "./Spinner";
 
@@ -27,6 +28,11 @@ const CLASS_COLOR: Record<"digit" | "symbol", string> = {
 // mode) read by every mounted SecretField; see src/lib/reprompt.ts and src/lib/repromptPolicy.ts.
 export function SecretField({ secret, exempt }: { secret: string; exempt?: boolean }) {
   const [revealed, setRevealed] = useState(false);
+  // N8: computed once per mount (lazy initializer), not on every render - a mask whose length
+  // visibly changed on every re-render would be its own tell that it's fake/random, defeating the
+  // point. Stable for the life of this field instance is enough to stop it correlating with the
+  // real secret's length.
+  const [maskLength] = useState(() => randomMaskLength(secret.length));
   const [pendingAction, setPendingAction] = useState<"reveal" | "copy" | null>(null);
   const [password, setPassword] = useState("");
   const [reauthError, setReauthError] = useState<string | null>(null);
@@ -111,7 +117,7 @@ export function SecretField({ secret, exempt }: { secret: string; exempt?: boole
                 ch
               );
             })
-          : "••••••••"}
+          : maskString(maskLength)}
       </span>
       <button
         type="button"
@@ -155,6 +161,12 @@ export function SecretField({ secret, exempt }: { secret: string; exempt?: boole
                   setPendingAction(null);
                   setPassword("");
                   setReauthError(null);
+                  // B7: this dialog only ever opens on a reveal attempt (hiding now skips the gate
+                  // entirely, above), so `revealed` is already false here by construction - this
+                  // is a defensive no-op, not something normal execution relies on, but it means
+                  // "Cancel never leaves a secret visible" holds even if a future change to
+                  // requestAction's short-circuit above ever let this dialog open while revealed.
+                  setRevealed(false);
                 }}
                 className="px-3 py-1 text-sm"
               >

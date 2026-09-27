@@ -584,6 +584,12 @@ export function Settings({ username }: { username: string }) {
                 Re-seals every stored secret under the new password (a backup is taken automatically first). Removes PIN and biometric unlock -
                 set them up again afterward.
               </p>
+              {/* N1: same no-recovery caution as Register - forgetting a NEW master password is
+                  just as unrecoverable as forgetting the original one. */}
+              <p className="text-xs mt-1 text-yellow-500">
+                There is no password recovery. Choose a new master password you won't forget - if
+                you do, this vault cannot be decrypted by anyone, including you.
+              </p>
               <form onSubmit={handleChangeMasterPassword} className="mt-3 space-y-2 max-w-xs">
                 <input
                   type="password"

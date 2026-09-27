@@ -55,6 +55,15 @@ pub fn do_has_pin(state: &AppState, username: &str) -> Result<bool, CommandError
     Ok(crate::auth::has_pin(&registry, username)?)
 }
 
+/// N1: whether ANY account has ever been registered on this machine - callable while locked (the
+/// Login/Register choice happens before any vault is open), so this only touches the registry.
+/// `registry::list_usernames` (used only here until now) has no per-user filter because there is
+/// none to apply: this is a single yes/no over the whole registry, not a lookup for one username.
+pub fn do_vault_exists(state: &AppState) -> Result<bool, CommandError> {
+    let registry = state.registry.lock().unwrap();
+    Ok(!crate::registry::list_usernames(&registry)?.is_empty())
+}
+
 // Holds `session` while acquiring `registry` (needs the live vault key to seal, and the registry
 // connection to persist the result, at the same time) - the one place in this file that nests
 // those two locks. Safe: every other function touching both locks them sequentially (one dropped
@@ -442,11 +451,16 @@ pub fn do_set_totp_secret(state: &AppState, credential_id: i64, secret: &str) ->
     // Fail fast on a bad secret before persisting it - generate_code's own base32 decode is the
     // validation; the timestamp passed here is irrelevant to whether decoding succeeds.
     crate::totp::generate_code(secret, 0)?;
+    // J2: persist the normalized form (whitespace/dashes/padding stripped, uppercased), not the
+    // raw pasted string - do_totp_code already re-normalizes on every read regardless, so this
+    // doesn't change behavior, it just stores the value it actually reads as instead of leaving
+    // the raw one sitting in the vault only because normalize_secret happens to be idempotent.
+    let normalized = crate::totp::normalize_secret(secret);
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
-    Ok(crate::vault::set_totp_secret(conn, key, credential_id, secret)?)
+    Ok(crate::vault::set_totp_secret(conn, key, credential_id, &normalized)?)
 }
 
 pub fn do_clear_totp_secret(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
@@ -1341,6 +1355,21 @@ mod tests {
     }
 
     #[test]
+    fn vault_exists_reflects_whether_any_account_has_ever_registered() {
+        let (state, paths, _dir) = test_state_and_paths();
+        assert_eq!(do_vault_exists(&state).unwrap(), false);
+
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        assert_eq!(do_vault_exists(&state).unwrap(), true);
+
+        // Still true even locked - this only ever looks at the registry, never state.session or
+        // state.vault (both are None/locked here), matching do_has_pin's own "works while locked"
+        // contract that the Login/Register screen relies on.
+        do_lock(&state);
+        assert_eq!(do_vault_exists(&state).unwrap(), true);
+    }
+
+    #[test]
     fn login_with_wrong_password_returns_single_generic_error_and_stays_locked() {
         let (state, paths, _dir) = test_state_and_paths();
         do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
@@ -2229,6 +2258,30 @@ mod tests {
         assert_eq!(totp.code.len(), 6);
         assert!(totp.code.chars().all(|c| c.is_ascii_digit()));
         assert!(totp.seconds_remaining >= 1 && totp.seconds_remaining <= 30);
+    }
+
+    #[test]
+    fn set_totp_secret_accepts_a_padded_messy_secret_and_persists_the_normalized_form() {
+        // J2: a padded/spaced/lowercase secret (as pasted from some issuer's setup screen) must
+        // both be accepted and stored normalized, so a later read doesn't depend on
+        // do_totp_code's own re-normalization to work - do_get_ssh... err, list_ssh_keys aside,
+        // reads should see the same clean value that generated the very first code.
+        let (state, paths, dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+
+        do_set_totp_secret(&state, cred_id, " jbsw-y3dp ehpk3pxp=\t\n").unwrap();
+
+        let vault_guard = state.vault.lock().unwrap();
+        let (conn, _) = vault_guard.as_ref().unwrap();
+        let session = state.session.lock().unwrap();
+        let key = session.key().unwrap();
+        let stored = crate::vault::get_totp_secret(conn, key, cred_id).unwrap().unwrap();
+        assert_eq!(stored, "JBSWY3DPEHPK3PXP");
+        drop(session);
+        drop(vault_guard);
+        drop(dir);
     }
 
     #[test]

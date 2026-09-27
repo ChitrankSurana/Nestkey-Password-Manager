@@ -9,8 +9,14 @@ export const CLIPBOARD_CLEAR_MS = 30_000;
 export async function webCopyToClipboard(
   text: string,
   clipboard: Pick<Clipboard, "writeText" | "readText"> = navigator.clipboard,
+  // N9: usernames/URLs/non-secret custom fields were auto-clearing (and claiming the 30s notice)
+  // exactly like passwords - that behavior should only apply to secrets. Defaults to true so every
+  // existing call site (all of which copy a secret) keeps its current behavior unchanged; only
+  // CopyButton (non-secret copies) passes false.
+  autoClear = true,
 ): Promise<void> {
   await clipboard.writeText(text);
+  if (!autoClear) return;
   setTimeout(async () => {
     try {
       if ((await clipboard.readText()) === text) {

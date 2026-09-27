@@ -293,13 +293,74 @@ Landed, tested (`cargo test --workspace` 421/421, `npm test` 40/40,
 
 Still open (not started this session):
 
+- **J2** — fixed: `core/src/totp.rs` now strips `=` padding too (not just
+  whitespace/dashes) before base32-decoding; `do_set_totp_secret` persists
+  the normalized secret; both `ItemDrawer.tsx` and `CredentialEditor.tsx`
+  validate the secret before starting their add sequence; both also
+  soft-delete the just-created site/credential if a later step in that
+  sequence fails, so a retry can't duplicate it.
+- **J3** — fixed: `CredentialBlock.tsx`'s history cache now invalidates
+  (and refetches if the panel is open) whenever `credential.secret`
+  changes; history moved from a bottom-of-list disclosure link into its
+  own Details/History tab per the user's request.
+- **N1** — fixed: new `do_vault_exists`/`vault_exists` command (desktop +
+  web) wraps `registry::list_usernames`; all three interactive shells
+  (Make/Classic/newui) open Register instead of Login when no account
+  exists yet; the Register screen's tooltip-only warning is now visible
+  body copy, and the same caution now appears on both Settings' change-
+  master-password forms.
+- **N4/N5/N6** — fixed via a new `src/lib/card.ts` (MM/YY auto-format,
+  Luhn + length validation, brand/last-4 derived from the number via a
+  local IIN table, both still editable) wired into `ItemDrawer.tsx`.
+- **N8** — fixed: mask length is now random per field instance (8-16
+  chars, never equal to the real secret's length), not a fixed 8 bullets.
+- **N9** — fixed: `copyToClipboard`/`webCopyToClipboard`/the Tauri and
+  viewer `copy_to_clipboard` commands all gained an `autoClear` param
+  (default true); `CopyButton` (username/URL/text-field copies, both
+  shells) passes `false` and shows a plain "Copied." toast instead of the
+  30s-clear notice. Secret copies (SecretField, TOTP, the generator's own
+  copy) are untouched, still `true`.
+- **N12, N19, N23** — investigated, no code change: see the dedicated
+  section below.
+- **N15** — investigated, not root-caused: see the dedicated section below.
+
+Still open (not started this session):
+
 - **Wave 0** — R1 (folder placeholder) is very likely explained by
   `foldersOpen` defaulting to `false` in `Sidebar.tsx`, so nothing shows
   under a collapsed Folders section on a fresh vault, whether or not it's
-  a bug; R2–R5, the vault-data-loss investigation, the blank-window
-  investigation, and the N15 settings-race diagnosis are all still live
-  retests/investigations, not yet done.
+  a bug; R2–R5 and the vault-data-loss/blank-window investigations are
+  still live retests, not yet done.
 - **B2** — deferred to the web pass per standing decision.
-- **J2, J3** — not started.
-- **N1, N4–N6, N8/N9, N12/N13/N15/N16/N18/N19, N23** — not started.
+- **N13, N16, N18** — not started.
 - **Wave 4 follow-ups** — not started (expected; filed for later).
+
+## Wave 0 finding: N15 (settings persistence race)
+
+Investigated, not root-caused with confidence, not fixed this session. The
+web-mode session's `AppState` (and its `config` mutex) is created once at
+login and held for the session's lifetime in the server's session store
+(`web-src-tauri/src/handlers.rs`'s `UserSession`), same single-mutex shape as
+desktop — every `do_update_*` call clones the *current* `state.config`, so a
+same-session double-write ordering issue is not the obvious explanation.
+Needs a live reproduction attempt (toggle, navigate immediately, check
+network tab for a second overlapping request) rather than a guessed fix.
+
+## Wave 3 findings needing no code change
+
+- **N12** — the plaintext-export confirmation input in both `CsvExport.tsx`
+  screens is a plain controlled `<input>` with no `onPaste` handler, no
+  `readOnly`, nothing blocking a paste. The UAT session's "can't paste"
+  observation is very likely the same class of limitation already noted
+  elsewhere in the findings (an automation tool not simulating a real paste
+  gesture) rather than a product bug. No fix applied.
+- **N19** — both standalone Generator screens (`src/makeui/components/
+  Generator.tsx`, `src/screens/Generator.tsx`) already render the shared
+  `PasswordGeneratorPanel`, which already has a Copy button
+  (`api.copyToClipboard`). Already satisfied; no code change needed.
+- **N23** — the `%TEMP%\uat\chrome.csv` fixture on this machine
+  (`/tmp/uat/chrome.csv`) currently has exactly the 4 expected columns
+  (`name`, `url`, `username`, `password`), not the 5-column version with an
+  extra `note` field the finding described — it appears to already be the
+  corrected copy from a prior session's workaround, not the original broken
+  fixture. Left untouched rather than guessing at a file that may be in use.

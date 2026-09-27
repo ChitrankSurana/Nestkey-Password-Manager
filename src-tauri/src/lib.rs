@@ -107,6 +107,7 @@ pub fn run() {
             commands::register_user,
             commands::login,
             commands::has_pin,
+            commands::vault_exists,
             commands::unlock_with_pin,
             commands::set_pin,
             commands::clear_pin,

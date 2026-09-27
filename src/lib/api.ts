@@ -303,6 +303,10 @@ export const api = {
   login: (username: string, masterPassword: string) =>
     call<AuthSuccess>("login", { username, masterPassword }),
   hasPin: (username: string) => call<boolean>("has_pin", { username }),
+  // N1: whether ANY account has ever been registered on this machine - lets the Login/Register
+  // choice open on the right screen for a genuinely fresh install instead of always defaulting to
+  // Login even when there's no account yet to log into.
+  vaultExists: () => call<boolean>("vault_exists"),
   unlockWithPin: (username: string, pin: string) =>
     call<AuthSuccess>("unlock_with_pin", { username, pin }),
   setPin: (pin: string) => call<void>("set_pin", { pin }),
@@ -382,8 +386,10 @@ export const api = {
   generatePassword: (request: GenerateRequest) => call<string>("generate_password", { request }),
   analyzeStrength: (password: string) => call<StrengthDto>("analyze_strength", { password }),
   // No HTTP endpoint for clipboard - the browser has its own API. Desktop keeps the Tauri command.
-  copyToClipboard: (text: string) =>
-    isTauri ? invoke<void>("copy_to_clipboard", { text }) : webCopyToClipboard(text),
+  // N9: autoClear defaults to true (every pre-existing call site copies a secret) - CopyButton is
+  // the one caller that passes false, for non-secret copies (username, URL, a Text custom field).
+  copyToClipboard: (text: string, autoClear = true) =>
+    isTauri ? invoke<void>("copy_to_clipboard", { text, autoClear }) : webCopyToClipboard(text, undefined, autoClear),
   // Desktop writes to the path from the native save dialog; web downloads the bytes (save picker
   // where the browser supports it) and resolves to the file name instead of a server path.
   createBackup: async (destinationPath: string | null = null): Promise<string> => {

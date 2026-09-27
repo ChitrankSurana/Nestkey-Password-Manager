@@ -5,6 +5,7 @@ import { Icon } from "../components/Icon";
 import { PasswordGeneratorPanel } from "../components/PasswordGeneratorPanel";
 import { MasterPasswordPrompt } from "../components/MasterPasswordPrompt";
 import { isRepromptRequired, markRepromptSuccess } from "../lib/reprompt";
+import { isPlausibleTotpSecret } from "../lib/totp";
 
 let nextFieldKey = 0;
 type EditableField = CustomField & { key: number };
@@ -72,6 +73,12 @@ export function CredentialEditor({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    // J2: validate before starting the add/edit + TOTP sequence - previously a bad secret's
+    // rejection only arrived after the credential itself had already been persisted.
+    if (totpSecretInput.trim() !== "" && !isPlausibleTotpSecret(totpSecretInput)) {
+      setError("TOTP secret must be a valid base32 string.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -79,16 +86,26 @@ export function CredentialEditor({
         .filter((f) => f.label.trim() !== "")
         .map(({ label, value, fieldType }) => ({ label, value, fieldType }));
       let credentialId: number;
+      let isNewCredential = false;
       if (existing) {
         await api.updateCredential(existing.id, username || null, secret, remarks || null, customFields, repromptExempt);
         credentialId = existing.id;
       } else {
         credentialId = await api.addCredential(siteId, username || null, secret, remarks || null, customFields, repromptExempt);
+        isNewCredential = true;
       }
-      if (totpSecretInput.trim() !== "") {
-        await api.setTotpSecret(credentialId, totpSecretInput.trim());
-      } else if (removeTotp) {
-        await api.clearTotpSecret(credentialId);
+      try {
+        if (totpSecretInput.trim() !== "") {
+          await api.setTotpSecret(credentialId, totpSecretInput.trim());
+        } else if (removeTotp) {
+          await api.clearTotpSecret(credentialId);
+        }
+      } catch (err) {
+        // J2: only roll back a credential THIS submit just created - undoing an edit to an
+        // existing one isn't as simple as a delete, and the credential existed before this
+        // attempt regardless of whether TOTP now fails to attach.
+        if (isNewCredential) await api.softDeleteCredential(credentialId).catch(() => {});
+        throw err;
       }
       onSaved();
     } catch (err) {

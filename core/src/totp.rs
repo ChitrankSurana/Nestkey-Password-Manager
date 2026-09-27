@@ -11,10 +11,22 @@ const STEP_SECONDS: u64 = 30;
 
 /// RFC 6238 TOTP: HMAC-SHA1, 30s step, 6-digit code - the classic profile (Google Authenticator,
 /// Bitwarden's default) matching the plan doc's chosen spec. `secret_base32` is the value a user
-/// pastes from a site's "set up 2FA" screen (e.g. `JBSWY3DPEHPK3PXP`); un-padded is the common case
-/// so this decodes with `BASE32_NOPAD` rather than requiring `=` padding.
+/// pastes from a site's "set up 2FA" screen (e.g. `JBSWY3DPEHPK3PXP`); this decodes with
+/// `BASE32_NOPAD` rather than requiring `=` padding, so `=` is stripped alongside whitespace/dashes
+/// below rather than passed through - a secret copied from a site that *does* pad it (some issuers
+/// do) was previously rejected outright with the generic "must be a valid base32 string" error
+/// (J2). `normalize_secret` is exposed so a caller can persist the cleaned form rather than the
+/// raw pasted string (see `commands::do_set_totp_secret`), avoiding re-deriving it on every read.
+pub fn normalize_secret(secret_base32: &str) -> String {
+    secret_base32
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-' && *c != '=')
+        .collect::<String>()
+        .to_ascii_uppercase()
+}
+
 pub fn generate_code(secret_base32: &str, unix_time: u64) -> Result<String, TotpError> {
-    let cleaned = secret_base32.trim().replace([' ', '-'], "").to_ascii_uppercase();
+    let cleaned = normalize_secret(secret_base32);
     let key = data_encoding::BASE32_NOPAD
         .decode(cleaned.as_bytes())
         .map_err(|_| TotpError::InvalidSecret)?;
@@ -78,6 +90,29 @@ mod tests {
     #[test]
     fn generate_code_rejects_invalid_base32() {
         assert_eq!(generate_code("not-valid-base32-!!!", 59), Err(TotpError::InvalidSecret));
+    }
+
+    #[test]
+    fn generate_code_accepts_padded_base32_and_tabs_or_newlines() {
+        // J2: a secret pasted from a site that pads it (some issuers do) was previously rejected
+        // outright with "TOTP secret must be a valid base32 string" - BASE32_NOPAD's decode fails
+        // on a trailing '=' unless it's stripped first, same as whitespace/dashes already were.
+        // A 4-byte key is deliberately NOT a multiple of 5 bytes (unlike the 20-byte RFC key used
+        // elsewhere in this file, which base32-encodes to an exact 32 chars with no padding at
+        // all) - 32 bits needs padding out to a full 8-char base32 group.
+        let key = b"1234";
+        let secret_base32 = data_encoding::BASE32.encode(key); // padded, unlike BASE32_NOPAD
+        assert!(secret_base32.contains('='), "test fixture must actually be padded");
+        let messy = format!("\t{}\n", secret_base32);
+
+        let code = generate_code(&messy, 59).unwrap();
+
+        assert_eq!(code, code_for_key(key, 59));
+    }
+
+    #[test]
+    fn normalize_secret_strips_whitespace_dashes_and_padding_then_uppercases() {
+        assert_eq!(normalize_secret(" jbsw-y3dp ehpk3pxp=\t\n"), "JBSWY3DPEHPK3PXP");
     }
 
     #[test]

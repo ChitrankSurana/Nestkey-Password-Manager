@@ -14,7 +14,7 @@ use pwmgr_core::commands::{
     do_update_mobile_nav_style, do_update_nav_collapsed, do_update_old_password_days,
     do_update_reprompt_grace_seconds, do_update_reprompt_mode, do_update_site,
     do_update_ssh_agent_enabled, do_update_strength_algorithm, do_update_theme,
-    do_update_ui_variant, do_verify_master_password,
+    do_update_ui_variant, do_vault_exists, do_verify_master_password,
 };
 use pwmgr_core::dto::{
     AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
@@ -58,6 +58,11 @@ pub fn login(
 #[tauri::command]
 pub fn has_pin(state: State<AppState>, username: String) -> Result<bool, CommandError> {
     do_has_pin(&state, &username)
+}
+
+#[tauri::command]
+pub fn vault_exists(state: State<AppState>) -> Result<bool, CommandError> {
+    do_vault_exists(&state)
 }
 
 #[tauri::command]
@@ -413,9 +418,17 @@ const CLIPBOARD_CLEAR_SECS: u64 = 30; // hardcoded constant, NOT a user setting
 // Thin wrapper only - the effect is an OS clipboard side effect requiring a real `AppHandle`, so it
 // stays a per-Tauri-binary command (promoting it would force pwmgr-core to depend on tauri).
 #[tauri::command]
-pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), CommandError> {
+// N9: `auto_clear` lets a non-secret copy (username, URL, a Text-type custom field) skip the 30s
+// wipe entirely - that behavior should only apply to actual secrets. Every existing frontend call
+// site passes `true` explicitly except CopyButton (see src/lib/api.ts), so this is not defaulted
+// on the Rust side; Tauri's JS bridge has no notion of a parameter default, only the TS wrapper
+// does.
+pub fn copy_to_clipboard(app: tauri::AppHandle, text: String, auto_clear: bool) -> Result<(), CommandError> {
     let secret = Zeroizing::new(text);
     app.clipboard().write_text(secret.as_str()).map_err(|_| pwmgr_core::error::internal_error())?;
+    if !auto_clear {
+        return Ok(());
+    }
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(CLIPBOARD_CLEAR_SECS)).await;
