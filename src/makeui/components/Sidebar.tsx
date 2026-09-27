@@ -1,6 +1,7 @@
 import { useState, type ComponentType } from "react";
 import { api, isCommandError, type SiteDto, type FolderDto } from "../../lib/api";
 import { confirmDialog } from "../../lib/confirm";
+import { getFoldersSectionOpen, getVaultSectionOpen, setFoldersSectionOpen, setVaultSectionOpen } from "../../lib/sidebarPrefs";
 import {
   IconActivity,
   IconCard,
@@ -159,7 +160,18 @@ export function Sidebar({
   onToggleTheme: () => void;
   onLock: () => void;
 }) {
-  const [foldersOpen, setFoldersOpen] = useState(false);
+  // N18: collapsible first pane (was fixed-open with no way to collapse it) and remembered
+  // collapse state for both sections (was always the same hardcoded default every load).
+  const [vaultOpen, setVaultOpenState] = useState(() => getVaultSectionOpen());
+  const [foldersOpen, setFoldersOpenState] = useState(() => getFoldersSectionOpen());
+  function setVaultOpen(open: boolean) {
+    setVaultOpenState(open);
+    setVaultSectionOpen(open);
+  }
+  function setFoldersOpen(open: boolean) {
+    setFoldersOpenState(open);
+    setFoldersSectionOpen(open);
+  }
   const [addingFolder, setAddingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
@@ -237,11 +249,19 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-        <div className="px-2 pt-1 pb-1">
+        <button
+          onClick={() => setVaultOpen(!vaultOpen)}
+          className="w-full flex items-center gap-2 px-2 pt-1 pb-1 text-left"
+        >
+          <IconChevron size={10} className={`transition-transform duration-200 ${vaultOpen ? "rotate-90" : ""}`} />
           <p className="text-[10px] font-semibold uppercase tracking-widest text-mk-label">Vault</p>
-        </div>
-        {navItem("all", "All Items", IconKey, counts.all)}
-        {navItem("favorites", "Favorites", IconStar, counts.fav)}
+        </button>
+        {vaultOpen && (
+          <>
+            {navItem("all", "All Items", IconKey, counts.all)}
+            {navItem("favorites", "Favorites", IconStar, counts.fav)}
+          </>
+        )}
 
         <div className="px-2 pt-3 pb-1">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-mk-label">Types</p>
