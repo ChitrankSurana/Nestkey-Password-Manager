@@ -73,7 +73,7 @@ export function CredentialBlock({
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate">{credential.username ?? "(no username)"}</span>
         {credential.username && <CopyButton text={credential.username} tooltip="Copy username" />}
-        {credential.reprompt && (
+        {!credential.repromptExempt && (
           <span className="flex items-center gap-1 rounded border bg-[var(--surface)] border-[var(--border)] px-2 py-0.5 text-xs">
             <Icon name="lock-fill" /> Reprompt
           </span>
@@ -112,7 +112,7 @@ export function CredentialBlock({
       {expanded && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <SecretField secret={credential.secret} reprompt={credential.reprompt} />
+            <SecretField secret={credential.secret} exempt={credential.repromptExempt} />
           </div>
 
           {credential.hasTotp && <TotpDisplay credentialId={credential.id} />}
@@ -123,7 +123,7 @@ export function CredentialBlock({
               label={f.label}
               value={f.value}
               fieldType={f.fieldType}
-              reprompt={credential.reprompt}
+              repromptExempt={credential.repromptExempt}
             />
           ))}
 

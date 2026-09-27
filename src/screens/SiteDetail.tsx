@@ -72,7 +72,7 @@ export function SiteDetail({ siteId, onBack }: { siteId: number; onBack: () => v
             <li key={c.id} className="rounded border px-2 py-1 border-[var(--border)] space-y-1">
               <div className="flex items-center gap-2">
                 <span className="w-32 truncate">{c.username ?? "(no username)"}</span>
-                <SecretField secret={c.secret} reprompt={c.reprompt} />
+                <SecretField secret={c.secret} exempt={c.repromptExempt} />
                 <Tooltip text="Edit this credential">
                   <button onClick={() => setEditing(c)} className="underline text-sm">
                     <Icon name="pencil-fill" /> Edit
@@ -106,7 +106,7 @@ export function SiteDetail({ siteId, onBack }: { siteId: number; onBack: () => v
                     <div key={i} className="flex items-center gap-2 text-sm">
                       <span className="w-32 truncate opacity-70">{f.label}</span>
                       {f.fieldType === "hidden" ? (
-                        <SecretField secret={f.value} reprompt={c.reprompt} />
+                        <SecretField secret={f.value} exempt={c.repromptExempt} />
                       ) : f.fieldType === "boolean" ? (
                         <span>{f.value === "true" ? "Yes" : "No"}</span>
                       ) : (

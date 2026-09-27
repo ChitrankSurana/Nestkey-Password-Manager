@@ -50,4 +50,12 @@ describe("Spinner wiring invariants (G-08-7)", () => {
     const code = readStripped("components/SecretField.tsx");
     expect(code, "src/components/SecretField.tsx must render <Spinner").toMatch(/<Spinner/);
   });
+
+  it("N2: Icon.tsx forces inline-block, so animate-spin's rotate transform isn't a silent no-op", () => {
+    // A plain <i> is display: inline, and CSS transforms don't apply to inline non-replaced
+    // elements - Spinner would render motionless with the animation class present and the
+    // keyframes running, exactly the reported bug. This pins the fix at its one call site.
+    const code = readStripped("components/Icon.tsx");
+    expect(code, "src/components/Icon.tsx must render its <i> as inline-block").toMatch(/inline-block/);
+  });
 });

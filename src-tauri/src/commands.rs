@@ -255,9 +255,9 @@ pub fn add_credential(
     secret: String,
     remarks: Option<String>,
     custom_fields: Vec<CustomField>,
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<i64, CommandError> {
-    do_add_credential(&state, site_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt)
+    do_add_credential(&state, site_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt_exempt)
 }
 
 #[tauri::command]
@@ -268,9 +268,9 @@ pub fn update_credential(
     secret: String,
     remarks: Option<String>,
     custom_fields: Vec<CustomField>,
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<(), CommandError> {
-    do_update_credential(&state, credential_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt)
+    do_update_credential(&state, credential_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt_exempt)
 }
 
 #[tauri::command]

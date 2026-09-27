@@ -23,7 +23,7 @@ export function CredentialEditor({
   const [username, setUsername] = useState(existing?.username ?? "");
   const [secret, setSecret] = useState(existing?.secret ?? "");
   const [remarks, setRemarks] = useState(existing?.remarks ?? "");
-  const [reprompt, setReprompt] = useState(existing?.reprompt ?? false);
+  const [repromptExempt, setRepromptExempt] = useState(existing?.repromptExempt ?? false);
   const [fields, setFields] = useState<EditableField[]>(
     () => (existing?.customFields ?? []).map((f) => ({ ...f, key: nextFieldKey++ })),
   );
@@ -57,7 +57,7 @@ export function CredentialEditor({
       setPasswordRevealed(false);
       return;
     }
-    if (isRepromptRequired(reprompt)) {
+    if (isRepromptRequired(repromptExempt)) {
       setShowReauth(true);
       return;
     }
@@ -80,10 +80,10 @@ export function CredentialEditor({
         .map(({ label, value, fieldType }) => ({ label, value, fieldType }));
       let credentialId: number;
       if (existing) {
-        await api.updateCredential(existing.id, username || null, secret, remarks || null, customFields, reprompt);
+        await api.updateCredential(existing.id, username || null, secret, remarks || null, customFields, repromptExempt);
         credentialId = existing.id;
       } else {
-        credentialId = await api.addCredential(siteId, username || null, secret, remarks || null, customFields, reprompt);
+        credentialId = await api.addCredential(siteId, username || null, secret, remarks || null, customFields, repromptExempt);
       }
       if (totpSecretInput.trim() !== "") {
         await api.setTotpSecret(credentialId, totpSecretInput.trim());
@@ -253,10 +253,12 @@ export function CredentialEditor({
           )}
         </label>
 
+        {/* B7: every credential is gated by the master password by default now - this checkbox is
+            the opt-OUT, not the opt-in the old "Require master password to view" copy described. */}
         <label className="flex items-center gap-2">
-          <input type="checkbox" checked={reprompt} onChange={(e) => setReprompt(e.target.checked)} />
-          <span className="text-sm" title="Ask for the master password again before revealing or copying this item, even while the vault is unlocked">
-            Require master password to view
+          <input type="checkbox" checked={repromptExempt} onChange={(e) => setRepromptExempt(e.target.checked)} />
+          <span className="text-sm" title="Skip the master-password prompt when revealing or copying this item - not recommended">
+            Don't require master password to view
           </span>
         </label>
 

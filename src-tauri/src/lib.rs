@@ -51,7 +51,9 @@ pub fn run() {
             // Window label MUST stay "main" - src-tauri/capabilities/default.json scopes the
             // clipboard-manager and dialog permissions to that label (D-04/T-08-02).
             tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App(entry.into()))
-                .title("tauri-app")
+                // N17/D3: was the literal generic string "tauri-app" (Tauri's own scaffold
+                // default), not a branded name - cosmetic but confusing in the taskbar/title bar.
+                .title("LocalVault")
                 .inner_size(800.0, 600.0)
                 .build()?;
 

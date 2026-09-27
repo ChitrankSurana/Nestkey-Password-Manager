@@ -95,7 +95,7 @@ struct AddCredentialRequest {
     #[serde(default)]
     custom_fields: Vec<CustomField>,
     #[serde(default)]
-    reprompt: bool,
+    reprompt_exempt: bool,
 }
 
 #[derive(Deserialize)]
@@ -108,7 +108,7 @@ struct UpdateCredentialRequest {
     #[serde(default)]
     custom_fields: Vec<CustomField>,
     #[serde(default)]
-    reprompt: bool,
+    reprompt_exempt: bool,
 }
 
 #[derive(Deserialize)]
@@ -566,7 +566,7 @@ async fn add_credential(
 ) -> Result<Json<i64>, ApiError> {
     Ok(Json(do_add_credential(
         &s.app_state, b.site_id, b.username.as_deref(), &b.secret, b.remarks.as_deref(),
-        &b.custom_fields, b.reprompt,
+        &b.custom_fields, b.reprompt_exempt,
     )?))
 }
 
@@ -576,7 +576,7 @@ async fn update_credential(
 ) -> Result<StatusCode, ApiError> {
     do_update_credential(
         &s.app_state, b.credential_id, b.username.as_deref(), &b.secret, b.remarks.as_deref(),
-        &b.custom_fields, b.reprompt,
+        &b.custom_fields, b.reprompt_exempt,
     )?;
     Ok(StatusCode::OK)
 }

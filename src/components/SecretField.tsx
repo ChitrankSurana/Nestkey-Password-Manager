@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { toast } from "../lib/toast";
 import { classifyChar } from "../lib/passwordColor";
-import { ensureRepromptConfig, isRepromptRequired, markRepromptSuccess } from "../lib/reprompt";
+import {
+  ensureRepromptConfig,
+  isRepromptRequired,
+  markRepromptSuccess,
+  subscribeToRepromptExpiry,
+} from "../lib/reprompt";
 import { Icon } from "./Icon";
 import { Spinner } from "./Spinner";
 
@@ -16,11 +21,11 @@ const CLASS_COLOR: Record<"digit" | "symbol", string> = {
 // Colorizes digits/symbols on reveal (Bitwarden's bit-color-password idea) - letters inherit the
 // default text color, only digit/symbol runs get a wrapping span.
 //
-// `reprompt` is the per-item "require master password to view" flag - it still fully gates
-// reveal/copy in Per-credential mode (today's default). In Global mode (G-08-2) every credential
-// prompts regardless of this flag, and one correct entry opens a shared grace window read by
-// every mounted SecretField; see src/lib/reprompt.ts and src/lib/repromptPolicy.ts.
-export function SecretField({ secret, reprompt }: { secret: string; reprompt?: boolean }) {
+// B7: every credential is gated by the master password now. `exempt` (the credential's own
+// `repromptExempt` flag, inverted from its pre-B7 meaning) is a per-credential opt-OUT of that
+// gate - the exception, not the rule. One correct entry opens a shared grace window (in "grace"
+// mode) read by every mounted SecretField; see src/lib/reprompt.ts and src/lib/repromptPolicy.ts.
+export function SecretField({ secret, exempt }: { secret: string; exempt?: boolean }) {
   const [revealed, setRevealed] = useState(false);
   const [pendingAction, setPendingAction] = useState<"reveal" | "copy" | null>(null);
   const [password, setPassword] = useState("");
@@ -33,6 +38,14 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
     void ensureRepromptConfig();
   }, []);
 
+  useEffect(() => {
+    // B7: re-mask this field the instant the shared grace window expires, rather than leaving a
+    // revealed secret on screen indefinitely until some unrelated action happens to re-check the
+    // gate. Only subscribes while actually revealed - an already-masked field has nothing to do.
+    if (!revealed) return;
+    return subscribeToRepromptExpiry(() => setRevealed(false));
+  }, [revealed]);
+
   function runAction(action: "reveal" | "copy") {
     if (action === "reveal") {
       setRevealed((r) => !r);
@@ -43,13 +56,19 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
   }
 
   function requestAction(action: "reveal" | "copy") {
+    // B7: hiding an already-revealed value must never itself prompt - only the reveal direction
+    // is gated. Previously this ran the same gate for both directions, so hiding a field after
+    // the grace window expired would (bizarrely) ask for the master password just to mask it.
+    if (action === "reveal" && revealed) {
+      setRevealed(false);
+      return;
+    }
     // Decides through the shared reprompt policy instead of a bare flag check (G-08-2). If the
-    // config read hasn't resolved yet, the default policy is Per-credential - today's behavior -
-    // so this deliberately fails open rather than prompting spuriously on every field before
-    // config loads. The reprompt gate is a convenience gate over an already-unlocked vault, not a
-    // security boundary (SECURITY_CONCERNS.md records that decrypted secrets are in the DOM while
-    // unlocked).
-    if (isRepromptRequired(reprompt === true)) {
+    // config read hasn't resolved yet, the default policy still gates every reveal - see
+    // DEFAULT_REPROMPT_POLICY - so this never fails open on a slow config load. The reprompt gate
+    // is a convenience gate over an already-unlocked vault, not a security boundary
+    // (SECURITY_CONCERNS.md records that decrypted secrets are in the DOM while unlocked).
+    if (isRepromptRequired(exempt === true)) {
       setPendingAction(action);
     } else {
       runAction(action);

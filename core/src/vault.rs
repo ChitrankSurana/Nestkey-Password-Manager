@@ -136,6 +136,17 @@ fn add_credential_columns_if_missing(conn: &Connection) -> Result<(), VaultError
     if !existing.iter().any(|c| c == "reprompt") {
         conn.execute("ALTER TABLE credentials ADD COLUMN reprompt INTEGER NOT NULL DEFAULT 0", [])?;
     }
+    // B7: `reprompt` (above) predates the always-gated-by-default policy and is retired, left in
+    // place unused rather than dropped (SQLite ALTER TABLE DROP COLUMN has version/index caveats
+    // this schema has never needed to navigate before, and the column costs nothing sitting idle).
+    // `reprompt_exempt` is a distinct new column, not a reinterpretation of the old one's stored
+    // values - every existing row gets the new column's DEFAULT 0 ("not exempt", i.e. protected),
+    // which is the only migration that can't silently invert what an existing credential's flag
+    // used to mean (a row a user had deliberately flagged true for extra protection must not
+    // wake up as "exempt from protection" just because a column was reused).
+    if !existing.iter().any(|c| c == "reprompt_exempt") {
+        conn.execute("ALTER TABLE credentials ADD COLUMN reprompt_exempt INTEGER NOT NULL DEFAULT 0", [])?;
+    }
     if !existing.iter().any(|c| c == "custom_fields_enc") {
         conn.execute("ALTER TABLE credentials ADD COLUMN custom_fields_enc BLOB", [])?;
         conn.execute("ALTER TABLE credentials ADD COLUMN custom_fields_nonce BLOB", [])?;
@@ -461,7 +472,12 @@ pub struct Credential {
     pub secret: String,
     pub remarks: Option<String>,
     pub custom_fields: Vec<CustomField>,
-    pub reprompt: bool,
+    // B7: inverted from the pre-B7 `reprompt` column's meaning. Every credential is gated by the
+    // master password by default now; this is a per-credential OPT-OUT of that gate, not an
+    // opt-in to it. Backed by the `reprompt_exempt` column, a distinct column from the old
+    // `reprompt` one (see add_credential_columns_if_missing) so existing data can't be silently
+    // reinterpreted with the opposite meaning.
+    pub reprompt_exempt: bool,
     // Presence only - the TOTP seed itself is never eagerly decrypted for a listing, only on
     // demand by `get_totp_secret` (used solely to compute the current code).
     pub has_totp: bool,
@@ -481,7 +497,7 @@ impl std::fmt::Debug for Credential {
             .field("remarks", &self.remarks)
             // A Hidden-type value here is exactly as sensitive as `secret` above - count only.
             .field("custom_fields", &format!("<{} field(s)>", self.custom_fields.len()))
-            .field("reprompt", &self.reprompt)
+            .field("reprompt_exempt", &self.reprompt_exempt)
             .field("has_totp", &self.has_totp)
             .finish()
     }
@@ -495,18 +511,18 @@ pub fn add_credential(
     secret: &str,
     remarks: Option<&str>,
     custom_fields: &[CustomField],
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<i64, VaultError> {
     validate_fields_for_site(conn, site_id, custom_fields)?;
     let (secret_enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
     let (fields_enc, fields_nonce) = seal_custom_fields(key, custom_fields)?;
     conn.execute(
         "INSERT INTO credentials
-            (site_id, username, secret_enc, secret_nonce, remarks, custom_fields_enc, custom_fields_nonce, reprompt)
+            (site_id, username, secret_enc, secret_nonce, remarks, custom_fields_enc, custom_fields_nonce, reprompt_exempt)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         rusqlite::params![
             site_id, username, secret_enc, nonce.to_vec(), remarks,
-            fields_enc, fields_nonce.to_vec(), reprompt,
+            fields_enc, fields_nonce.to_vec(), reprompt_exempt,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -519,7 +535,7 @@ pub fn list_credentials_for_site(
 ) -> Result<Vec<Credential>, VaultError> {
     let mut stmt = conn.prepare(
         "SELECT c.id, c.site_id, c.username, c.secret_enc, c.secret_nonce, c.remarks,
-                c.custom_fields_enc, c.custom_fields_nonce, c.reprompt, (c.totp_secret_enc IS NOT NULL)
+                c.custom_fields_enc, c.custom_fields_nonce, c.reprompt_exempt, (c.totp_secret_enc IS NOT NULL)
          FROM credentials c
          JOIN sites s ON s.id = c.site_id
          WHERE c.site_id = ?1 AND c.deleted_at IS NULL AND s.deleted_at IS NULL
@@ -534,14 +550,14 @@ pub fn list_credentials_for_site(
         let remarks: Option<String> = row.get(5)?;
         let fields_enc: Option<Vec<u8>> = row.get(6)?;
         let fields_nonce: Option<Vec<u8>> = row.get(7)?;
-        let reprompt: bool = row.get(8)?;
+        let reprompt_exempt: bool = row.get(8)?;
         let has_totp: bool = row.get(9)?;
-        Ok((id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt, has_totp))
+        Ok((id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt_exempt, has_totp))
     })?;
 
     let mut out = Vec::new();
     for r in rows {
-        let (id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt, has_totp) = r?;
+        let (id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt_exempt, has_totp) = r?;
         // secret_nonce comes from the DB row - external input relative to this function, not
         // something this code controls. A malformed/corrupted row (bad migration, manual DB
         // surgery, future bug elsewhere) must not be able to crash the whole read path via an
@@ -554,7 +570,7 @@ pub fn list_credentials_for_site(
         let plaintext = crate::crypto::open(key, &secret_enc, &nonce)?;
         let secret = String::from_utf8(plaintext).map_err(|_| VaultError::UnlockFailed)?;
         let custom_fields = open_custom_fields(key, fields_enc, fields_nonce)?;
-        out.push(Credential { id, site_id, username, secret, remarks, custom_fields, reprompt, has_totp });
+        out.push(Credential { id, site_id, username, secret, remarks, custom_fields, reprompt_exempt, has_totp });
     }
     Ok(out)
 }
@@ -628,7 +644,7 @@ pub fn update_credential(
     secret: &str,
     remarks: Option<&str>,
     custom_fields: &[CustomField],
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<(), VaultError> {
     let owner: Option<i64> = conn
         .query_row(
@@ -677,22 +693,22 @@ pub fn update_credential(
     let updated = if secret_changed {
         conn.execute(
             "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
-             custom_fields_enc = ?5, custom_fields_nonce = ?6, reprompt = ?7,
+             custom_fields_enc = ?5, custom_fields_nonce = ?6, reprompt_exempt = ?7,
              updated_at = datetime('now'), password_updated_at = datetime('now')
              WHERE id = ?8 AND deleted_at IS NULL",
             rusqlite::params![
                 username, secret_enc, nonce.to_vec(), remarks,
-                fields_enc, fields_nonce.to_vec(), reprompt, credential_id,
+                fields_enc, fields_nonce.to_vec(), reprompt_exempt, credential_id,
             ],
         )?
     } else {
         conn.execute(
             "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
-             custom_fields_enc = ?5, custom_fields_nonce = ?6, reprompt = ?7,
+             custom_fields_enc = ?5, custom_fields_nonce = ?6, reprompt_exempt = ?7,
              updated_at = datetime('now') WHERE id = ?8 AND deleted_at IS NULL",
             rusqlite::params![
                 username, secret_enc, nonce.to_vec(), remarks,
-                fields_enc, fields_nonce.to_vec(), reprompt, credential_id,
+                fields_enc, fields_nonce.to_vec(), reprompt_exempt, credential_id,
             ],
         )?
     };

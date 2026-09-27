@@ -159,7 +159,7 @@ export function DetailPanel({
       return (
         <div className="rounded-xl border p-3 border-mk-border bg-mk-card">
           {note !== null ? (
-            <DetailField label="Note" value={note} fieldType="hidden" reprompt={credentials?.[0]?.reprompt ?? false} />
+            <DetailField label="Note" value={note} fieldType="hidden" repromptExempt={credentials?.[0]?.repromptExempt ?? false} />
           ) : (
             <p className="text-sm text-mk-faint">{credentialsLoading ? "Loading…" : "No note content yet."}</p>
           )}
@@ -171,7 +171,7 @@ export function DetailPanel({
       const number = reservedField(credentials, RESERVED_LABEL.cardNumber);
       const expiry = reservedField(credentials, RESERVED_LABEL.cardExpiry);
       const cvv = reservedField(credentials, RESERVED_LABEL.cardCvv);
-      const reprompt = credentials?.[0]?.reprompt ?? false;
+      const repromptExempt = credentials?.[0]?.repromptExempt ?? false;
       return (
         <div className="rounded-xl border p-3 space-y-3 border-mk-border bg-mk-card">
           {site!.cardBrand && site!.cardLast4 && (
@@ -179,15 +179,15 @@ export function DetailPanel({
               {site!.cardBrand} ending in {site!.cardLast4}
             </p>
           )}
-          {number !== null && <DetailField label="Card Number" value={number} fieldType="hidden" reprompt={reprompt} />}
+          {number !== null && <DetailField label="Card Number" value={number} fieldType="hidden" repromptExempt={repromptExempt} />}
           {expiry !== null && (
             <div className="border-t border-mk-border pt-3">
-              <DetailField label="Expiration Date" value={expiry} fieldType="text" reprompt={reprompt} />
+              <DetailField label="Expiration Date" value={expiry} fieldType="text" repromptExempt={repromptExempt} />
             </div>
           )}
           {cvv !== null && (
             <div className="border-t border-mk-border pt-3">
-              <DetailField label="Security Code (CVV)" value={cvv} fieldType="hidden" reprompt={reprompt} />
+              <DetailField label="Security Code (CVV)" value={cvv} fieldType="hidden" repromptExempt={repromptExempt} />
             </div>
           )}
           {number === null && expiry === null && cvv === null && (
@@ -202,7 +202,7 @@ export function DetailPanel({
     return (
       <div className="rounded-xl border p-3 border-mk-border bg-mk-card">
         {fullName !== null ? (
-          <DetailField label="Full Name" value={fullName} fieldType="text" reprompt={false} />
+          <DetailField label="Full Name" value={fullName} fieldType="text" repromptExempt={false} />
         ) : (
           <p className="text-sm text-mk-faint">{credentialsLoading ? "Loading…" : "No identity details saved yet."}</p>
         )}
@@ -247,7 +247,10 @@ export function DetailPanel({
         {error && <p className="text-sm text-mk-red">{error}</p>}
         {actionError && <p className="text-sm text-mk-red">{actionError}</p>}
 
-        {site.itemType === "login" && credentials?.some((c) => c.reprompt) && (
+        {/* B7: every item type is gated by the master password by default now, and the banner
+            follows that - shown whenever at least one credential is NOT exempt, for every item
+            type, not just logins (secure notes and cards hold sealed secrets too). */}
+        {credentials?.some((c) => !c.repromptExempt) && (
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg w-max text-[10px] uppercase font-bold tracking-wide bg-mk-accent-muted text-mk-accent-light border border-mk-accent-border">
             <IconLock size={10} /> Protected — requires master password
           </div>

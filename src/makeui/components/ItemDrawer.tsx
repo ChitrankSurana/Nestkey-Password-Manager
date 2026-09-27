@@ -54,7 +54,7 @@ export function ItemDrawer({
   const [username, setUsername] = useState("");
   const [secret, setSecret] = useState("");
   const [remarks, setRemarks] = useState("");
-  const [reprompt, setReprompt] = useState(false);
+  const [repromptExempt, setRepromptExempt] = useState(false);
   const [fields, setFields] = useState<EditableField[]>([]);
   const [totpSecretInput, setTotpSecretInput] = useState("");
 
@@ -114,9 +114,13 @@ export function ItemDrawer({
           const customFields: CustomField[] = fields
             .filter((f) => f.label.trim() !== "")
             .map(({ label, value, fieldType }) => ({ label, value, fieldType }));
-          const credentialId = await api.addCredential(siteId, username.trim() || null, secret, remarks.trim() || null, customFields, reprompt);
+          const credentialId = await api.addCredential(siteId, username.trim() || null, secret, remarks.trim() || null, customFields, repromptExempt);
           if (totpSecretInput.trim() !== "") await api.setTotpSecret(credentialId, totpSecretInput.trim());
         } else {
+          // B7: this last `false` is repromptExempt, not the old "require reprompt" flag - it
+          // means "not exempt", i.e. gated by default like every other credential. Notes and cards
+          // have no UI to set this per-item (their own secrets aren't optional to protect), so they
+          // always get the safe default.
           await api.addCredential(siteId, null, "", null, sealedFieldsFor(type), false);
         }
       } else if (existingSite) {
@@ -129,6 +133,7 @@ export function ItemDrawer({
         if (type !== "login") {
           const sealed = sealedFieldsFor(type);
           if (primaryCredential) {
+            // B7: `false` here is repromptExempt - not exempt, gated by the safe default.
             await api.updateCredential(primaryCredential.id, null, "", null, sealed, false);
           } else if (sealed.length > 0) {
             await api.addCredential(existingSite.id, null, "", null, sealed, false);
@@ -297,9 +302,12 @@ export function ItemDrawer({
                   />
                 </label>
 
+                {/* B7: every credential is gated by the master password by default now - this
+                    checkbox is the opt-OUT, not the opt-in the old "Require master password to
+                    view" copy described. */}
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={reprompt} onChange={(e) => setReprompt(e.target.checked)} />
-                  <span className="text-sm text-mk-fg2">Require master password to view</span>
+                  <input type="checkbox" checked={repromptExempt} onChange={(e) => setRepromptExempt(e.target.checked)} />
+                  <span className="text-sm text-mk-fg2">Don't require master password to view (not recommended)</span>
                 </label>
               </>
             )}

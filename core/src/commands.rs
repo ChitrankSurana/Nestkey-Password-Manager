@@ -407,13 +407,13 @@ pub fn do_add_credential(
     secret: &str,
     remarks: Option<&str>,
     custom_fields: &[crate::vault::CustomField],
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<i64, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
-    Ok(crate::vault::add_credential(conn, key, site_id, username, secret, remarks, custom_fields, reprompt)?)
+    Ok(crate::vault::add_credential(conn, key, site_id, username, secret, remarks, custom_fields, reprompt_exempt)?)
 }
 
 pub fn do_update_credential(
@@ -423,13 +423,13 @@ pub fn do_update_credential(
     secret: &str,
     remarks: Option<&str>,
     custom_fields: &[crate::vault::CustomField],
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
-    Ok(crate::vault::update_credential(conn, key, credential_id, username, secret, remarks, custom_fields, reprompt)?)
+    Ok(crate::vault::update_credential(conn, key, credential_id, username, secret, remarks, custom_fields, reprompt_exempt)?)
 }
 
 pub fn do_soft_delete_credential(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
@@ -2545,9 +2545,9 @@ mod tests {
     #[test]
     fn update_reprompt_mode_persists_and_rejects_invalid_value() {
         let (state, paths, _dir) = test_state_and_paths();
-        do_update_reprompt_mode(&state, &paths, "global").unwrap();
-        assert_eq!(do_get_config(&state).reprompt_mode, "global");
-        assert_eq!(do_update_reprompt_mode(&state, &paths, "always").unwrap_err().code(), "invalid_input");
+        do_update_reprompt_mode(&state, &paths, "always").unwrap();
+        assert_eq!(do_get_config(&state).reprompt_mode, "always");
+        assert_eq!(do_update_reprompt_mode(&state, &paths, "perCredential").unwrap_err().code(), "invalid_input");
     }
 
     #[test]
@@ -2562,7 +2562,7 @@ mod tests {
     fn get_config_includes_reprompt_defaults() {
         let (state, _paths, _dir) = test_state_and_paths();
         let config = do_get_config(&state);
-        assert_eq!(config.reprompt_mode, "perCredential");
+        assert_eq!(config.reprompt_mode, "grace");
         assert_eq!(config.reprompt_grace_seconds, 30);
     }
 
@@ -2571,7 +2571,7 @@ mod tests {
         let (state, _paths, dir) = test_state_and_paths();
         let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
         let before = do_get_config(&state).reprompt_mode;
-        let result = do_update_reprompt_mode(&state, &bad_paths, "global");
+        let result = do_update_reprompt_mode(&state, &bad_paths, "always");
         assert!(result.is_err());
         assert_eq!(do_get_config(&state).reprompt_mode, before, "state.config must not change when the save fails");
     }

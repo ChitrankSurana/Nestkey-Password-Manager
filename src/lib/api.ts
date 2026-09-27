@@ -57,7 +57,10 @@ export type CustomFieldType = "text" | "hidden" | "boolean";
 
 // A union rather than `string` so the reprompt gate (plan 08-12) cannot typo a mode and silently
 // fall through to the permissive branch.
-export type RepromptMode = "perCredential" | "global";
+// B7: "grace" (a vault-wide grace window after one correct entry) / "always" (no grace, every
+// reveal prompts) - replaces the old "perCredential"/"global" pair now that every credential is
+// gated by default instead of only ones with their own flag set.
+export type RepromptMode = "grace" | "always";
 
 export interface CustomField {
   label: string;
@@ -72,7 +75,9 @@ export interface CredentialDto {
   secret: string;
   remarks: string | null;
   customFields: CustomField[];
-  reprompt: boolean;
+  // B7: inverted from the pre-B7 meaning. Every credential is gated by the master password by
+  // default now; this is a per-credential opt-OUT of that gate, not an opt-in to it.
+  repromptExempt: boolean;
   hasTotp: boolean;
 }
 
@@ -339,16 +344,16 @@ export const api = {
     secret: string,
     remarks: string | null,
     customFields: CustomField[] = [],
-    reprompt: boolean = false,
-  ) => call<number>("add_credential", { siteId, username, secret, remarks, customFields, reprompt }),
+    repromptExempt: boolean = false,
+  ) => call<number>("add_credential", { siteId, username, secret, remarks, customFields, repromptExempt }),
   updateCredential: (
     credentialId: number,
     username: string | null,
     secret: string,
     remarks: string | null,
     customFields: CustomField[] = [],
-    reprompt: boolean = false,
-  ) => call<void>("update_credential", { credentialId, username, secret, remarks, customFields, reprompt }),
+    repromptExempt: boolean = false,
+  ) => call<void>("update_credential", { credentialId, username, secret, remarks, customFields, repromptExempt }),
   listCredentialsForSite: (siteId: number) =>
     call<CredentialDto[]>("list_credentials_for_site", { siteId }),
   search: (query: string) => call<SearchResultDto[]>("search", { query }),

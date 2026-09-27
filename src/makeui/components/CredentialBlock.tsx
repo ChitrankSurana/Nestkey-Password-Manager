@@ -84,7 +84,7 @@ export function CredentialBlock({
       <div className="flex items-center gap-2 px-3 py-2 border-b border-mk-border bg-mk-tint">
         <span className="min-w-0 flex-1 truncate text-sm text-mk-fg2">{credential.username ?? "(no username)"}</span>
         {credential.username && <CopyButton text={credential.username} title="Copy username" />}
-        {credential.reprompt && (
+        {!credential.repromptExempt && (
           <span className="flex items-center gap-1 text-[10px] font-bold uppercase text-mk-accent-light">
             <IconLock size={9} /> Protected
           </span>
@@ -107,7 +107,7 @@ export function CredentialBlock({
           <div>
             <p className="text-[10px] font-medium uppercase tracking-widest mb-1 text-mk-faint">Password</p>
             <div className="flex items-center gap-2">
-              <SecretField secret={credential.secret} reprompt={credential.reprompt} />
+              <SecretField secret={credential.secret} exempt={credential.repromptExempt} />
             </div>
           </div>
 
@@ -119,7 +119,7 @@ export function CredentialBlock({
 
           {credential.customFields.map((f, i) => (
             <div key={i} className="border-t border-mk-border pt-3">
-              <DetailField label={f.label} value={f.value} fieldType={f.fieldType} reprompt={credential.reprompt} />
+              <DetailField label={f.label} value={f.value} fieldType={f.fieldType} repromptExempt={credential.repromptExempt} />
             </div>
           ))}
 
@@ -162,7 +162,7 @@ export function CredentialBlock({
                 {history?.map((h, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <span className="w-28 shrink-0 text-[10px] text-mk-faint">{h.changedAt}</span>
-                    <SecretField secret={h.secret} reprompt={credential.reprompt} />
+                    <SecretField secret={h.secret} exempt={credential.repromptExempt} />
                   </div>
                 ))}
               </div>

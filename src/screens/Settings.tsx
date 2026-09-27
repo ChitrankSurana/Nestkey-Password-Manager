@@ -29,8 +29,8 @@ const UI_VARIANT_OPTIONS = [
 ] as const;
 const OLD_PASSWORD_DAYS_OPTIONS = [90, 180, 365] as const;
 const REPROMPT_MODE_OPTIONS = [
-  { value: "perCredential", label: "Per-credential (only flagged items)" },
-  { value: "global", label: "Global (every item)" },
+  { value: "grace", label: "Grace window (default)" },
+  { value: "always", label: "Always (no grace window)" },
 ] as const;
 // Must match the Rust allowlist (VALID_REPROMPT_GRACE_SECONDS, core/src/config.rs) exactly - a
 // value here that the backend rejects would surface as a generic error with no explanation.
@@ -791,7 +791,7 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
           <label className="block">
             <span className="text-sm">Reprompt mode</span>
             <Tooltip
-              text="Per-credential: only items with 'Require reprompt' on ask for the master password, every time. Global: every item's reveal/copy asks for the master password, with a grace window after one correct entry."
+              text="Every item's reveal/copy asks for the master password by default (a per-item checkbox can exempt one item). Grace window: one correct entry suppresses further prompts for a while. Always: no grace window, every reveal prompts."
               className="w-full"
             >
               <select
@@ -812,14 +812,14 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
           <label className="block">
             <span className="text-sm">Reprompt grace window</span>
             <Tooltip
-              text="Applies to Global mode only: how long after one correct master password entry before the next reveal/copy asks again."
+              text="Applies to Grace-window mode only: how long after one correct master password entry before the next reveal/copy asks again."
               className="w-full"
             >
               <select
                 className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)] disabled:opacity-50"
                 value={repromptGraceSeconds ?? ""}
                 onChange={(e) => handleRepromptGraceChange(Number(e.target.value))}
-                disabled={submitting || repromptMode !== "global"}
+                disabled={submitting || repromptMode !== "grace"}
               >
                 {REPROMPT_GRACE_OPTIONS.map((s) => (
                   <option key={s} value={s}>

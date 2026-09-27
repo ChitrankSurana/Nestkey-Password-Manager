@@ -247,7 +247,7 @@ async fn update_reprompt_mode_route_persists_and_is_visible_in_get_config() {
     let res = client
         .post(format!("{base}/api/update_reprompt_mode"))
         .header("x-pwmgr-csrf", "1")
-        .json(&serde_json::json!({"mode":"global"}))
+        .json(&serde_json::json!({"mode":"grace"}))
         .send()
         .await
         .unwrap();
@@ -263,7 +263,7 @@ async fn update_reprompt_mode_route_persists_and_is_visible_in_get_config() {
         .json()
         .await
         .unwrap();
-    assert_eq!(config["repromptMode"], "global");
+    assert_eq!(config["repromptMode"], "grace");
 }
 
 #[tokio::test]
@@ -282,11 +282,11 @@ async fn update_reprompt_mode_route_rejects_an_unknown_mode() {
     let res = client
         .post(format!("{base}/api/update_reprompt_mode"))
         .header("x-pwmgr-csrf", "1")
-        .json(&serde_json::json!({"mode":"always"}))
+        .json(&serde_json::json!({"mode":"perCredential"}))
         .send()
         .await
         .unwrap();
-    assert_ne!(res.status(), 200, "an unknown reprompt mode must not succeed");
+    assert_ne!(res.status(), 200, "a retired/unknown reprompt mode must not succeed");
     let body: serde_json::Value = res.json().await.unwrap();
     assert_eq!(body["code"], "invalid_input");
 }

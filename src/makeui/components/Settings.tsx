@@ -28,9 +28,11 @@ const UI_VARIANT_OPTIONS = [
   { value: "make", label: "Make" },
 ] as const;
 const OLD_PASSWORD_DAYS_OPTIONS = [90, 180, 365] as const;
+// B7: every credential is gated by the master password by default now (a per-credential checkbox
+// can opt one out) - this only picks how the shared grace window behaves.
 const REPROMPT_MODE_OPTIONS = [
-  { value: "perCredential", label: "Per-credential (only flagged items)" },
-  { value: "global", label: "Global (every item)" },
+  { value: "grace", label: "Grace window (default)" },
+  { value: "always", label: "Always (no grace window)" },
 ] as const;
 // Must match the Rust allowlist (VALID_REPROMPT_GRACE_SECONDS, core/src/config.rs) exactly - a
 // value here that the backend rejects would surface as a generic error with no explanation.
@@ -731,7 +733,7 @@ export function Settings({ username }: { username: string }) {
             <Divider />
             <Field
               label="Reprompt mode"
-              desc="Per-credential: only items with 'Require reprompt' on ask for the master password, every time. Global: every item's reveal/copy asks for the master password, with a grace window after one correct entry."
+              desc="Every item's reveal/copy asks for the master password by default (a per-item checkbox can exempt one item). Grace window: one correct entry suppresses further prompts for a while. Always: no grace window, every reveal prompts."
             >
               <select className={SELECT_CLS} value={repromptMode ?? ""} onChange={(e) => handleRepromptModeChange(e.target.value as RepromptMode)} disabled={submitting}>
                 {REPROMPT_MODE_OPTIONS.map((o) => (
@@ -742,12 +744,12 @@ export function Settings({ username }: { username: string }) {
               </select>
             </Field>
             <Divider />
-            <Field label="Reprompt grace window" desc="Applies to Global mode only: how long after one correct master password entry before the next reveal/copy asks again.">
+            <Field label="Reprompt grace window" desc="Applies to Grace-window mode only: how long after one correct master password entry before the next reveal/copy asks again.">
               <select
                 className={SELECT_CLS}
                 value={repromptGraceSeconds ?? ""}
                 onChange={(e) => handleRepromptGraceChange(Number(e.target.value))}
-                disabled={submitting || repromptMode !== "global"}
+                disabled={submitting || repromptMode !== "grace"}
               >
                 {REPROMPT_GRACE_OPTIONS.map((s) => (
                   <option key={s} value={s}>

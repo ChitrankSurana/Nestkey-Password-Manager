@@ -3,19 +3,19 @@ import { CopyButton } from "./CopyButton";
 import type { CustomFieldType } from "../../lib/api";
 
 // One labelled detail row. Mirrors src/newui/components/DetailField.tsx's branching exactly
-// (hidden -> SecretField carrying the same reprompt flag, boolean -> Yes/No, text -> mono +
+// (hidden -> SecretField carrying the same reprompt-exempt flag, boolean -> Yes/No, text -> mono +
 // copy) - restyled onto the mk-* tokens per B3-7 (restyle the real component, never reimplement).
 export function DetailField({
   label,
   value,
   fieldType,
-  reprompt,
+  repromptExempt,
   copyable = true,
 }: {
   label: string;
   value: string;
   fieldType: CustomFieldType;
-  reprompt: boolean;
+  repromptExempt: boolean;
   copyable?: boolean;
 }) {
   return (
@@ -23,7 +23,7 @@ export function DetailField({
       <p className="text-[10px] font-medium uppercase tracking-widest mb-1 text-mk-faint">{label}</p>
       <div className="flex items-center gap-2">
         {fieldType === "hidden" ? (
-          <SecretField secret={value} reprompt={reprompt} />
+          <SecretField secret={value} exempt={repromptExempt} />
         ) : fieldType === "boolean" ? (
           <span className="flex-1 text-sm text-mk-fg2">{value === "true" ? "Yes" : "No"}</span>
         ) : (
