@@ -985,6 +985,120 @@ pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
     do_read_csv_headers_from_str(&text)
 }
 
+// --- Full-fidelity JSON vault export/import (Wave 4 follow-up) ---
+// Mirrors the CSV export functions immediately above (same three modes via the same
+// `ExportMode`, same sealed envelope from `portio::encode_sealed_csv`) plus a real import path,
+// which the CSV encrypted export has never had (see portio.rs's decode_sealed_bytes doc comment).
+
+pub fn do_export_json_bytes(state: &AppState, mode: &ExportMode, confirmed: bool) -> Result<Vec<u8>, CommandError> {
+    if matches!(mode, ExportMode::Plaintext) && !confirmed {
+        return Err(crate::error::invalid_input_error(
+            "Plaintext export requires explicit confirmation.",
+        ));
+    }
+
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+
+    let export = crate::jsonio::build_json_export(conn, key)?;
+    let json_bytes = crate::jsonio::export_to_json_bytes(&export)?;
+
+    let bytes: Vec<u8> = match mode {
+        ExportMode::Plaintext => json_bytes,
+        ExportMode::ThisDevice => {
+            let (ciphertext, nonce) = crate::crypto::seal(key, &json_bytes).map_err(|_| crate::error::internal_error())?;
+            crate::portio::encode_sealed_csv(None, &nonce, &ciphertext)
+        }
+        ExportMode::WithPassword { password } => {
+            let salt = crate::crypto::random_salt();
+            let pw_key = crate::crypto::derive_key(password, &salt).map_err(|_| crate::error::internal_error())?;
+            let (ciphertext, nonce) = crate::crypto::seal(&pw_key, &json_bytes).map_err(|_| crate::error::internal_error())?;
+            crate::portio::encode_sealed_csv(Some(&salt), &nonce, &ciphertext)
+        }
+    };
+    Ok(bytes)
+}
+
+pub fn do_export_json_download(
+    state: &AppState,
+    paths: &AppPaths,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(String, Vec<u8>), CommandError> {
+    let bytes = do_export_json_bytes(state, mode, confirmed)?;
+    let filename = if matches!(mode, ExportMode::Plaintext) {
+        if let Err(e) = append_plaintext_export_log(paths, "<web download>") {
+            eprintln!("warning: failed to append plaintext export log entry: {e}");
+        }
+        "vault-export.json"
+    } else {
+        "vault-export.pwenc.json"
+    };
+    Ok((filename.to_string(), bytes))
+}
+
+pub fn do_export_json(
+    state: &AppState,
+    paths: &AppPaths,
+    path: &str,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    let bytes = do_export_json_bytes(state, mode, confirmed)?;
+    std::fs::write(path, &bytes).map_err(|_| crate::error::internal_error())?;
+    if matches!(mode, ExportMode::Plaintext) {
+        if let Err(e) = append_plaintext_export_log(paths, path) {
+            eprintln!("warning: failed to append plaintext export log entry: {e}");
+        }
+    }
+    Ok(())
+}
+
+/// Unseals (if needed) and parses an uploaded/read export file into the structure both preview and
+/// commit need. `password` is required only when the file turns out to be in with-password mode;
+/// `ThisDevice`-mode files decrypt with the CURRENT session's vault key, so they can only be
+/// re-imported into the same vault they were exported from - portability across vaults needs
+/// with-password or plaintext mode, same distinction the export side already documents.
+fn decrypt_json_export(state: &AppState, bytes: &[u8], password: Option<&str>) -> Result<crate::jsonio::JsonExportVault, CommandError> {
+    // Plaintext files parse directly as JSON; anything else is our sealed envelope.
+    if let Ok(export) = crate::jsonio::parse_json_export(bytes) {
+        return Ok(export);
+    }
+    let payload = crate::portio::decode_sealed_bytes(bytes)?;
+    let plaintext = match payload {
+        crate::portio::SealedPayload::ThisDevice { nonce, ciphertext } => {
+            let session = state.session.lock().unwrap();
+            let key = session.key().ok_or_else(crate::error::locked_error)?;
+            crate::crypto::open(key, &ciphertext, &nonce).map_err(|_| crate::error::invalid_input_error("Could not decrypt that file with this vault's key."))?
+        }
+        crate::portio::SealedPayload::WithPassword { salt, nonce, ciphertext } => {
+            let password = password.ok_or_else(|| crate::error::invalid_input_error("This file needs the password it was exported with."))?;
+            let pw_key = crate::crypto::derive_key(password, &salt).map_err(|_| crate::error::internal_error())?;
+            crate::crypto::open(&pw_key, &ciphertext, &nonce).map_err(|_| crate::error::invalid_input_error("Incorrect export password."))?
+        }
+    };
+    Ok(crate::jsonio::parse_json_export(&plaintext)?)
+}
+
+pub fn do_import_json_preview(state: &AppState, bytes: &[u8], password: Option<&str>) -> Result<crate::jsonio::JsonImportPreview, CommandError> {
+    let export = decrypt_json_export(state, bytes, password)?;
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::jsonio::preview_json_import(conn, &export)?)
+}
+
+pub fn do_import_json_commit(state: &AppState, bytes: &[u8], password: Option<&str>) -> Result<ImportSummaryDto, CommandError> {
+    let export = decrypt_json_export(state, bytes, password)?;
+    let mut vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_mut().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let summary = crate::jsonio::import_json_vault(conn, key, &export)?;
+    Ok(ImportSummaryDto::from(summary))
+}
+
 /// Path-free preview parse (SEC-01/D-01/D-03): the web branch reads no filesystem path at all —
 /// its caller decodes the session's cached upload bytes into a `&str` and hands it here directly.
 /// Reading does not consume anything (this takes `&str`, not ownership of the cache), so the same
@@ -2000,6 +2114,79 @@ mod tests {
         let text = std::fs::read_to_string(&out_path).unwrap();
         assert!(text.contains("example.com"));
         assert!(text.contains("s3cret!"));
+    }
+
+    #[test]
+    fn export_json_with_password_then_import_json_preview_and_commit_round_trips_through_commands() {
+        // Command-layer round trip (unlike jsonio.rs's own unit tests, which call jsonio functions
+        // directly): export from one state, import into a second, fresh, differently-keyed vault -
+        // the actual portability use case this feature exists for.
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.json");
+        do_export_json(
+            &state, &paths, out_path.to_str().unwrap(),
+            &ExportMode::WithPassword { password: "export password".to_string() }, false,
+        ).unwrap();
+        let bytes = std::fs::read(&out_path).unwrap();
+
+        let (target_state, target_paths, _target_dir) = test_state_and_paths();
+        do_register(&target_state, &target_paths, "bob", "another password entirely").unwrap();
+
+        let preview = do_import_json_preview(&target_state, &bytes, Some("export password")).unwrap();
+        assert_eq!(preview.site_count, 1);
+        assert_eq!(preview.credential_count, 1);
+        assert_eq!(preview.duplicate_credential_count, 0);
+
+        let summary = do_import_json_commit(&target_state, &bytes, Some("export password")).unwrap();
+        assert_eq!(summary.imported, 1);
+        assert_eq!(summary.duplicates, 0);
+
+        let sites = do_list_sites(&target_state).unwrap();
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].name, "example.com");
+    }
+
+    #[test]
+    fn import_json_commit_rejects_the_wrong_export_password() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.json");
+        do_export_json(
+            &state, &paths, out_path.to_str().unwrap(),
+            &ExportMode::WithPassword { password: "correct password".to_string() }, false,
+        ).unwrap();
+        let bytes = std::fs::read(&out_path).unwrap();
+
+        let result = do_import_json_commit(&state, &bytes, Some("wrong password"));
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn import_json_commit_rejects_a_file_that_is_not_a_vault_export() {
+        let (state, _paths, _dir) = seeded_vault_state();
+        let result = do_import_json_commit(&state, b"just some random bytes, not an export", None);
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn export_json_plaintext_mode_without_confirmation_is_rejected() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.json");
+        let result = do_export_json(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, false);
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+        assert!(!out_path.exists());
+    }
+
+    #[test]
+    fn export_json_plaintext_mode_writes_readable_json_with_every_field() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.json");
+        do_export_json(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+        let text = std::fs::read_to_string(&out_path).unwrap();
+        assert!(text.contains("example.com"));
+        assert!(text.contains("s3cret!"));
+        // Confirms this is not just the CSV shape re-serialized - fields CSV never carried.
+        assert!(text.contains("repromptExempt"));
+        assert!(text.contains("customFields"));
     }
 
     #[test]

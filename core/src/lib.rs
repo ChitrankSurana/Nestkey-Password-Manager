@@ -10,6 +10,7 @@ pub mod session;
 pub mod generator;
 pub mod backup;
 pub mod portio;
+pub mod jsonio;
 pub mod health;
 pub mod hibp;
 pub mod totp;

@@ -221,16 +221,39 @@ design, and there is no custom confirm component in `src/` to switch to).
   `--prefix ..` against the repo root, landing on `Account_1` instead of
   `Password_Manager` — **and** port the Viewer to the new UI.
 
-## Wave 4 — Filed follow-ups (not this pass)
+## Wave 4 — filed follow-ups, done in requested order (2026-09-27, second session)
 
-- **MakeShell restructure** (B1 Option B): extract the vault-screen tree from
-  `MakeApp` into a shell mounted only when `screen === "vault"`, with
-  `useMakeVault()` inside it, matching `newui`/Classic. Do this only once all
-  fixes are landed and verified.
-- **Full-fidelity JSON export + import** (from N13).
-- **Per-credential change log** (from M7.2): a general audit trail — username
-  changed, field added — separate from password history, which correctly stays
-  password-only (`core/src/vault.rs:656`).
+- **Full-fidelity JSON export + import** — **done.** New `core/src/jsonio.rs`
+  carries everything CSV never did: folders, favorites, item type, card
+  hints, custom fields, TOTP secrets, password history. Reuses the exact
+  sealed-envelope framing CSV export already established
+  (`portio::encode_sealed_csv`) and the same three modes (this-device/
+  with-password/plaintext), but — unlike the CSV encrypted export, which has
+  never had an import path — this format has a real round trip:
+  `portio::decode_sealed_bytes` (new; CSV's own envelope had none before
+  this) unseals it, `jsonio::import_json_vault` merges it into the current
+  vault by name-matching folders/sites and skipping duplicate credentials
+  (same site+username rule CSV import uses). A bad TOTP secret, a malformed
+  card hint, or one credential failing field validation is skipped rather
+  than aborting the whole import. History entries are re-sealed under the
+  *target* vault's key with their original `changed_at` preserved, so
+  importing into a different vault (the actual portability use case) is a
+  real, tested path, not just a same-vault round trip.
+  UI: `JsonExport.tsx`/`JsonImport.tsx` (Make UI's Data Hub), mirroring
+  `CsvExport.tsx`'s shape; import is preview-then-commit but shows a count
+  summary rather than CSV import's per-row editable table — editing an
+  arbitrary nested export (sites → credentials → custom fields → history)
+  in a flat table wasn't worth this pass's budget, and the summary still
+  shows the outcome (counts, duplicates) before committing.
+  Web mode: new `/api/export_json`, `/api/upload_json`,
+  `/api/import_json_preview`, `/api/import_json_commit` routes, same
+  session-upload-cache discipline as CSV/backup.
+  Verification: 8 new Rust tests (jsonio.rs unit tests incl. a cross-vault,
+  cross-key import; commands.rs command-layer round trip, wrong-password
+  rejection, garbage-file rejection), `npm run build`/`npm test` clean.
+- **MakeShell restructure** (B1 Option B) — not started this pass.
+- **Per-credential change log** (from M7.2) — not started this pass.
+- **N16 (UI-port half)** — not started this pass.
 - **Web-mode pass:** B2, J7, N11 (off-screen error at `y:-152`), N14 (TOTP
   countdown not ticking), plus a full W re-run.
 

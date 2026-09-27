@@ -3,7 +3,8 @@ use pwmgr_core::commands::{
     do_add_credential, do_add_folder, do_add_site, do_delete_folder, do_list_folders, do_rename_folder,
     do_set_site_card_hint, do_set_site_favorite, do_set_site_folder, do_set_site_item_type, do_add_ssh_key, do_analyze_strength, do_check_breach,
     do_clear_biometric, do_clear_pin, do_clear_totp_secret, do_create_backup, do_delete_ssh_key,
-    do_export_csv, do_generate_password, do_get_config, do_has_biometric, do_has_pin,
+    do_export_csv, do_export_json, do_generate_password, do_get_config, do_has_biometric, do_has_pin,
+    do_import_json_commit, do_import_json_preview,
     do_change_master_password, do_health_report, do_import_csv_commit, do_import_csv_preview, do_list_credential_history, do_list_credentials_for_site,
     do_list_sites, do_list_ssh_keys, do_list_trash, do_lock, do_login, do_purge_trash,
     do_read_csv_headers, do_register, do_restore_backup, do_restore_credential, do_search,
@@ -510,6 +511,41 @@ pub fn import_csv_commit(
     records: Vec<ImportRecordDto>,
 ) -> Result<ImportSummaryDto, CommandError> {
     do_import_csv_commit(&state, records)
+}
+
+#[tauri::command]
+pub fn export_json(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    path: String,
+    mode: ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    do_export_json(&state, &paths, &path, &mode, confirmed)
+}
+
+fn read_import_file(path: &str) -> Result<Vec<u8>, CommandError> {
+    std::fs::read(path).map_err(|_| pwmgr_core::error::invalid_input_error("Could not read that file."))
+}
+
+#[tauri::command]
+pub fn import_json_preview(
+    state: State<AppState>,
+    path: String,
+    password: Option<String>,
+) -> Result<pwmgr_core::jsonio::JsonImportPreview, CommandError> {
+    let bytes = read_import_file(&path)?;
+    do_import_json_preview(&state, &bytes, password.as_deref())
+}
+
+#[tauri::command]
+pub fn import_json_commit(
+    state: State<AppState>,
+    path: String,
+    password: Option<String>,
+) -> Result<ImportSummaryDto, CommandError> {
+    let bytes = read_import_file(&path)?;
+    do_import_json_commit(&state, &bytes, password.as_deref())
 }
 
 #[tauri::command]

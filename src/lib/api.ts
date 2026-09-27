@@ -159,6 +159,13 @@ export interface ImportRecordDto {
 
 export interface ImportSummaryDto { imported: number; duplicates: number; }
 
+export interface JsonImportPreviewDto {
+  folderCount: number;
+  siteCount: number;
+  credentialCount: number;
+  duplicateCredentialCount: number;
+}
+
 export interface HealthEntryDto {
   credentialId: number;
   siteId: number;
@@ -427,6 +434,26 @@ export const api = {
       : httpPost<ImportRecordDto[]>("import_csv_preview", { format }),
   importCsvCommit: (records: ImportRecordDto[]) =>
     call<ImportSummaryDto>("import_csv_commit", { records }),
+  // Full-fidelity JSON vault export/import (Wave 4 follow-up) - unlike CSV, carries folders,
+  // favorites, item type, card hints, custom fields, TOTP secrets, and password history. Same
+  // three ExportMode modes, same desktop-path-vs-web-upload split as exportCsv/uploadCsv above.
+  exportJson: (path: string | null, mode: ExportMode, confirmed: boolean) =>
+    isTauri
+      ? invoke<void>("export_json", { path, mode, confirmed })
+      : httpDownload(
+          "export_json",
+          { mode, confirmed },
+          mode.mode === "plaintext" ? "vault-export.json" : "vault-export.pwenc.json",
+        ),
+  uploadJsonExport: (file: File) => httpUpload("upload_json", file),
+  importJsonPreview: (path: string | null, password: string | null) =>
+    isTauri
+      ? invoke<JsonImportPreviewDto>("import_json_preview", { path, password })
+      : httpPost<JsonImportPreviewDto>("import_json_preview", { password }),
+  importJsonCommit: (path: string | null, password: string | null) =>
+    isTauri
+      ? invoke<ImportSummaryDto>("import_json_commit", { path, password })
+      : httpPost<ImportSummaryDto>("import_json_commit", { password }),
   healthReport: () => call<HealthReportDto>("health_report"),
   checkBreach: () => call<BreachReportDto>("check_breach"),
   updateHibpOptIn: (enabled: boolean) => call<void>("update_hibp_opt_in", { enabled }),

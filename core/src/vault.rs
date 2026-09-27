@@ -365,6 +365,20 @@ pub fn add_folder(conn: &Connection, name: &str) -> Result<i64, VaultError> {
     Ok(conn.last_insert_rowid())
 }
 
+/// For the JSON import (jsonio.rs) resolving an exported `folder_name` back to an id - matches the
+/// same case-insensitive uniqueness the `folders.name` column enforces (`UNIQUE ... COLLATE
+/// NOCASE`, see `folder_write_err`'s doc comment), so this can't miss a folder that a byte-exact
+/// comparison would.
+pub fn find_folder_id_by_name(conn: &Connection, name: &str) -> Result<Option<i64>, VaultError> {
+    Ok(conn
+        .query_row(
+            "SELECT id FROM folders WHERE name = ?1 COLLATE NOCASE",
+            rusqlite::params![name],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
 pub fn list_folders(conn: &Connection) -> Result<Vec<Folder>, VaultError> {
     let mut stmt = conn.prepare("SELECT id, name FROM folders ORDER BY name COLLATE NOCASE")?;
     let rows = stmt.query_map([], |r| Ok(Folder { id: r.get(0)?, name: r.get(1)? }))?;
@@ -1081,23 +1095,34 @@ pub struct ImportSummary {
     pub duplicates: usize,
 }
 
+/// Read-only half of `find_or_create_site` - exposed for the JSON import preview (jsonio.rs),
+/// which must not create anything while only computing a duplicate count to show the user.
+pub fn find_site_id_by_name(conn: &Connection, name: &str) -> Result<Option<i64>, VaultError> {
+    Ok(conn
+        .query_row(
+            "SELECT id FROM sites WHERE name = ?1 AND deleted_at IS NULL",
+            rusqlite::params![name],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
 fn find_or_create_site(
     conn: &Connection,
     name: &str,
     url: Option<&str>,
     notes: Option<&str>,
 ) -> Result<i64, VaultError> {
-    let existing: Option<i64> = conn
-        .query_row(
-            "SELECT id FROM sites WHERE name = ?1 AND deleted_at IS NULL",
-            rusqlite::params![name],
-            |row| row.get(0),
-        )
-        .optional()?;
-    match existing {
+    match find_site_id_by_name(conn, name)? {
         Some(id) => Ok(id),
         None => add_site(conn, name, url, notes),
     }
+}
+
+/// Exposed as `credential_exists_for_import_check` for the JSON import preview (jsonio.rs) - same
+/// query `credential_exists` below runs, just named for its one external caller's read-only intent.
+pub fn credential_exists_for_import_check(conn: &Connection, site_id: i64, username: Option<&str>) -> Result<bool, VaultError> {
+    credential_exists(conn, site_id, username)
 }
 
 fn credential_exists(conn: &Connection, site_id: i64, username: Option<&str>) -> Result<bool, VaultError> {
@@ -1140,6 +1165,32 @@ pub fn import_credentials(
 
     tx.commit()?;
     Ok(ImportSummary { imported, duplicates })
+}
+
+/// For the JSON import's history round-trip (jsonio.rs): seals `secret` under the CURRENT vault's
+/// key (which may differ from whatever key the export was originally made under) and inserts it
+/// with the caller-supplied `changed_at`, preserving the original timestamp rather than stamping
+/// `datetime('now')` on every imported entry. Caps at 5 same as `update_credential`'s own history
+/// write, so importing a credential that already has 5 entries can't grow the table unbounded.
+pub fn insert_history_entry(
+    conn: &Connection,
+    key: &VaultKey,
+    credential_id: i64,
+    secret: &str,
+    changed_at: &str,
+) -> Result<(), VaultError> {
+    let (secret_enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
+    conn.execute(
+        "INSERT INTO credential_history (credential_id, secret_enc, secret_nonce, changed_at) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![credential_id, secret_enc, nonce.to_vec(), changed_at],
+    )?;
+    conn.execute(
+        "DELETE FROM credential_history WHERE credential_id = ?1 AND id NOT IN (
+            SELECT id FROM credential_history WHERE credential_id = ?1 ORDER BY changed_at DESC, id DESC LIMIT 5
+         )",
+        rusqlite::params![credential_id],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]

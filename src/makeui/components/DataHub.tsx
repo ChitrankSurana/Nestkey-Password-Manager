@@ -2,12 +2,16 @@ import { useState } from "react";
 import { Backup } from "./Backup";
 import { CsvExport } from "./CsvExport";
 import { CsvImport } from "./CsvImport";
+import { JsonExport } from "./JsonExport";
+import { JsonImport } from "./JsonImport";
 import { IconDatabase, IconDownload, IconPlus } from "../icons";
 
-type DataScreen = "hub" | "backup" | "export" | "import";
+type DataScreen = "hub" | "backup" | "export" | "import" | "jsonExport" | "jsonImport";
 
 const ACTIONS: { id: DataScreen; Icon: typeof IconDatabase; title: string; desc: string }[] = [
   { id: "backup", Icon: IconDownload, title: "Backup & Restore", desc: "Create or restore an encrypted vault backup" },
+  { id: "jsonExport", Icon: IconDatabase, title: "Export JSON (full fidelity)", desc: "Everything: folders, TOTP, custom fields, history" },
+  { id: "jsonImport", Icon: IconPlus, title: "Import JSON (full fidelity)", desc: "Merge a full-fidelity export into this vault" },
   { id: "export", Icon: IconDatabase, title: "Export CSV", desc: "Encrypted or confirmed-plaintext export" },
   { id: "import", Icon: IconPlus, title: "Import CSV", desc: "From Chrome/Firefox export or a mapped CSV" },
 ];
@@ -23,6 +27,8 @@ export function DataHub() {
   if (screen === "backup") return <Backup onBack={() => setScreen("hub")} />;
   if (screen === "export") return <CsvExport onBack={() => setScreen("hub")} />;
   if (screen === "import") return <CsvImport onBack={() => setScreen("hub")} />;
+  if (screen === "jsonExport") return <JsonExport onBack={() => setScreen("hub")} />;
+  if (screen === "jsonImport") return <JsonImport onBack={() => setScreen("hub")} />;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-mk-base">

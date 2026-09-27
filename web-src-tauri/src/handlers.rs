@@ -278,6 +278,20 @@ struct ExportCsvRequest {
     confirmed: bool,
 }
 
+// Same shape as ExportCsvRequest - the JSON vault export reuses the identical three-mode contract.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportJsonRequest {
+    mode: ExportMode,
+    confirmed: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportJsonRequest {
+    password: Option<String>,
+}
+
 // No `path` field (SEC-01/D-01/D-03): reads the CSV bytes this session already uploaded via
 // `/api/upload_csv` instead of a client-supplied filesystem path.
 #[derive(Deserialize)]
@@ -908,6 +922,60 @@ async fn clear_upload(Extension(s): Extension<Arc<UserSession>>) -> StatusCode {
     StatusCode::OK
 }
 
+// Full-fidelity JSON vault export/import (Wave 4 follow-up) - mirrors export_csv/upload_csv/
+// import_csv_preview/import_csv_commit immediately above exactly, including the SEC-01/D-01 "no
+// client-supplied path, bytes only" rule and the SEC-01/D-04 clear-cache-on-success discipline.
+async fn export_json(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<ExportJsonRequest>,
+) -> Result<Response, ApiError> {
+    let _kdf_permit = match b.mode {
+        ExportMode::WithPassword { .. } => Some(ctx.kdf.try_acquire()?),
+        _ => None,
+    };
+    let (filename, bytes) = do_export_json_download(&s.app_state, &ctx.paths, &b.mode, b.confirmed)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\"")),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+async fn upload_json(Extension(s): Extension<Arc<UserSession>>, body: Bytes) -> StatusCode {
+    s.set_upload(UploadCache::Json(Zeroizing::new(body.to_vec())));
+    StatusCode::OK
+}
+
+async fn import_json_preview(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<ImportJsonRequest>,
+) -> Result<Json<pwmgr_core::jsonio::JsonImportPreview>, ApiError> {
+    let _kdf_permit = if b.password.is_some() { Some(ctx.kdf.try_acquire()?) } else { None };
+    let bytes = s
+        .json_upload()
+        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No export file uploaded yet."))?;
+    Ok(Json(do_import_json_preview(&s.app_state, &bytes, b.password.as_deref())?))
+}
+
+async fn import_json_commit(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<ImportJsonRequest>,
+) -> Result<Json<ImportSummaryDto>, ApiError> {
+    let _kdf_permit = if b.password.is_some() { Some(ctx.kdf.try_acquire()?) } else { None };
+    let bytes = s
+        .json_upload()
+        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No export file uploaded yet."))?;
+    let summary = do_import_json_commit(&s.app_state, &bytes, b.password.as_deref())?;
+    s.clear_upload();
+    Ok(Json(summary))
+}
+
 async fn health_report(
     Extension(s): Extension<Arc<UserSession>>,
 ) -> Result<Json<HealthReportDto>, ApiError> {
@@ -982,6 +1050,13 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/create_backup_download", post(create_backup_download))
         .route("/api/restore_backup", post(restore_backup))
         .route("/api/export_csv", post(export_csv))
+        .route("/api/export_json", post(export_json))
+        .route(
+            "/api/upload_json",
+            post(upload_json).layer(axum::extract::DefaultBodyLimit::max(UPLOAD_BODY_LIMIT)),
+        )
+        .route("/api/import_json_preview", post(import_json_preview))
+        .route("/api/import_json_commit", post(import_json_commit))
         .route(
             "/api/upload_csv",
             post(upload_csv).layer(axum::extract::DefaultBodyLimit::max(UPLOAD_BODY_LIMIT)),

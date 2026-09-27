@@ -112,7 +112,19 @@ impl From<crate::portio::PortioError> for CommandError {
             PortioError::Parse
             | PortioError::HeaderMismatch(_)
             | PortioError::MissingColumn(_)
-            | PortioError::UnknownField(_) => invalid_input_error(&e.to_string()),
+            | PortioError::UnknownField(_)
+            | PortioError::NotSealed => invalid_input_error(&e.to_string()),
+        }
+    }
+}
+
+impl From<crate::jsonio::JsonExportError> for CommandError {
+    fn from(e: crate::jsonio::JsonExportError) -> Self {
+        use crate::jsonio::JsonExportError;
+        match e {
+            JsonExportError::Vault(v) => CommandError::from(v),
+            JsonExportError::Serialize => internal_error(),
+            JsonExportError::Deserialize => invalid_input_error(&e.to_string()),
         }
     }
 }
