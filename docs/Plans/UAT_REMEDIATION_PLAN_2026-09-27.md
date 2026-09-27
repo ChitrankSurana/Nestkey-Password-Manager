@@ -274,6 +274,23 @@ Landed, tested (`cargo test --workspace` 421/421, `npm test` 40/40,
 - **N7** — fixed (`bb4bfdd`).
 - **M8.1** — fixed (`bb4bfdd`).
 
+- **B5** — fixed (`ef44145`): debounced check on username change (was
+  blur-only) + opt-in "remember last username" toggle.
+- **B6** — fixed (`1b47756`): local error next to the form (was
+  page-level, could scroll out of view), forced logout on success.
+- **B7** — fixed (`900512d`): every credential now gated by default; the
+  per-credential flag is a new `reprompt_exempt` column (opt-out, not
+  opt-in) so no existing credential's protection is silently flipped by
+  reinterpreting the old column; hide no longer re-prompts; Cancel
+  re-masks; a shared expiry timer auto-re-masks every revealed field when
+  grace ends; config modes renamed grace/always with a load-time
+  migration from the retired spellings; PROTECTED banner now covers every
+  item type.
+- **N2** — fixed (`900512d`): login spinner's `<i>` icon forced
+  `inline-block` — CSS transforms are a no-op on inline elements, so
+  `animate-spin` was silently doing nothing.
+- **N17** — fixed (`900512d`): window title "tauri-app" → "LocalVault".
+
 Still open (not started this session):
 
 - **Wave 0** — R1 (folder placeholder) is very likely explained by
@@ -282,9 +299,7 @@ Still open (not started this session):
   a bug; R2–R5, the vault-data-loss investigation, the blank-window
   investigation, and the N15 settings-race diagnosis are all still live
   retests/investigations, not yet done.
-- **B2, B5, B6, B7** — not started. B7 in particular needs the
-  reprompt-subscriber mechanism designed in the rulings above, plus live
-  verification of the grace-window UX — deliberately not rushed.
+- **B2** — deferred to the web pass per standing decision.
 - **J2, J3** — not started.
 - **N1, N4–N6, N8/N9, N12/N13/N15/N16/N18/N19, N23** — not started.
 - **Wave 4 follow-ups** — not started (expected; filed for later).
