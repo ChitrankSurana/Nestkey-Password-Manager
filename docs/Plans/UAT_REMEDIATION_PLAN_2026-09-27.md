@@ -324,26 +324,41 @@ Still open (not started this session):
   section below.
 - **N15** — investigated, not root-caused: see the dedicated section below.
 
-Still open (not started this session):
-
-- **Wave 0** — R1 (folder placeholder) is very likely explained by
-  `foldersOpen` defaulting to `false` in `Sidebar.tsx`, so nothing shows
-  under a collapsed Folders section on a fresh vault, whether or not it's
-  a bug; R2–R5 and the vault-data-loss/blank-window investigations are
-  still live retests, not yet done.
-- **B2** — deferred to the web pass per standing decision.
 - **N13** — already satisfied: both CSV export screens already show the
   exact "CSV only carries..." gap note verbatim (confirmed passing at
   M10.2). No code change needed.
-- **N16** — launch half fixed: `beforeDevCommand` was already corrected in
-  a prior commit (`83066b9`) before this session started; only
+- **N16 (launch half)** — fixed: `beforeDevCommand` was already corrected
+  in a prior commit (`83066b9`) before this session started; only
   `HOW_TO_TEST_VIEWER_APP.md`'s instructions were still describing the
-  old broken command, now updated to match. The **UI-port half (Viewer
-  restyled onto Make UI) is still not started** - it's a real visual
-  redesign of `ViewerApp.tsx`/`ViewerVault.tsx`, not a bug fix, and
-  deserves its own scoped pass rather than being squeezed in here.
-- **N18** — not started.
-- **Wave 4 follow-ups** — not started (expected; filed for later).
+  old broken command, now updated to match.
+- **N18** — fixed: the Vault sidebar section ("All Items", "Favorites")
+  is now collapsible like Folders already was; both sections' collapsed
+  state is remembered via localStorage instead of resetting every load.
+
+Every Wave 1/2/3 finding with a concrete, codeable fix is now closed. What
+remains is genuinely different in kind - live investigation, a visual
+redesign, or explicitly deferred:
+
+- **Wave 0 live retests** — R1 (very likely explained by `foldersOpen`
+  defaulting to `false` in `Sidebar.tsx`, so a collapsed Folders section on
+  a fresh vault shows nothing under it - not yet confirmed live), R2–R5,
+  the vault-data-loss investigation, and the blank-window-launch
+  investigation. None of these can be settled from source alone; they need
+  someone actually driving the app.
+- **N15** — investigated, inconclusive (see the dedicated section below);
+  needs a live reproduction attempt, not a guessed fix.
+- **N16 (UI-port half)** — restyling `ViewerApp.tsx`/`ViewerVault.tsx`
+  onto Make UI is a visual redesign, not a bug fix; deserves its own
+  scoped pass.
+- **Deferred to the web-mode pass** (standing decision, not forgotten):
+  B2 (lock doesn't tear down the web SPA), J7 (`window.confirm` freeze),
+  N11 (off-screen password-change error, W only), N14 (TOTP countdown not
+  ticking, W only), plus a full W re-run of the whole UAT script.
+- **Wave 4 follow-ups** (filed, not scoped for this pass): the MakeShell
+  restructure (B1 Option B), full-fidelity JSON export+import, a
+  per-credential change log separate from password history.
+- **A fresh UAT script** for everything fixed this session, per the plan's
+  Verification section - not written yet.
 
 ## Wave 0 finding: N15 (settings persistence race)
 
