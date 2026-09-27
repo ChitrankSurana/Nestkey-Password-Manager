@@ -3,6 +3,8 @@ import { api, isCommandError, CredentialDto, CustomField, CustomFieldType } from
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 import { PasswordGeneratorPanel } from "../components/PasswordGeneratorPanel";
+import { MasterPasswordPrompt } from "../components/MasterPasswordPrompt";
+import { isRepromptRequired, markRepromptSuccess } from "../lib/reprompt";
 
 let nextFieldKey = 0;
 type EditableField = CustomField & { key: number };
@@ -29,6 +31,16 @@ export function CredentialEditor({
   const [removeTotp, setRemoveTotp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // B3/N22: a brand-new credential's password is fresh input the user is actively typing/
+  // generating, nothing to protect yet - starts revealed. An existing credential's already-stored
+  // secret starts masked, matching how it's shown everywhere else in the app; revealing it here
+  // goes through the same reprompt gate as SecretField.
+  const [passwordRevealed, setPasswordRevealed] = useState(existing === null);
+  const [showReauth, setShowReauth] = useState(false);
+  // B3: the generator panel is one of the biggest contributors to the modal's overflow height:
+  // collapsed by default when editing (the password is presumably already fine), open by default
+  // when adding (about to pick one).
+  const [generatorOpen, setGeneratorOpen] = useState(existing === null);
 
   function addField() {
     setFields((fs) => [...fs, { key: nextFieldKey++, label: "", value: "", fieldType: "text" }]);
@@ -38,6 +50,18 @@ export function CredentialEditor({
   }
   function updateField(key: number, patch: Partial<CustomField>) {
     setFields((fs) => fs.map((f) => (f.key === key ? { ...f, ...patch } : f)));
+  }
+
+  function togglePasswordReveal() {
+    if (passwordRevealed) {
+      setPasswordRevealed(false);
+      return;
+    }
+    if (isRepromptRequired(reprompt)) {
+      setShowReauth(true);
+      return;
+    }
+    setPasswordRevealed(true);
   }
 
   const [algorithm, setAlgorithm] = useState("simple");
@@ -76,7 +100,26 @@ export function CredentialEditor({
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-80 space-y-3 rounded bg-[var(--surface)] p-4 text-[var(--fg)]">
+      {showReauth && (
+        <MasterPasswordPrompt
+          title="Re-enter your master password"
+          onResult={(ok) => {
+            setShowReauth(false);
+            if (ok) {
+              markRepromptSuccess();
+              setPasswordRevealed(true);
+            }
+          }}
+        />
+      )}
+      {/* B3: no scroll container here previously - content taller than the viewport (the always-
+          mounted generator panel, custom fields, TOTP) pushed the Save/Cancel footer off-screen with
+          no way to reach it. max-h + overflow-y-auto keeps the footer reachable regardless of
+          window size. */}
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-80 max-h-[calc(100vh-2rem)] overflow-y-auto space-y-3 rounded bg-[var(--surface)] p-4 text-[var(--fg)]"
+      >
         <h2 className="text-lg font-semibold">{existing ? "Edit credential" : "Add credential"}</h2>
         <label className="block">
           <span className="text-sm">Username (optional)</span>
@@ -90,15 +133,37 @@ export function CredentialEditor({
         </label>
         <label className="block">
           <span className="text-sm">Password</span>
-          <input
-            className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            title="The password to store, encrypted"
-          />
+          <div className="mt-1 flex items-center gap-1">
+            <input
+              className="flex-1 rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
+              type={passwordRevealed ? "text" : "password"}
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              title="The password to store, encrypted"
+            />
+            <button
+              type="button"
+              onClick={togglePasswordReveal}
+              className="rounded border px-2 py-1 text-xs border-[var(--border)]"
+              title={passwordRevealed ? "Hide password" : "Show password"}
+            >
+              {passwordRevealed ? "Hide" : "Show"}
+            </button>
+          </div>
         </label>
 
-        <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm={algorithm} disabled={submitting} />
+        <div>
+          <button
+            type="button"
+            onClick={() => setGeneratorOpen((v) => !v)}
+            className="text-xs opacity-70 hover:opacity-100"
+          >
+            {generatorOpen ? "▾ Hide generator" : "▸ Generate a password"}
+          </button>
+          {generatorOpen && (
+            <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm={algorithm} disabled={submitting} />
+          )}
+        </div>
 
         <label className="block">
           <span className="text-sm">Remarks (optional)</span>
