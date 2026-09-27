@@ -137,7 +137,16 @@ pub fn update_ssh_agent_enabled(
 ) -> Result<(), CommandError> {
     do_update_ssh_agent_enabled(&state, &paths, enabled)?;
     if enabled {
-        crate::ssh_agent_service::start(&app);
+        // B4/D2: if start() reports a failure, don't leave the persisted flag as enabled - that is
+        // exactly what turned a single failed start into the M9.0 crash-loop (every relaunch
+        // re-read `ssh_agent_enabled: true` and re-attempted the broken start). Revert it here so a
+        // failure degrades to "SSH agent off, toggle reports an error" instead of an unbootable app.
+        if let Err(msg) = crate::ssh_agent_service::start(&app) {
+            do_update_ssh_agent_enabled(&state, &paths, false)?;
+            return Err(pwmgr_core::error::invalid_input_error(&format!(
+                "Could not start the SSH agent: {msg}"
+            )));
+        }
     } else {
         crate::ssh_agent_service::stop(&app);
     }

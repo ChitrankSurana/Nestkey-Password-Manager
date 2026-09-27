@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, isCommandError, type CredentialDto, type HistoryEntryDto, type StrengthDto } from "../../lib/api";
+import { confirmDialog } from "../../lib/confirm";
 import { SecretField } from "../../components/SecretField";
 import { TotpDisplay } from "../../components/TotpDisplay";
 import { DetailField } from "./DetailField";
@@ -48,6 +49,11 @@ export function CredentialBlock({
   }
 
   async function handleDelete() {
+    // M8.1: was the only destructive action in the app with no confirmation at all (site, folder
+    // and Empty Trash all route through this same seam) - a stray click on a multi-credential site
+    // silently removed one with no way to notice before it happened.
+    const label = credential.username || "this credential";
+    if (!(await confirmDialog(`Delete "${label}"? It will move to Trash.`))) return;
     try {
       setError(null);
       await api.softDeleteCredential(credential.id);

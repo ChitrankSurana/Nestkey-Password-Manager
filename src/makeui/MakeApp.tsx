@@ -40,6 +40,18 @@ export default function MakeApp() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const vault = useMakeVault();
 
+  // B1: useMakeVault mounts (and fires its one-shot list_sites/list_folders fetch) as soon as
+  // MakeApp mounts, while the vault is still locked - the initial fetch is guaranteed to fail with
+  // "Vault is locked", and nothing previously refetched after a successful login. Refetch here,
+  // keyed on the screen flip, so the item list is populated for the session that's actually
+  // unlocked instead of the pre-login one.
+  useEffect(() => {
+    if (screen === "vault") {
+      vault.refreshSites();
+      vault.refreshFolders();
+    }
+  }, [screen]);
+
   useActivityWatcher(screen === "vault");
 
   useEffect(() => {

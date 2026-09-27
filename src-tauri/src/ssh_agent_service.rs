@@ -10,7 +10,7 @@ use tauri::AppHandle;
 
 /// Holds the currently-running listener task (if any), so the Settings toggle can start/stop it
 /// live instead of requiring an app restart. Managed as Tauri state.
-pub struct SshAgentHandle(std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>);
+pub struct SshAgentHandle(std::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>);
 
 impl Default for SshAgentHandle {
     fn default() -> Self {
@@ -18,22 +18,41 @@ impl Default for SshAgentHandle {
     }
 }
 
-/// Starts the agent listener if it isn't already running. No-op (and never errors) if unsupported
-/// on this platform.
-pub fn start(app: &AppHandle) {
+/// Starts the agent listener if it isn't already running. Never crashes the caller: a failure here
+/// (e.g. a future regression reintroducing an off-runtime spawn) is caught and reported instead of
+/// unwinding into the boot/`.setup()` path or the Settings-toggle command - a bad persisted
+/// `ssh_agent_enabled` flag must not be able to crash-loop the whole app (D2/M9.0).
+/// Returns `Err` with a message on failure so the caller can surface it and revert the setting.
+pub fn start(app: &AppHandle) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use tauri::Manager;
         let handle_state = app.state::<SshAgentHandle>();
         let mut guard = handle_state.0.lock().unwrap();
         if guard.is_some() {
-            return;
+            return Ok(());
         }
-        *guard = Some(imp::spawn(app.clone()));
+        let app_for_spawn = app.clone();
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| imp::spawn(app_for_spawn))) {
+            Ok(task) => {
+                *guard = Some(task);
+                Ok(())
+            }
+            Err(panic) => {
+                let msg = panic
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown panic".to_string());
+                eprintln!("warning: ssh-agent failed to start: {msg}");
+                Err(msg)
+            }
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {
         let _ = app;
+        Ok(())
     }
 }
 
@@ -134,8 +153,12 @@ mod imp {
         }
     }
 
-    pub fn spawn(handle: AppHandle) -> tokio::task::JoinHandle<()> {
-        tokio::spawn(async move {
+    pub fn spawn(handle: AppHandle) -> tauri::async_runtime::JoinHandle<()> {
+        // D2 root cause: raw `tokio::spawn` panics ("there is no reactor running") when called from
+        // Tauri's native/webview callback thread, which has no ambient Tokio reactor entered -
+        // `tauri::async_runtime::spawn` explicitly enters Tauri's managed runtime handle first, so
+        // this now works from both the `.setup()` boot path and the synchronous Settings command.
+        tauri::async_runtime::spawn(async move {
             match NamedPipeListener::bind(PIPE_NAME) {
                 Ok(listener) => {
                     if let Err(e) = listen(listener, PwmgrSshSession { handle }).await {

@@ -102,8 +102,13 @@ export function useMakeVault() {
 
   useEffect(() => {
     const unlistenPromise = listen("vault-locked", () => {
+      // Also clear sites/error, not just credentials: otherwise the pre-login boot fetch's
+      // "Vault is locked" banner (or a post-restore stale list) survives a relock/relogin in the
+      // same window, since this hook's state outlives the login<->vault screen flip (B1).
       clearCredentials();
       selectSite(null);
+      setSites([]);
+      setError(null);
     });
     return () => {
       unlistenPromise.then((unlisten) => unlisten());

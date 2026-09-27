@@ -46,7 +46,16 @@ export function Login({
       // Single generic message on any failure (TRD §3.2 / THREAT_MODEL wrong-password oracle) -
       // do not display err.message variations beyond what the backend already collapsed to one
       // string; just surface it as-is since the backend already guarantees it's generic.
-      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+      // B8: the shared backend message ("Incorrect master password.") is correct wording for a
+      // reauth prompt (this user's own password, no username field), but on the Login screen it
+      // names the wrong field when the actual problem could equally be the username - reword only
+      // here, not in core/src/error.rs, since that message is also used by reauth prompts where the
+      // more specific wording is accurate.
+      if (isCommandError(err) && err.code === "invalid_credentials") {
+        setError("Invalid username or password.");
+      } else {
+        setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+      }
     } finally {
       setPassword("");
       setPin("");

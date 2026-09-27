@@ -47,11 +47,22 @@ function FolderRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // J5/J6: commit only on Enter; blur and Escape both cancel (discard the edit, revert the input,
+  // clear any stale error) instead of committing. Previously onBlur was wired straight to
+  // commitRename with no way to tell "Escape's own state update just unmounted this input" apart
+  // from "the user clicked elsewhere to confirm" - so Escape's unmount-blur silently re-committed
+  // the very edit it was meant to cancel, and Enter (which sets editing=false itself) triggered a
+  // second commitRename via the blur that followed.
+  function cancelEdit() {
+    setEditing(false);
+    setNameInput(folder.name);
+    setError(null);
+  }
+
   async function commitRename() {
     const trimmed = nameInput.trim();
     if (trimmed === "" || trimmed === folder.name) {
-      setEditing(false);
-      setNameInput(folder.name);
+      cancelEdit();
       return;
     }
     setBusy(true);
@@ -82,21 +93,21 @@ function FolderRow({
 
   if (editing) {
     return (
-      <input
-        autoFocus
-        value={nameInput}
-        disabled={busy}
-        onChange={(e) => setNameInput(e.target.value)}
-        onBlur={commitRename}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commitRename();
-          if (e.key === "Escape") {
-            setEditing(false);
-            setNameInput(folder.name);
-          }
-        }}
-        className="w-full px-3 py-1.5 text-sm rounded-lg bg-mk-input border border-mk-accent text-mk-fg focus:outline-none"
-      />
+      <div>
+        <input
+          autoFocus
+          value={nameInput}
+          disabled={busy}
+          onChange={(e) => setNameInput(e.target.value)}
+          onBlur={cancelEdit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitRename();
+            if (e.key === "Escape") cancelEdit();
+          }}
+          className="w-full px-3 py-1.5 text-sm rounded-lg bg-mk-input border border-mk-accent text-mk-fg focus:outline-none"
+        />
+        {error && <p className="px-3 pt-1 text-[10px] text-mk-red">{error}</p>}
+      </div>
     );
   }
 
@@ -153,10 +164,18 @@ export function Sidebar({
   const [newFolderName, setNewFolderName] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
 
+  // J5/J6: same fix as FolderRow's cancelEdit/commitRename above - commit only on Enter, cancel
+  // (and clear addError) on blur/Escape instead of committing on blur.
+  function cancelAddFolder() {
+    setAddingFolder(false);
+    setNewFolderName("");
+    setAddError(null);
+  }
+
   async function commitAddFolder() {
     const trimmed = newFolderName.trim();
     if (trimmed === "") {
-      setAddingFolder(false);
+      cancelAddFolder();
       return;
     }
     try {
@@ -252,13 +271,10 @@ export function Sidebar({
                   autoFocus
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  onBlur={commitAddFolder}
+                  onBlur={cancelAddFolder}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") commitAddFolder();
-                    if (e.key === "Escape") {
-                      setAddingFolder(false);
-                      setNewFolderName("");
-                    }
+                    if (e.key === "Escape") cancelAddFolder();
                   }}
                   placeholder="Folder name"
                   className="w-full px-3 py-1.5 text-sm rounded-lg bg-mk-input border border-mk-accent text-mk-fg focus:outline-none"

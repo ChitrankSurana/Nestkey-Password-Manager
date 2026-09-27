@@ -251,13 +251,26 @@ export function ItemDrawer({
                         value={f.label}
                         onChange={(e) => updateField(f.key, { label: e.target.value })}
                       />
-                      <input
-                        className="flex-1 rounded-lg border px-2 py-1 text-xs bg-mk-input border-mk-border text-mk-fg"
-                        type={f.fieldType === "hidden" ? "password" : "text"}
-                        placeholder="Value"
-                        value={f.value}
-                        onChange={(e) => updateField(f.key, { value: e.target.value })}
-                      />
+                      {f.fieldType === "boolean" ? (
+                        // J1: was a free-text box for every field type, so typing "Yes" stored the
+                        // literal string "Yes" instead of "true"/"false" - readers compare strictly
+                        // against "true" (DetailField.tsx), so anything else silently reads as No.
+                        // Matches the checkbox CredentialEditor.tsx already uses for this type.
+                        <input
+                          type="checkbox"
+                          className="flex-1"
+                          checked={f.value === "true"}
+                          onChange={(e) => updateField(f.key, { value: e.target.checked ? "true" : "false" })}
+                        />
+                      ) : (
+                        <input
+                          className="flex-1 rounded-lg border px-2 py-1 text-xs bg-mk-input border-mk-border text-mk-fg"
+                          type={f.fieldType === "hidden" ? "password" : "text"}
+                          placeholder="Value"
+                          value={f.value}
+                          onChange={(e) => updateField(f.key, { value: e.target.value })}
+                        />
+                      )}
                       <select
                         className="rounded-lg border px-1 py-1 text-xs bg-mk-input border-mk-border text-mk-fg"
                         value={f.fieldType}
@@ -347,7 +360,10 @@ export function ItemDrawer({
           </label>
         )}
 
-        {mode === "add" && type !== "login" && (
+        {type !== "login" && (
+          // N7: was gated on mode === "add" too, so edit mode never showed this input even though
+          // `notes` is still read from the existing site and submitted on save (:123) - the value
+          // round-tripped but was un-editable from this drawer.
           <label className="block">
             <span className="text-sm text-mk-fg2">Notes (optional)</span>
             <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg" value={notes} onChange={(e) => setNotes(e.target.value)} />

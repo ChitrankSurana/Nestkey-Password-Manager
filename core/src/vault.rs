@@ -1007,7 +1007,7 @@ pub fn search(conn: &Connection, key: &VaultKey, query: &str) -> Result<Vec<Sear
     }
 
     let mut stmt = conn.prepare(
-        "SELECT s.id, s.name, s.notes, c.id, c.username, c.remarks, c.custom_fields_enc, c.custom_fields_nonce
+        "SELECT s.id, s.name, s.notes, s.card_last4, c.id, c.username, c.remarks, c.custom_fields_enc, c.custom_fields_nonce
          FROM credentials c
          JOIN sites s ON s.id = c.site_id
          WHERE c.deleted_at IS NULL AND s.deleted_at IS NULL
@@ -1018,29 +1018,38 @@ pub fn search(conn: &Connection, key: &VaultKey, query: &str) -> Result<Vec<Sear
             row.get::<_, i64>(0)?,
             row.get::<_, String>(1)?,
             row.get::<_, Option<String>>(2)?,
-            row.get::<_, i64>(3)?,
-            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, i64>(4)?,
             row.get::<_, Option<String>>(5)?,
-            row.get::<_, Option<Vec<u8>>>(6)?,
+            row.get::<_, Option<String>>(6)?,
             row.get::<_, Option<Vec<u8>>>(7)?,
+            row.get::<_, Option<Vec<u8>>>(8)?,
         ))
     })?;
 
     let mut out = Vec::new();
     for r in rows {
-        let (site_id, site_name, site_notes, credential_id, username, remarks, fields_enc, fields_nonce) = r?;
+        let (site_id, site_name, site_notes, card_last4, credential_id, username, remarks, fields_enc, fields_nonce) = r?;
 
         let plaintext_match = site_name.to_lowercase().contains(&needle)
             || site_notes.as_deref().unwrap_or("").to_lowercase().contains(&needle)
             || username.as_deref().unwrap_or("").to_lowercase().contains(&needle)
-            || remarks.as_deref().unwrap_or("").to_lowercase().contains(&needle);
+            || remarks.as_deref().unwrap_or("").to_lowercase().contains(&needle)
+            // J4/N10: card_last4 is a non-secret hint column (kept unencrypted precisely so the
+            // list row can show "Visa •••• 1111" without decrypting anything, see
+            // add_site_columns_if_missing above) - safe to index directly, unlike the full card
+            // number sealed in custom_fields_enc below.
+            || card_last4.as_deref().unwrap_or("").to_lowercase().contains(&needle);
 
         let secret_match = if plaintext_match {
             false // already matched, no need to decrypt
         } else {
+            // J4: Hidden fields (full card number, CVV, recovery codes, secure-note bodies) are
+            // excluded from search entirely - only Text/Boolean custom field values are matched.
+            // card_last4 above is the one deliberately-searchable fragment of a card's secret data.
             open_custom_fields(key, fields_enc, fields_nonce)?
                 .iter()
-                .any(|f| f.value.to_lowercase().contains(&needle))
+                .any(|f| f.field_type != CustomFieldType::Hidden && f.value.to_lowercase().contains(&needle))
         };
 
         if plaintext_match || secret_match {
@@ -1759,10 +1768,52 @@ mod tests {
     }
 
     #[test]
-    fn search_matches_sealed_custom_field_content_but_not_the_plaintext_columns() {
+    fn search_matches_sealed_text_custom_field_content_but_not_the_plaintext_columns() {
         let dir = tempdir().unwrap();
         let key = derive_key("pw", &[12u8; 16]).unwrap();
         let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let login_site = add_site(&conn, "Some Login", None, None).unwrap();
+        add_credential(
+            &conn, &key, login_site, Some("carol"), "secret", None,
+            &[CustomField { label: "Platform".into(), value: "linux-only".into(), field_type: CustomFieldType::Text }],
+            false,
+        ).unwrap();
+
+        let other_site = add_site(&conn, "Unrelated Login", None, None).unwrap();
+        add_credential(&conn, &key, other_site, Some("dave"), "secret", None, &[], false).unwrap();
+
+        // The needle only appears inside a sealed (but non-Hidden) custom-fields value - a
+        // plaintext-only search (the pre-B1-7 behavior) would find nothing here.
+        let results = search(&conn, &key, "linux-only").unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].site_id, login_site);
+
+        assert!(search(&conn, &key, "unrelated").unwrap().iter().any(|r| r.site_id == other_site));
+    }
+
+    #[test]
+    fn search_excludes_hidden_custom_field_values_but_still_matches_card_last4() {
+        // J4/N10: a Hidden field's value (recovery code, note body, full card number, CVV) must
+        // never surface in search results, even though the pre-fix code decrypted and matched
+        // every custom field regardless of type. card_last4 is the one deliberate exception - it's
+        // a plaintext site column by design (see add_site_columns_if_missing), not part of the
+        // sealed blob, so indexing it doesn't expose anything the list row doesn't already show.
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[13u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let card_site = add_site(&conn, "Visa Primary", None, None).unwrap();
+        set_site_item_type(&conn, card_site, "card").unwrap();
+        set_site_card_hint(&conn, card_site, Some("Visa"), Some("1111")).unwrap();
+        add_credential(
+            &conn, &key, card_site, None, "", None,
+            &[
+                CustomField { label: CARD_NUMBER.into(), value: "4111111111111111".into(), field_type: CustomFieldType::Hidden },
+                CustomField { label: CARD_CVV.into(), value: "123".into(), field_type: CustomFieldType::Hidden },
+            ],
+            false,
+        ).unwrap();
 
         let note_site = add_site(&conn, "Bank Note", None, None).unwrap();
         set_site_item_type(&conn, note_site, "note").unwrap();
@@ -1772,16 +1823,15 @@ mod tests {
             false,
         ).unwrap();
 
-        let login_site = add_site(&conn, "Unrelated Login", None, None).unwrap();
-        add_credential(&conn, &key, login_site, Some("carol"), "secret", None, &[], false).unwrap();
-
-        // The needle only appears inside the sealed custom-fields blob - a plaintext-only search
-        // (the pre-B1-7 behavior) would find nothing here.
-        let results = search(&conn, &key, "routing number").unwrap();
+        // Full card number and CVV: not searchable.
+        assert!(search(&conn, &key, "4111111111111111").unwrap().is_empty());
+        assert!(search(&conn, &key, "123").unwrap().is_empty());
+        // Hidden note body: not searchable.
+        assert!(search(&conn, &key, "routing number").unwrap().is_empty());
+        // Last 4 digits: still searchable, from the plaintext card_last4 column.
+        let results = search(&conn, &key, "1111").unwrap();
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].site_id, note_site);
-
-        assert!(search(&conn, &key, "unrelated").unwrap().iter().any(|r| r.site_id == login_site));
+        assert_eq!(results[0].site_id, card_site);
     }
 
     #[test]

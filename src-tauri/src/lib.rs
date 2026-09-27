@@ -56,7 +56,19 @@ pub fn run() {
                 .build()?;
 
             if ssh_agent_enabled_at_startup {
-                ssh_agent_service::start(&app.handle().clone());
+                // B4/D2: a failed start must not take the boot sequence down with it, and must not
+                // silently keep re-attempting on every future launch - revert the persisted flag so
+                // a bad state self-heals to "off" after one failed boot instead of crash-looping.
+                if let Err(msg) = ssh_agent_service::start(&app.handle().clone()) {
+                    eprintln!("warning: ssh-agent did not start at boot, disabling it: {msg}");
+                    let state = app.state::<AppState>();
+                    let mut config = state.config.lock().unwrap();
+                    let mut updated = config.clone();
+                    updated.ssh_agent_enabled = false;
+                    if updated.save(&app.state::<AppPaths>().config_path()).is_ok() {
+                        *config = updated;
+                    }
+                }
             }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
