@@ -253,3 +253,38 @@ design, and there is no custom confirm component in `src/` to switch to).
 6. **A fresh UAT script** covering the fixed cases is authored after the code
    lands, in the same format as `UAT_MODERN_UI_OVERHAUL.md`, for the major
    re-test pass.
+
+## Progress (2026-09-27, implementation session)
+
+Landed, tested (`cargo test --workspace` 421/421, `npm test` 40/40,
+`npm run build` clean), and committed on `feature/modern-ui-overhaul`:
+
+- Raw-spawn audit (Wave 0.6) — closed, no other hazard found.
+- B8 timing audit (Wave 0.5) — closed; decoy KDF derivation already exists
+  in `core/src/auth.rs`, a smaller residual gap is documented above, not
+  reworked.
+- **B1** — fixed (`bb4bfdd`).
+- **B3 / N22** — fixed (`7dab2c5`).
+- **B4** — fixed (`bb4bfdd`); still needs the **live pipe-up verification**
+  step from the Verification section before D2/M9.0 can be marked closed.
+- **B8** — fixed (`bb4bfdd`).
+- **J1** — fixed (`bb4bfdd`).
+- **J4 + N10** — fixed (`bb4bfdd`).
+- **J5 / J6** — fixed (`bb4bfdd`).
+- **N7** — fixed (`bb4bfdd`).
+- **M8.1** — fixed (`bb4bfdd`).
+
+Still open (not started this session):
+
+- **Wave 0** — R1 (folder placeholder) is very likely explained by
+  `foldersOpen` defaulting to `false` in `Sidebar.tsx`, so nothing shows
+  under a collapsed Folders section on a fresh vault, whether or not it's
+  a bug; R2–R5, the vault-data-loss investigation, the blank-window
+  investigation, and the N15 settings-race diagnosis are all still live
+  retests/investigations, not yet done.
+- **B2, B5, B6, B7** — not started. B7 in particular needs the
+  reprompt-subscriber mechanism designed in the rulings above, plus live
+  verification of the grace-window UX — deliberately not rushed.
+- **J2, J3** — not started.
+- **N1, N4–N6, N8/N9, N12/N13/N15/N16/N18/N19, N23** — not started.
+- **Wave 4 follow-ups** — not started (expected; filed for later).
