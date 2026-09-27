@@ -135,6 +135,7 @@ export function Settings({ username }: { username: string }) {
   const [confirmPwInput, setConfirmPwInput] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordChanged, setPasswordChanged] = useState(false);
+  const [pwChangeError, setPwChangeError] = useState<string | null>(null);
 
   function refreshSshKeys() {
     if (isTauri) {
@@ -217,15 +218,23 @@ export function Settings({ username }: { username: string }) {
   // inputs client-side too since the backend already dropped both records (they wrapped the old
   // key) - refreshing pinSet/biometricSet from a stale local "true" would show a Remove button
   // for an unlock method that no longer exists.
+  // B6: this used the shared page-level `error` state, which renders at the very top of the
+  // Settings page (:489-ish) - with this form scrolled into view further down, that message could
+  // render off-screen above the visible area (M9.1/M9.2's W finding; same DOM shape on desktop,
+  // just not hit whenever the tester's window happened to still show the top). Uses its own local
+  // error, rendered directly under the form, so it's never scrolled out of view. On success, force
+  // a real logout (lock()) rather than leaving the vault open with the old session - the forced
+  // navigation to Login is itself an unmissable result, which also means a same-as-old submission
+  // (M9.5) can no longer look like a silent no-op: something visibly happens either way.
   async function handleChangeMasterPassword(e: FormEvent) {
     e.preventDefault();
     if (newPwInput !== confirmPwInput) {
-      setError("New passwords don't match.");
+      setPwChangeError("New passwords don't match.");
       return;
     }
     setChangingPassword(true);
     try {
-      setError(null);
+      setPwChangeError(null);
       await api.changeMasterPassword(currentPwInput, newPwInput);
       setCurrentPwInput("");
       setNewPwInput("");
@@ -233,8 +242,9 @@ export function Settings({ username }: { username: string }) {
       setPinSet(false);
       setBiometricSet(false);
       setPasswordChanged(true);
+      await api.lock();
     } catch (err) {
-      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+      setPwChangeError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
       setChangingPassword(false);
     }
@@ -609,6 +619,7 @@ export function Settings({ username }: { username: string }) {
                   {changingPassword ? "Changing…" : "Change Password"}
                 </button>
                 {passwordChanged && <p className="text-sm text-mk-green">Master password changed.</p>}
+                {pwChangeError && <p className="text-sm text-mk-red">{pwChangeError}</p>}
               </form>
             </div>
           </Section>

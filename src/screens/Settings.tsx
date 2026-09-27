@@ -65,6 +65,7 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   const [confirmPwInput, setConfirmPwInput] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordChanged, setPasswordChanged] = useState(false);
+  const [pwChangeError, setPwChangeError] = useState<string | null>(null);
 
   function refreshSshKeys() {
     if (isTauri) {
@@ -147,15 +148,20 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
   // inputs client-side too since the backend already dropped both records (they wrapped the old
   // key) - refreshing pinSet/biometricSet from a stale local "true" would show a Remove button
   // for an unlock method that no longer exists.
+  // B6: see the identical fix's comment in src/makeui/components/Settings.tsx - local error
+  // (rendered next to this form, not the page-level `error` up top which can be scrolled out of
+  // view) plus a forced logout on success, so success and failure are both an unmissable result
+  // rather than something that can render off-screen or, for a same-as-old submission, do nothing
+  // visible at all (M9.1/M9.2/M9.5).
   async function handleChangeMasterPassword(e: FormEvent) {
     e.preventDefault();
     if (newPwInput !== confirmPwInput) {
-      setError("New passwords don't match.");
+      setPwChangeError("New passwords don't match.");
       return;
     }
     setChangingPassword(true);
     try {
-      setError(null);
+      setPwChangeError(null);
       await api.changeMasterPassword(currentPwInput, newPwInput);
       setCurrentPwInput("");
       setNewPwInput("");
@@ -163,8 +169,9 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
       setPinSet(false);
       setBiometricSet(false);
       setPasswordChanged(true);
+      await api.lock();
     } catch (err) {
-      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+      setPwChangeError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
     } finally {
       setChangingPassword(false);
     }
@@ -596,6 +603,7 @@ export function Settings({ onBack, username }: { onBack: () => void; username: s
                 </button>
               </Tooltip>
               {passwordChanged && <p className="text-sm text-green-400">Master password changed.</p>}
+              {pwChangeError && <p className="text-sm text-red-400">{pwChangeError}</p>}
             </form>
           </div>
         </div>
