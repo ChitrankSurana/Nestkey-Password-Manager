@@ -5,7 +5,7 @@ import { ViewerVault } from "./screens/ViewerVault";
 import { ToastHost } from "./components/ToastHost";
 import { useActivityWatcher } from "./hooks/useActivityWatcher";
 import { api } from "./lib/api";
-import "./App.css";
+import "./makeui/makeui.css";
 
 type Screen = "login" | "vault";
 
