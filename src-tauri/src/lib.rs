@@ -16,6 +16,20 @@ pub fn run() {
     let ui_variant = app_state.config.lock().unwrap().ui_variant.clone();
 
     tauri::Builder::default()
+        // Wave 0 (2026-09-29): must be the first plugin registered - it intercepts a second
+        // launch attempt before anything else initializes. Without this, launching the app while
+        // an instance is already running silently spawned a second, fully independent process
+        // (confirmed live: Get-Process pwmgr-app going 1 -> 2 -> 3 across relaunches), which is
+        // also the most likely explanation for the original "vault data loss" report - a stale
+        // orphaned window surviving a terminal close, with the user then looking at a different
+        // process than they think. Focuses the existing "main" window instead of building a new one.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
@@ -48,14 +62,37 @@ pub fn run() {
                 // value that slipped past validation resolves to Classic - never a dead window.
                 _ => "index.html",
             };
+            // Wave 0 (2026-09-29): WebView2's GPU/ANGLE compositor occasionally never paints at
+            // all (confirmed live: solid black content area, correct title/chrome, process
+            // responding, no panic - stuck through resize/maximize/minimize-restore, reproduced
+            // with exactly one process running so this is distinct from the single-instance gap
+            // above). Must be set before WebView2 initializes. Acceptable tradeoff here - this is
+            // a CRUD UI with no heavy rendering, not a case that needs GPU acceleration.
+            #[cfg(windows)]
+            std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu");
+
             // Window label MUST stay "main" - src-tauri/capabilities/default.json scopes the
             // clipboard-manager and dialog permissions to that label (D-04/T-08-02).
-            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App(entry.into()))
+            let window = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App(entry.into()))
                 // N17/D3: was the literal generic string "tauri-app" (Tauri's own scaffold
                 // default), not a branded name - cosmetic but confusing in the taskbar/title bar.
                 .title("LocalVault")
                 .inner_size(800.0, 600.0)
                 .build()?;
+
+            // Best-effort repaint nudge for any stuck-paint case --disable-gpu above doesn't
+            // catch: forces WebView2's compositor to redraw.
+            let size = window.inner_size()?;
+            window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(size.width + 1, size.height)))?;
+            window.set_size(tauri::Size::Physical(size))?;
+
+            // Debug-only devtools access - this bug had no way to inspect the blank page's
+            // console during live testing. Stripped from release builds by Tauri's own
+            // `devtools` feature convention; the call site is additionally gated here.
+            #[cfg(debug_assertions)]
+            window.open_devtools();
+
+            eprintln!("info: main window created and shown (ui_variant={ui_variant})");
 
             if ssh_agent_enabled_at_startup {
                 // B4/D2: a failed start must not take the boot sequence down with it, and must not

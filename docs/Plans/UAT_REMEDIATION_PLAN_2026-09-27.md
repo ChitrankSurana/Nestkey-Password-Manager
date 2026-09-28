@@ -362,17 +362,13 @@ Every Wave 1/2/3 finding with a concrete, codeable fix is now closed. What
 remains is genuinely different in kind - live investigation, a visual
 redesign, or explicitly deferred:
 
-- **Wave 0 live retests** — R1 (very likely explained by `foldersOpen`
-  defaulting to `false` in `Sidebar.tsx`, so a collapsed Folders section on
-  a fresh vault shows nothing under it - not yet confirmed live), R2–R5,
-  the vault-data-loss investigation, and the blank-window-launch
-  investigation. None of these can be settled from source alone; they need
-  someone actually driving the app.
+- **Wave 0 live retests** — **done** (2026-09-29 session, live desktop run via
+  computer-use). See the dedicated section below for the full writeup,
+  including two significant NEW findings surfaced during this pass (no
+  single-instance guard; folder-input blur/Escape not cancelling).
 - **N15** — investigated, inconclusive (see the dedicated section below);
   needs a live reproduction attempt, not a guessed fix.
-- **N16 (UI-port half)** — restyling `ViewerApp.tsx`/`ViewerVault.tsx`
-  onto Make UI is a visual redesign, not a bug fix; deserves its own
-  scoped pass.
+- **N16 (UI-port half)** — done, see Wave 4 above.
 - **Deferred to the web-mode pass** (standing decision, not forgotten):
   B2 (lock doesn't tear down the web SPA), J7 (`window.confirm` freeze),
   N11 (off-screen password-change error, W only), N14 (TOTP countdown not
@@ -404,6 +400,145 @@ redesign, or explicitly deferred:
   this push per user direction; not written.
 - **Web-mode pass** (B2, J7, N11, N14, full W re-run) — still deferred per the
   plan's standing decision; not touched this session.
+
+## Wave 0 live retests (2026-09-29 session)
+
+Driven live via computer-use against `npm run tauri:dev` (desktop). Register
+flow (fresh `wave0tester` account), item add, folder add/rename, search, and
+Health Dashboard were all exercised. Findings below; nothing in this section
+was fixed — Wave 0 is investigate-only per the plan's own charter, so these
+are handed off for triage/fix in a follow-up pass.
+
+**R1 — settled, PASS.** The "No folders yet" placeholder is present and
+correct. Confirmed live: on a fresh vault the Folders section is collapsed by
+default (N18's remembered-collapse-state), so it shows nothing until
+expanded; once expanded, the placeholder renders exactly as coded in
+`Sidebar.tsx`. The disagreement between the two original UAT runs is fully
+explained by one tester leaving the section collapsed.
+
+**R2 — CONFIRMED FAIL, and bigger than originally scoped.** Reproduced twice,
+in two different components (`Sidebar.tsx`'s folder-rename input and its
+add-folder input), both wired identically (`onBlur={cancelEdit/
+cancelAddFolder}`, `onKeyDown` Escape → same cancel function):
+- Escape has **zero effect** — confirmed with no prior typing (input state
+  completely unchanged after the keypress) and with two different key-name
+  spellings sent to the OS. Enter, Backspace, Delete, Ctrl+A, Shift+Home all
+  worked normally in the same inputs, so this isn't a blanket key-delivery
+  problem — something specific to Escape.
+- **Blur does not reliably cancel either.** In the rename case, clicking
+  away *committed* the edited (garbage) text instead of reverting it — the
+  opposite of `cancelEdit`'s contract. In the add-folder case, after a
+  duplicate-name error, the input stayed stuck open with the error message
+  showing even after clicking a totally unrelated, real, clickable nav
+  button (Health Dashboard) that unambiguously received the click and
+  navigated. The stuck input persisted across that navigation.
+- This can't be fully separated from a possible computer-use/WebView2
+  synthetic-event quirk without a real user's hands on the keyboard, but the
+  blur failure via a genuine navigating click is hard to explain as a
+  tooling artifact — that deserves its own scoped debugging pass with
+  DevTools access (`F12` did not visibly open devtools in this session's
+  WebView2, another thing to check by hand).
+
+**R3 — settled, PASS.** Duplicate folder name shows a clear inline error
+("A folder with that name already exists.") directly under the input, not
+silently. Confirmed live.
+
+**R4 — not reached.** Time/scope ran out after the R1–R3 and the two Blocker
+investigations below; the Details/History/Activity tab strip in
+`CredentialBlock.tsx` was visually confirmed present on one credential (see
+the stale-UI note below) but the 5-vs-1 history-count question itself
+wasn't re-driven live this session. Already has unit-test coverage
+(`credential_history_caps_at_five_most_recent`); low priority to re-check.
+
+**R5 — not reached** (CSV fixture check needs the actual fixture file on the
+tester's machine; out of scope for a source-only or live-UI session).
+
+**Vault data loss — NOT reproduced; likely explained by the process-identity
+finding below, not real storage loss.** Direct filesystem check: created a
+credential + 3 folders in a fresh `wave0tester` vault, then killed and
+relaunched the `pwmgr-app.exe` process **three times**. Every time,
+`~/.pwmgr/vaults/wave0tester.vault` was byte-identical (40960 bytes) and its
+mtime matched the last save — a plain `Stop-Process`/relaunch cycle does
+**not** lose data. Storage itself is sound. The user's original report is
+much better explained by the multi-process finding immediately below: if an
+orphaned background instance survives closing the dev terminal and a new
+session's window is actually a *different* process than the one the user
+thinks they're looking at, "my data is gone" is exactly what stale/blank
+window state would look like, with no actual data loss underneath.
+
+**Blank-window launch — CONFIRMED, reproduced 3 of 4 launches this session,
+and root-caused to two independent contributing bugs:**
+
+1. **No single-instance guard (new finding, not in the original plan).**
+   `grep -rn "single_instance" src-tauri/` returns nothing — the app has no
+   Tauri single-instance plugin. Confirmed live: calling the OS-level "open
+   this app" action while an instance was already running spawned a
+   **second, independent `pwmgr-app.exe` process** every time (verified via
+   `Get-Process pwmgr-app`, watched the process table go from 1 → 2 → 3
+   entries across three such calls, each with its own PID and start time).
+   Nothing in the app detects or refuses this. Real-world impact: any
+   ordinary double-launch (desktop icon double-click, Start-menu re-click
+   while the first window is blank/hidden and the user assumes it didn't
+   open) silently stacks up extra processes, each independently opening the
+   same vault file, each with its own in-memory session/lock state. This is
+   very likely why a stale, pre-J3 build of the UI ("Password history" as a
+   plain link, not the Details/History/Activity tabs — that exact string
+   doesn't exist anywhere in current `src/`) was still visibly running and
+   interactive partway through this session: an orphaned process from
+   *before* this session's dev server restart was still alive and frontmost,
+   not the freshly-built one.
+2. **A genuine WebView2 black-screen render failure, independent of #1.**
+   With confirmed exactly **one** `pwmgr-app.exe` process running (no
+   duplicate confound), a fresh launch still rendered a **solid black**
+   client area — window chrome and title ("LocalVault") fully correct,
+   process `Responding: True`, no panic/error in the Rust log, but nothing
+   ever painted. Tried: waiting (3s+), resizing (maximize), minimize→restore
+   (a common fix for this exact WebView2 compositor-race class of bug) —
+   none recovered it; only killing and relaunching the process worked, and
+   even then only sometimes (blank on the 2nd and 3rd relaunch, fine on the
+   1st). This matches the plan's own leading hypothesis (a WebView2
+   asset-load/compositor race tied to the embedded-assets design) and is
+   the more severe of the two contributors since it can happen with zero
+   process confusion at all.
+
+**Follow-up: done** (2026-09-29, same-day follow-up pass). Full plan in
+[docs/Plans/Wave0_Findings_Fix_Plan_2026-09-29.md](Wave0_Findings_Fix_Plan_2026-09-29.md).
+Summary:
+- **Single-instance guard** — added `tauri-plugin-single-instance`,
+  registered first in `src-tauri/src/lib.rs`'s builder chain, focusing the
+  existing `"main"` window on a second-launch attempt instead of building
+  a new one. **Verified live**: launched the dev binary a second time
+  directly (`target/debug/pwmgr-app.exe`) while the first was running —
+  confirmed via `Get-Process` that only one process ever existed, the
+  first instance's window stayed shown and focused, and the second
+  process's own single-instance check exited it (`std::process::exit(0)`
+  in the plugin's Windows impl) before it could build anything.
+  (Note: `open_application`("tauri-app") via computer-use resolves to an
+  unrelated, stale, pre-existing packaged copy of the app under Claude's
+  own local app-cache path, not this dev build — that stale copy has no
+  single-instance guard since it predates this fix, and is almost
+  certainly what explained the "Password history" stale-UI text observed
+  earlier in the original live session. Not a flaw in the fix; a
+  testing-tool artifact. Killed that stray process during verification.)
+- **WebView2 black screen** — set `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=
+  --disable-gpu` before window creation (Windows-only), bound the window
+  builder's result and added a 1px resize-nudge repaint after `.build()`,
+  gated `window.open_devtools()` to debug builds, and added a startup log
+  line. **Verified live**: the window rendered correctly on the very
+  first launch after the fix (previously blank on 3 of 4 launches);
+  couldn't force a large enough sample this pass to claim the black
+  screen is provably gone forever, but the most evidence-backed fix for
+  this WebView2/ANGLE symptom class is in, and debug builds now have F12
+  access if it recurs.
+- Verification: `cargo test --workspace` 442/442, `npm run build` clean,
+  live desktop relaunch testing as above.
+- Escape/blur folder-input cancel (R2) — investigated further, found
+  **no code fix indicated**: current `Sidebar.tsx` already implements the
+  correct `onBlur`/`Escape` → cancel contract (matches commit `bb4bfdd`,
+  no local diff). Most likely explanation for the original live-session
+  failure: the stale orphaned process described above. Left as
+  verify-only; re-test with real hardware if it recurs against a
+  confirmed-current single process.
 
 ## Wave 0 finding: N15 (settings persistence race)
 
