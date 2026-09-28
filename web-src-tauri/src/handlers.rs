@@ -8,7 +8,7 @@ use axum::routing::post;
 use axum::{Extension, Json, Router};
 use pwmgr_core::commands::*;
 use pwmgr_core::dto::{
-    AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
+    AuthSuccess, BreachReportDto, ChangeLogEntryDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
     FolderDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
@@ -654,6 +654,13 @@ async fn list_credential_history(
     Ok(Json(do_list_credential_history(&s.app_state, b.credential_id)?))
 }
 
+async fn list_credential_change_log(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<CredentialIdRequest>,
+) -> Result<Json<Vec<ChangeLogEntryDto>>, ApiError> {
+    Ok(Json(do_list_credential_change_log(&s.app_state, b.credential_id)?))
+}
+
 async fn list_trash(
     Extension(s): Extension<Arc<UserSession>>,
 ) -> Result<Json<Vec<TrashedCredentialDto>>, ApiError> {
@@ -1029,6 +1036,7 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/clear_totp_secret", post(clear_totp_secret))
         .route("/api/totp_code", post(totp_code))
         .route("/api/list_credential_history", post(list_credential_history))
+        .route("/api/list_credential_change_log", post(list_credential_change_log))
         .route("/api/list_trash", post(list_trash))
         .route("/api/restore_credential", post(restore_credential))
         .route("/api/purge_trash", post(purge_trash))

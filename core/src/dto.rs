@@ -199,6 +199,21 @@ impl From<crate::vault::HistoryEntry> for HistoryEntryDto {
     }
 }
 
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeLogEntryDto {
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub changed_at: String,
+}
+
+impl From<crate::vault::ChangeLogEntry> for ChangeLogEntryDto {
+    fn from(c: crate::vault::ChangeLogEntry) -> Self {
+        ChangeLogEntryDto { field: c.field, old_value: c.old_value, new_value: c.new_value, changed_at: c.changed_at }
+    }
+}
+
 impl From<TrashedCredential> for TrashedCredentialDto {
     fn from(t: TrashedCredential) -> Self {
         TrashedCredentialDto {

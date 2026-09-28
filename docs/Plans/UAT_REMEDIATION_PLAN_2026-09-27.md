@@ -377,11 +377,33 @@ redesign, or explicitly deferred:
   B2 (lock doesn't tear down the web SPA), J7 (`window.confirm` freeze),
   N11 (off-screen password-change error, W only), N14 (TOTP countdown not
   ticking, W only), plus a full W re-run of the whole UAT script.
-- **Wave 4 follow-ups** (filed, not scoped for this pass): the MakeShell
-  restructure (B1 Option B), full-fidelity JSON export+import, a
-  per-credential change log separate from password history.
-- **A fresh UAT script** for everything fixed this session, per the plan's
-  Verification section - not written yet.
+- **Wave 4 follow-ups** — **done** (2026-09-28 session, desktop scope only, web-mode
+  pass still deferred per standing decision):
+  - **N16 (UI-port half)** — `ViewerVault.tsx`/`ViewerApp.tsx` restyled onto
+    the Make UI visual language (`mk-*` tokens, `makeui.css`, `ItemRow`/
+    `CopyButton` reused directly). Still its own read-only component, not a
+    passthrough of `ItemList`/`DetailPanel` (those are wired for add/edit/
+    delete).
+  - **MakeShell restructure (B1 Option B)** — `useMakeVault()` and all vault-
+    screen state moved out of `MakeApp.tsx` into a new `MakeVaultShell.tsx`,
+    mounted only for `screen === "vault"`, mirroring `App.tsx`/`AppShell` and
+    `NewApp.tsx`/`NewShell` exactly. `MakeApp.tsx` is now auth/session/theme
+    only. Option A's refetch-on-screen-flip effect is gone - nothing can fetch
+    while locked anymore, so there's nothing left for it to compensate for.
+  - **Per-credential change log (M7.2)** — new `credential_change_log` table
+    (core/src/vault.rs), capped at 20 rows/credential, cascade-deletes with
+    the credential. `update_credential` now logs username/remarks/
+    reprompt-exempt changes (never the secret or custom fields - those stay
+    out of this plain-TEXT log by design). New `list_credential_change_log`
+    command wired through desktop (Tauri) and web (Axum) both. New
+    "Activity" tab in `CredentialBlock.tsx` alongside Details/History. 3 new
+    Rust tests (log-on-field-change, cap-20, cascade-delete).
+  - Verification: `cargo test --workspace` 456/456 (core 369, http_integration
+    45, web 26, e2e 2), `npm test` 54/54, `npm run build` clean.
+- **A fresh UAT script** for everything fixed - explicitly out of scope for
+  this push per user direction; not written.
+- **Web-mode pass** (B2, J7, N11, N14, full W re-run) — still deferred per the
+  plan's standing decision; not touched this session.
 
 ## Wave 0 finding: N15 (settings persistence race)
 

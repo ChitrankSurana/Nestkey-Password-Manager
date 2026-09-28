@@ -98,6 +98,13 @@ export interface HistoryEntryDto {
   changedAt: string;
 }
 
+export interface ChangeLogEntryDto {
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedAt: string;
+}
+
 export interface TrashedCredentialDto {
   credentialId: number;
   siteId: number;
@@ -375,6 +382,7 @@ export const api = {
   clearTotpSecret: (credentialId: number) => call<void>("clear_totp_secret", { credentialId }),
   totpCode: (credentialId: number) => call<TotpCodeDto | null>("totp_code", { credentialId }),
   listCredentialHistory: (credentialId: number) => call<HistoryEntryDto[]>("list_credential_history", { credentialId }),
+  listCredentialChangeLog: (credentialId: number) => call<ChangeLogEntryDto[]>("list_credential_change_log", { credentialId }),
   listTrash: () => call<TrashedCredentialDto[]>("list_trash"),
   restoreCredential: (credentialId: number) => call<void>("restore_credential", { credentialId }),
   purgeTrash: () => call<number>("purge_trash"),

@@ -1,5 +1,5 @@
 use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_REPROMPT_GRACE_SECONDS, VALID_REPROMPT_MODES, VALID_STRENGTH_ALGORITHMS, VALID_UI_VARIANTS};
-use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, FolderDto, GenerateRequest, HealthEntryDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, BreachReportDto, ChangeLogEntryDto, ConfigDto, CredentialDto, ExportMode, FolderDto, GenerateRequest, HealthEntryDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::session::SystemClock;
@@ -221,6 +221,19 @@ pub fn do_list_credential_history(
     let key = session.key().ok_or_else(crate::error::locked_error)?;
     let history = crate::vault::list_credential_history(conn, key, credential_id)?;
     Ok(history.into_iter().map(HistoryEntryDto::from).collect())
+}
+
+/// Wave 4 follow-up (M7.2): the per-credential change log, separate from password history above -
+/// no key needed since these rows are plain TEXT, not sealed (see `log_field_change`'s doc comment
+/// on why: never secrets or custom fields, just username/remarks/reprompt-exempt).
+pub fn do_list_credential_change_log(
+    state: &AppState,
+    credential_id: i64,
+) -> Result<Vec<ChangeLogEntryDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let log = crate::vault::list_credential_change_log(conn, credential_id)?;
+    Ok(log.into_iter().map(ChangeLogEntryDto::from).collect())
 }
 
 /// B1-6, the orchestrator: three sequential, non-overlapping lock windows (registry, then vault,

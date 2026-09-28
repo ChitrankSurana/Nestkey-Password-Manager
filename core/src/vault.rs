@@ -91,9 +91,18 @@ fn init_schema(conn: &Connection) -> Result<(), VaultError> {
             secret_nonce BLOB NOT NULL,
             changed_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        CREATE TABLE IF NOT EXISTS credential_change_log (
+            id INTEGER PRIMARY KEY,
+            credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+            field TEXT NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            changed_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         CREATE INDEX IF NOT EXISTS idx_sites_name ON sites(name);
         CREATE INDEX IF NOT EXISTS idx_credentials_site ON credentials(site_id);
-        CREATE INDEX IF NOT EXISTS idx_credential_history_credential ON credential_history(credential_id);",
+        CREATE INDEX IF NOT EXISTS idx_credential_history_credential ON credential_history(credential_id);
+        CREATE INDEX IF NOT EXISTS idx_credential_change_log_credential ON credential_change_log(credential_id);",
     )?;
     add_credential_columns_if_missing(conn)?;
     add_site_columns_if_missing(conn)?;
@@ -668,14 +677,16 @@ pub fn update_credential(
         )
         .optional()?;
     validate_fields_for_site(conn, owner.ok_or(VaultError::NotFound)?, custom_fields)?;
-    let existing: Option<(Vec<u8>, Vec<u8>)> = conn
+    let existing: Option<(Vec<u8>, Vec<u8>, Option<String>, Option<String>, bool)> = conn
         .query_row(
-            "SELECT secret_enc, secret_nonce FROM credentials WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT secret_enc, secret_nonce, username, remarks, reprompt_exempt
+             FROM credentials WHERE id = ?1 AND deleted_at IS NULL",
             rusqlite::params![credential_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .optional()?;
-    let (old_enc, old_nonce_bytes) = existing.ok_or(VaultError::NotFound)?;
+    let (old_enc, old_nonce_bytes, old_username, old_remarks, old_reprompt_exempt) =
+        existing.ok_or(VaultError::NotFound)?;
     if old_nonce_bytes.len() != 12 {
         return Err(VaultError::UnlockFailed);
     }
@@ -729,7 +740,78 @@ pub fn update_credential(
     if updated == 0 {
         return Err(VaultError::NotFound);
     }
+
+    // Per-credential change log (Wave 4 follow-up, M7.2): separate from credential_history above,
+    // which only ever records outgoing *secrets*. This records non-secret field edits - username,
+    // remarks, the reprompt-exempt flag - none of which credential_history sees at all, so a
+    // username-only save previously left no trace anywhere. Custom fields are deliberately excluded:
+    // some are marked hidden/secret-like (N3) and this log's rows are plain TEXT, so logging them
+    // could leak a hidden value that has its own separate protection.
+    log_field_change(conn, credential_id, "username", old_username.as_deref(), username)?;
+    log_field_change(conn, credential_id, "remarks", old_remarks.as_deref(), remarks)?;
+    if old_reprompt_exempt != reprompt_exempt {
+        log_field_change(
+            conn,
+            credential_id,
+            "reprompt_exempt",
+            Some(if old_reprompt_exempt { "true" } else { "false" }),
+            Some(if reprompt_exempt { "true" } else { "false" }),
+        )?;
+    }
+
     Ok(())
+}
+
+fn log_field_change(
+    conn: &Connection,
+    credential_id: i64,
+    field: &str,
+    old_value: Option<&str>,
+    new_value: Option<&str>,
+) -> Result<(), VaultError> {
+    if old_value == new_value {
+        return Ok(());
+    }
+    conn.execute(
+        "INSERT INTO credential_change_log (credential_id, field, old_value, new_value) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![credential_id, field, old_value, new_value],
+    )?;
+    // Capped at 20 most recent rows per credential - plain-text metadata, not a secret, but still
+    // unbounded growth is not the intent (same reasoning as credential_history's cap-5, just a
+    // looser bound since these rows carry far less sensitive weight).
+    conn.execute(
+        "DELETE FROM credential_change_log WHERE credential_id = ?1 AND id NOT IN (
+            SELECT id FROM credential_change_log WHERE credential_id = ?1 ORDER BY changed_at DESC, id DESC LIMIT 20
+         )",
+        rusqlite::params![credential_id],
+    )?;
+    Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChangeLogEntry {
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub changed_at: String,
+}
+
+/// Up to 20 most recent non-secret field changes for one credential, most recent first. See
+/// `log_field_change` for what gets recorded and why (never secrets/custom fields).
+pub fn list_credential_change_log(conn: &Connection, credential_id: i64) -> Result<Vec<ChangeLogEntry>, VaultError> {
+    let mut stmt = conn.prepare(
+        "SELECT field, old_value, new_value, changed_at FROM credential_change_log
+         WHERE credential_id = ?1 ORDER BY changed_at DESC, id DESC",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![credential_id], |row| {
+        Ok(ChangeLogEntry {
+            field: row.get(0)?,
+            old_value: row.get(1)?,
+            new_value: row.get(2)?,
+            changed_at: row.get(3)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 #[derive(Clone, PartialEq)]
@@ -1515,6 +1597,73 @@ mod tests {
         let history = list_credential_history(&conn, &key, cred_id).unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].secret, "v1"); // the outgoing secret, not the new one
+    }
+
+    #[test]
+    fn update_credential_logs_non_secret_field_changes() {
+        // M7.2: a username-only edit writes no credential_history row (asserted above) but must
+        // still leave a trace somewhere - that's what credential_change_log is for.
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[23u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "v1", None, &[], false).unwrap();
+
+        // Same everything - no log rows at all.
+        update_credential(&conn, &key, cred_id, Some("alice"), "v1", None, &[], false).unwrap();
+        assert!(list_credential_change_log(&conn, cred_id).unwrap().is_empty());
+
+        // Username-only change: one row, secret change produces none of its own.
+        update_credential(&conn, &key, cred_id, Some("alice2"), "v1", None, &[], false).unwrap();
+        let log = list_credential_change_log(&conn, cred_id).unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].field, "username");
+        assert_eq!(log[0].old_value.as_deref(), Some("alice"));
+        assert_eq!(log[0].new_value.as_deref(), Some("alice2"));
+
+        // Remarks and reprompt_exempt both change in the same call - two more rows, most recent first.
+        update_credential(&conn, &key, cred_id, Some("alice2"), "v1", Some("work"), &[], true).unwrap();
+        let log = list_credential_change_log(&conn, cred_id).unwrap();
+        assert_eq!(log.len(), 3);
+        assert_eq!(log[0].field, "reprompt_exempt");
+        assert_eq!(log[0].old_value.as_deref(), Some("false"));
+        assert_eq!(log[0].new_value.as_deref(), Some("true"));
+        assert_eq!(log[1].field, "remarks");
+        assert_eq!(log[1].old_value, None);
+        assert_eq!(log[1].new_value.as_deref(), Some("work"));
+    }
+
+    #[test]
+    fn credential_change_log_caps_at_twenty_most_recent() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[24u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("u0"), "v1", None, &[], false).unwrap();
+
+        for i in 1..=25 {
+            update_credential(&conn, &key, cred_id, Some(&format!("u{i}")), "v1", None, &[], false).unwrap();
+        }
+
+        let log = list_credential_change_log(&conn, cred_id).unwrap();
+        assert_eq!(log.len(), 20);
+        assert_eq!(log[0].new_value.as_deref(), Some("u25")); // most recent first
+    }
+
+    #[test]
+    fn purging_a_trashed_credential_cascades_its_change_log() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[25u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "v1", None, &[], false).unwrap();
+        update_credential(&conn, &key, cred_id, Some("alice2"), "v1", None, &[], false).unwrap();
+        assert_eq!(list_credential_change_log(&conn, cred_id).unwrap().len(), 1);
+
+        soft_delete_credential(&conn, cred_id).unwrap();
+        purge_trash(&conn).unwrap();
+
+        assert!(list_credential_change_log(&conn, cred_id).unwrap().is_empty());
     }
 
     #[test]

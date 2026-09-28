@@ -144,6 +144,7 @@ pub fn run() {
             commands::clear_totp_secret,
             commands::totp_code,
             commands::list_credential_history,
+            commands::list_credential_change_log,
             commands::change_master_password,
             commands::list_trash,
             commands::restore_credential,

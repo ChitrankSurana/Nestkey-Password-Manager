@@ -5,7 +5,7 @@ use pwmgr_core::commands::{
     do_clear_biometric, do_clear_pin, do_clear_totp_secret, do_create_backup, do_delete_ssh_key,
     do_export_csv, do_export_json, do_generate_password, do_get_config, do_has_biometric, do_has_pin,
     do_import_json_commit, do_import_json_preview,
-    do_change_master_password, do_health_report, do_import_csv_commit, do_import_csv_preview, do_list_credential_history, do_list_credentials_for_site,
+    do_change_master_password, do_health_report, do_import_csv_commit, do_import_csv_preview, do_list_credential_change_log, do_list_credential_history, do_list_credentials_for_site,
     do_list_sites, do_list_ssh_keys, do_list_trash, do_lock, do_login, do_purge_trash,
     do_read_csv_headers, do_register, do_restore_backup, do_restore_credential, do_search,
     do_set_biometric, do_set_pin, do_set_totp_secret, do_soft_delete_credential,
@@ -18,7 +18,7 @@ use pwmgr_core::commands::{
     do_update_ui_variant, do_vault_exists, do_verify_master_password,
 };
 use pwmgr_core::dto::{
-    AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
+    AuthSuccess, BreachReportDto, ChangeLogEntryDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
     FolderDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     SshKeyDto, StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
@@ -315,6 +315,11 @@ pub fn totp_code(state: State<AppState>, credential_id: i64) -> Result<Option<To
 #[tauri::command]
 pub fn list_credential_history(state: State<AppState>, credential_id: i64) -> Result<Vec<HistoryEntryDto>, CommandError> {
     do_list_credential_history(&state, credential_id)
+}
+
+#[tauri::command]
+pub fn list_credential_change_log(state: State<AppState>, credential_id: i64) -> Result<Vec<ChangeLogEntryDto>, CommandError> {
+    do_list_credential_change_log(&state, credential_id)
 }
 
 #[tauri::command]
