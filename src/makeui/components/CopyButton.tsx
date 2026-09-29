@@ -6,6 +6,9 @@ import { IconCopy } from "../icons";
 // src/newui/components/CopyButton.tsx exactly; SecretField owns secret copies).
 // N9: autoClear=false and a plain "Copied." toast - the 30s auto-clear and its notice previously
 // applied here too, but that behavior belongs to secrets (passwords), not a username or URL.
+export const MK_COPY_BUTTON_CLASS =
+  "flex items-center justify-center w-7 h-7 rounded-md text-mk-muted bg-mk-badge hover:opacity-80 transition-opacity disabled:opacity-50";
+
 export function CopyButton({ text, title = "Copy" }: { text: string; title?: string }) {
   return (
     <button
@@ -17,7 +20,7 @@ export function CopyButton({ text, title = "Copy" }: { text: string; title?: str
           .then(() => toast("Copied."))
           .catch(() => toast("Couldn't copy to the clipboard. Please try again."));
       }}
-      className="flex items-center justify-center w-7 h-7 rounded-md text-mk-muted bg-mk-badge hover:opacity-80 transition-opacity"
+      className={MK_COPY_BUTTON_CLASS}
     >
       <IconCopy size={12} />
     </button>

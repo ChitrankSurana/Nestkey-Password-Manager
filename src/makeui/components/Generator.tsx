@@ -46,7 +46,7 @@ export function Generator() {
             </label>
           </div>
 
-          <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm={algorithm} />
+          <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm={algorithm} variant="make" />
         </div>
       </div>
     </div>

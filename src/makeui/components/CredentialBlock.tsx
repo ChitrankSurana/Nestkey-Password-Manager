@@ -193,13 +193,13 @@ export function CredentialBlock({
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-widest mb-1 text-mk-faint">Password</p>
                 <div className="flex items-center gap-2">
-                  <SecretField secret={credential.secret} exempt={credential.repromptExempt} />
+                  <SecretField secret={credential.secret} exempt={credential.repromptExempt} variant="make" />
                 </div>
               </div>
 
               {credential.hasTotp && (
                 <div className="px-3 py-2 rounded-lg bg-mk-accent-muted border border-mk-accent-border">
-                  <TotpDisplay credentialId={credential.id} />
+                  <TotpDisplay credentialId={credential.id} variant="make" />
                 </div>
               )}
 
@@ -243,7 +243,7 @@ export function CredentialBlock({
               {history?.map((h, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <span className="w-28 shrink-0 text-[10px] text-mk-faint">{h.changedAt}</span>
-                  <SecretField secret={h.secret} exempt={credential.repromptExempt} />
+                  <SecretField secret={h.secret} exempt={credential.repromptExempt} variant="make" />
                 </div>
               ))}
             </div>

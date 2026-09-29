@@ -23,7 +23,7 @@ export function DetailField({
       <p className="text-[10px] font-medium uppercase tracking-widest mb-1 text-mk-faint">{label}</p>
       <div className="flex items-center gap-2">
         {fieldType === "hidden" ? (
-          <SecretField secret={value} exempt={repromptExempt} />
+          <SecretField secret={value} exempt={repromptExempt} variant="make" />
         ) : fieldType === "boolean" ? (
           <span className="flex-1 text-sm text-mk-fg2">{value === "true" ? "Yes" : "No"}</span>
         ) : (

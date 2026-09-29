@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api, isCommandError, GenerateRequest, StrengthDto } from "../lib/api";
 import { Tooltip } from "./Tooltip";
 import { Icon } from "./Icon";
+import { IconCopy } from "../makeui/icons";
+import { MK_COPY_BUTTON_CLASS } from "../makeui/components/CopyButton";
 import { simpleEntropyBits, entropyBand } from "../lib/strength";
 
 type GenMethod = "random" | "memorable" | "pattern" | "pronounceable";
@@ -13,11 +15,13 @@ export function PasswordGeneratorPanel({
   onChange,
   algorithm,
   disabled,
+  variant,
 }: {
   value: string;
   onChange: (secret: string) => void;
   algorithm: string;
   disabled?: boolean;
+  variant?: "make";
 }) {
   const [genMethod, setGenMethod] = useState<GenMethod>("random");
   const [length, setLength] = useState(20);
@@ -210,9 +214,16 @@ export function PasswordGeneratorPanel({
             type="button"
             onClick={() => api.copyToClipboard(value)}
             disabled={disabled || value === ""}
-            className="px-3 py-1 disabled:opacity-50"
+            title="Copy"
+            className={variant === "make" ? MK_COPY_BUTTON_CLASS : "px-3 py-1 disabled:opacity-50"}
           >
-            <Icon name="clipboard" /> Copy
+            {variant === "make" ? (
+              <IconCopy size={12} />
+            ) : (
+              <>
+                <Icon name="clipboard" /> Copy
+              </>
+            )}
           </button>
         </Tooltip>
       </div>

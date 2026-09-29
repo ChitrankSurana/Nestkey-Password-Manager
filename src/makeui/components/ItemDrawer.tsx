@@ -260,7 +260,7 @@ export function ItemDrawer({
                   <span className="text-sm text-mk-fg2">Password</span>
                   <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg font-mono" value={secret} onChange={(e) => setSecret(e.target.value)} />
                 </label>
-                <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm="simple" disabled={submitting} />
+                <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm="simple" disabled={submitting} variant="make" />
                 <label className="block">
                   <span className="text-sm text-mk-fg2">Remarks (optional)</span>
                   <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg" value={remarks} onChange={(e) => setRemarks(e.target.value)} />

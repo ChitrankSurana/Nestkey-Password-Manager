@@ -10,6 +10,8 @@ import {
 } from "../lib/reprompt";
 import { maskString, randomMaskLength } from "../lib/mask";
 import { Icon } from "./Icon";
+import { IconCopy } from "../makeui/icons";
+import { MK_COPY_BUTTON_CLASS } from "../makeui/components/CopyButton";
 import { Spinner } from "./Spinner";
 
 const CLASS_COLOR: Record<"digit" | "symbol", string> = {
@@ -26,7 +28,7 @@ const CLASS_COLOR: Record<"digit" | "symbol", string> = {
 // `repromptExempt` flag, inverted from its pre-B7 meaning) is a per-credential opt-OUT of that
 // gate - the exception, not the rule. One correct entry opens a shared grace window (in "grace"
 // mode) read by every mounted SecretField; see src/lib/reprompt.ts and src/lib/repromptPolicy.ts.
-export function SecretField({ secret, exempt }: { secret: string; exempt?: boolean }) {
+export function SecretField({ secret, exempt, variant }: { secret: string; exempt?: boolean; variant?: "make" }) {
   const [revealed, setRevealed] = useState(false);
   // N8: computed once per mount (lazy initializer), not on every render - a mask whose length
   // visibly changed on every re-render would be its own tell that it's fake/random, defeating the
@@ -131,9 +133,15 @@ export function SecretField({ secret, exempt }: { secret: string; exempt?: boole
         type="button"
         title="Copy"
         onClick={() => requestAction("copy")}
-        className="rounded px-2 py-0.5 border border-[var(--border)]"
+        className={variant === "make" ? MK_COPY_BUTTON_CLASS : "rounded px-2 py-0.5 border border-[var(--border)]"}
       >
-        <Icon name="clipboard" /> Copy
+        {variant === "make" ? (
+          <IconCopy size={12} />
+        ) : (
+          <>
+            <Icon name="clipboard" /> Copy
+          </>
+        )}
       </button>
 
       {pendingAction !== null && (
