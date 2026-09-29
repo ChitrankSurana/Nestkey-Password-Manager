@@ -86,12 +86,6 @@ pub fn run() {
             window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(size.width + 1, size.height)))?;
             window.set_size(tauri::Size::Physical(size))?;
 
-            // Debug-only devtools access - this bug had no way to inspect the blank page's
-            // console during live testing. Stripped from release builds by Tauri's own
-            // `devtools` feature convention; the call site is additionally gated here.
-            #[cfg(debug_assertions)]
-            window.open_devtools();
-
             eprintln!("info: main window created and shown (ui_variant={ui_variant})");
 
             if ssh_agent_enabled_at_startup {
