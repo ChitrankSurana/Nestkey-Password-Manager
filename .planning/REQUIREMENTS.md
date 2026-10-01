@@ -4,7 +4,7 @@
 **Core Value:** The vault must stay unreadable to anyone without the master password —
 zero-knowledge and local-only by default, with no path to recover a forgotten master password.
 
-Source: `docs/PRD.md` (M1-M6, 13 requirements) plus two categories of gap found during brownfield
+Source: `docs/design/PRD.md` (M1-M6, 13 requirements) plus two categories of gap found during brownfield
 doc-ingest and codebase mapping on 2026-09-13 — see `.planning/intel/SYNTHESIS.md` for the full
 ingest trail. Checkboxes reflect actual shipped state as of this writing (verified against
 `.planning/codebase/`), not planning intent.

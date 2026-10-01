@@ -74,7 +74,7 @@ dated 2026-09-13. See REQUIREMENTS.md for the full checklist with REQ-IDs. -->
 ## Context
 
 **Brownfield onboarding (2026-09-13):** this project was NOT scaffolded via GSD from scratch. M1-M6
-of `docs/PRD.md` (Draft v1.0, 2026-07-01) were already implemented and manually tested before this
+of `docs/design/PRD.md` (Draft v1.0, 2026-07-01) were already implemented and manually tested before this
 `.planning/` setup existed, per `docs/superpowers/plans/*` execution runbooks and
 `docs/testing/*` checklists. Two more features — Windows Hello biometric unlock and an SSH agent
 over a named pipe — shipped afterward on branch `feature/bitwarden-port-phase1`, ahead of the PRD
@@ -109,19 +109,19 @@ continue as ad-hoc work after them.
 ## Constraints
 
 - **Security**: Zero-knowledge — master password and derived vault key are never persisted,
-  logged, or transmitted (`docs/TRD.md` NFR-2).
+  logged, or transmitted (`docs/design/TRD.md` NFR-2).
 - **Security**: Local-only by default — no network calls except the explicit opt-in HIBP breach
-  check, which only ever sends a 5-character SHA-1 hash prefix (`docs/TRD.md` NFR-1;
-  `docs/THREAT_MODEL.md`).
+  check, which only ever sends a 5-character SHA-1 hash prefix (`docs/design/TRD.md` NFR-1;
+  `docs/design/THREAT_MODEL.md`).
 - **Performance**: Vault unlock ≤ 1s on typical hardware; search results update within one UI
-  frame of each keystroke for vaults up to ~5,000 entries (`docs/TRD.md` NFR-3).
+  frame of each keystroke for vaults up to ~5,000 entries (`docs/design/TRD.md` NFR-3).
 - **Platform**: Windows 10/11 is the primary and only currently-built target; core Rust modules
   must stay portable (no Windows-only assumptions) so macOS/Linux/Android doors stay open
-  (`docs/TRD.md` NFR-5).
+  (`docs/design/TRD.md` NFR-5).
 - **Tech stack**: Tauri v2 + React 19 + TypeScript frontend; Rust 2021 core (`pwmgr-core`) shared
   across three binaries (`src-tauri`, `viewer-src-tauri`, `web-src-tauri`); SQLCipher (AES-256) +
   per-field AES-256-GCM + Argon2id.
-- **Testing bar** (target, per `docs/TRD.md` Testing Requirements Bar — see Context note above on
+- **Testing bar** (target, per `docs/design/TRD.md` Testing Requirements Bar — see Context note above on
   unreconciled current coverage): crypto round-trip, wrong-password rejection, tamper detection,
   zeroization, CRUD, search, and CSV round-trip must be automated; UI/theme/tooltip/responsive
   checks stay manual-checklist by deliberate choice (no browser/UI test tooling in this project).
@@ -135,7 +135,7 @@ continue as ad-hoc work after them.
 | Web mode hard-bound to `127.0.0.1`, not a config option | Prevents accidentally exposing a zero-knowledge vault to the LAN | ✓ Good |
 | M4 Health Dashboard "Weak" always classifies via zxcvbn, ignoring the `strength_algorithm` Settings toggle | No Rust port of the "simple" entropy formula exists; corroborated as intentional by `KNOWN_LIMITATIONS.md`, `HOW_TO_USE_MAIN_APP.md`, and the M4 test checklist | ⚠️ Revisit — doc-vs-shipped-behavior mismatch tracked as a todo, not a functional defect |
 | Phase 8 (new-UI port) keeps item types + folders in scope, despite Bitwarden-comparison research explicitly recommending against both (speculative scope, no PRD user story) | `docs/FIGMA_UI_VS_CURRENT_FEATURES.md` already scheduled this exact scope as "Closing"; the Bitwarden-comparison docs are explicitly research-only/advisory, not a locked project decision | ✓ Resolved — Phase 8 shipped with item types and folders in scope |
-| No ADR-type documents exist for this project; architectural decisions live narratively inside `docs/PRD.md` / `docs/TRD.md` / `docs/THREAT_MODEL.md` / the M4-M6 design specs | 0 of 39 ingested docs were classified `type: ADR` (doc-ingest run, 2026-09-13) | — Pending — formalize as ADRs later if desired |
+| No ADR-type documents exist for this project; architectural decisions live narratively inside `docs/design/PRD.md` / `docs/design/TRD.md` / `docs/design/THREAT_MODEL.md` / the M4-M6 design specs | 0 of 39 ingested docs were classified `type: ADR` (doc-ingest run, 2026-09-13) | — Pending — formalize as ADRs later if desired |
 
 ---
 *Last updated: 2026-09-30 after Phases 8-9 completion and Make UI / UAT remediation work (originally 2026-09-13, brownfield doc-ingest)*

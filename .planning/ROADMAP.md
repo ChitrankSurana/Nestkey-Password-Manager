@@ -3,7 +3,7 @@
 ## Overview
 
 Phases 1-7 are already built and manually tested — this is a brownfield onboarding, not a
-greenfield plan. Phases 1-6 map 1:1 onto the original `docs/PRD.md` milestones M1-M6 (secure
+greenfield plan. Phases 1-6 map 1:1 onto the original `docs/design/PRD.md` milestones M1-M6 (secure
 vault core → generator → backup/CSV → health/theming → read-only Viewer → localhost web mode),
 each verified via its own manual test checklist under `docs/testing/`. Phase 7 covers two
 platform-integration features (Windows Hello biometric unlock, an SSH agent over a Windows named
@@ -142,7 +142,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. A user can enable Windows Hello biometric unlock in Settings and use it to unlock the vault instead of typing the master password; it defaults off.
   2. A user can enable an SSH agent over a Windows named pipe in Settings so other applications (e.g. OpenSSH, PuTTY) can use Ed25519/RSA keys held in the vault; it defaults off and is desktop-only.
 
-**Plans**: N/A — implemented pre-GSD, no design/plan doc exists for this milestone (verify via `docs/HOW_TO_TEST_BIOMETRIC_UNLOCK.md`, `docs/HOW_TO_TEST_SSH_AGENT.md`, and git log on `feature/bitwarden-port-phase1`; both features are explicitly flagged untested against real-world hardware/clients in `.planning/codebase/CONCERNS.md`)
+**Plans**: N/A — implemented pre-GSD, no design/plan doc exists for this milestone (verify via `docs/testing/HOW_TO_TEST_BIOMETRIC_UNLOCK.md`, `docs/testing/HOW_TO_TEST_SSH_AGENT.md`, and git log on `feature/bitwarden-port-phase1`; both features are explicitly flagged untested against real-world hardware/clients in `.planning/codebase/CONCERNS.md`)
 
 ### 📋 v2.0 New Vault UI & Security Hardening (Phases 8-9) — Planned
 

@@ -7,7 +7,7 @@ files:
   - docs/superpowers/specs/2026-07-14-m4-health-nav-theming-design.md:3
   - docs/superpowers/plans/2026-07-14-m4-health-nav-theming.md
   - docs/KNOWN_LIMITATIONS.md:2
-  - docs/HOW_TO_USE_MAIN_APP.md
+  - docs/guides/HOW_TO_USE_MAIN_APP.md
   - docs/testing/HOW_TO_TEST_MAIN_APP.md:6
 ---
 
@@ -25,7 +25,7 @@ docs disagree on the M4 Health Dashboard's "Weak" password classification:
   the "simple" algorithm exists.
 - This deviation is corroborated as actual shipped/current behavior by
   `docs/KNOWN_LIMITATIONS.md` §2 ("confirmed intentional after review, not a bug"),
-  `docs/HOW_TO_USE_MAIN_APP.md`, and `docs/testing/HOW_TO_TEST_MAIN_APP.md` §6.
+  `docs/guides/HOW_TO_USE_MAIN_APP.md`, and `docs/testing/HOW_TO_TEST_MAIN_APP.md` §6.
 
 Both docs are classified `type: SPEC` with identical default precedence, so the
 ingest synthesizer's `ADR > SPEC > PRD > DOC` precedence rule can't auto-resolve it.
