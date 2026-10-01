@@ -18,6 +18,8 @@ pub enum VaultError {
     Crypto(#[from] crate::crypto::CryptoError),
     #[error("import record is missing a required field: {0}")]
     InvalidImportRecord(String),
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
 
 pub fn open_vault(path: &Path, key: &VaultKey) -> Result<Connection, VaultError> {
@@ -78,10 +80,56 @@ fn init_schema(conn: &Connection) -> Result<(), VaultError> {
             private_key_nonce BLOB NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        CREATE TABLE IF NOT EXISTS folders (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE COLLATE NOCASE
+        );
+        CREATE TABLE IF NOT EXISTS credential_history (
+            id INTEGER PRIMARY KEY,
+            credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+            secret_enc BLOB NOT NULL,
+            secret_nonce BLOB NOT NULL,
+            changed_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS credential_change_log (
+            id INTEGER PRIMARY KEY,
+            credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+            field TEXT NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            changed_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         CREATE INDEX IF NOT EXISTS idx_sites_name ON sites(name);
-        CREATE INDEX IF NOT EXISTS idx_credentials_site ON credentials(site_id);",
+        CREATE INDEX IF NOT EXISTS idx_credentials_site ON credentials(site_id);
+        CREATE INDEX IF NOT EXISTS idx_credential_history_credential ON credential_history(credential_id);
+        CREATE INDEX IF NOT EXISTS idx_credential_change_log_credential ON credential_change_log(credential_id);",
     )?;
     add_credential_columns_if_missing(conn)?;
+    add_site_columns_if_missing(conn)?;
+    Ok(())
+}
+
+// Same mechanism (and same reason) as add_credential_columns_if_missing, for `sites`: the Make UI
+// metadata columns don't exist in vault files created by earlier builds, and CREATE TABLE IF NOT
+// EXISTS won't add them. Every column here is plaintext METADATA (SQLCipher still encrypts the
+// file) - card numbers, CVVs and note bodies never get a column, they live in the sealed
+// custom-fields blob under the reserved labels below.
+fn add_site_columns_if_missing(conn: &Connection) -> Result<(), VaultError> {
+    let mut stmt = conn.prepare("PRAGMA table_info(sites)")?;
+    let existing: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(1))?.collect::<Result<_, _>>()?;
+    drop(stmt);
+    let wanted = [
+        ("favorite", "INTEGER NOT NULL DEFAULT 0"),
+        ("folder_id", "INTEGER REFERENCES folders(id)"),
+        ("item_type", "TEXT NOT NULL DEFAULT 'login'"),
+        ("card_brand", "TEXT"),
+        ("card_last4", "TEXT"),
+    ];
+    for (name, decl) in wanted {
+        if !existing.iter().any(|c| c == name) {
+            conn.execute(&format!("ALTER TABLE sites ADD COLUMN {name} {decl}"), [])?;
+        }
+    }
     Ok(())
 }
 
@@ -96,6 +144,17 @@ fn add_credential_columns_if_missing(conn: &Connection) -> Result<(), VaultError
     drop(stmt);
     if !existing.iter().any(|c| c == "reprompt") {
         conn.execute("ALTER TABLE credentials ADD COLUMN reprompt INTEGER NOT NULL DEFAULT 0", [])?;
+    }
+    // B7: `reprompt` (above) predates the always-gated-by-default policy and is retired, left in
+    // place unused rather than dropped (SQLite ALTER TABLE DROP COLUMN has version/index caveats
+    // this schema has never needed to navigate before, and the column costs nothing sitting idle).
+    // `reprompt_exempt` is a distinct new column, not a reinterpretation of the old one's stored
+    // values - every existing row gets the new column's DEFAULT 0 ("not exempt", i.e. protected),
+    // which is the only migration that can't silently invert what an existing credential's flag
+    // used to mean (a row a user had deliberately flagged true for extra protection must not
+    // wake up as "exempt from protection" just because a column was reused).
+    if !existing.iter().any(|c| c == "reprompt_exempt") {
+        conn.execute("ALTER TABLE credentials ADD COLUMN reprompt_exempt INTEGER NOT NULL DEFAULT 0", [])?;
     }
     if !existing.iter().any(|c| c == "custom_fields_enc") {
         conn.execute("ALTER TABLE credentials ADD COLUMN custom_fields_enc BLOB", [])?;
@@ -161,6 +220,15 @@ pub struct Site {
     pub name: String,
     pub url: Option<String>,
     pub notes: Option<String>,
+    pub favorite: bool,
+    pub folder_id: Option<i64>,
+    /// One of ITEM_TYPES. Anything that isn't "login" has exactly one credential row whose sealed
+    /// custom fields carry the type's reserved labels (see reserved_fields_for).
+    pub item_type: String,
+    /// Non-secret display hints (e.g. "Visa", "3921") so a card row can show `•••• 3921` without
+    /// decrypting anything. The full number is only ever in the sealed blob.
+    pub card_brand: Option<String>,
+    pub card_last4: Option<String>,
 }
 
 pub fn add_site(conn: &Connection, name: &str, url: Option<&str>, notes: Option<&str>) -> Result<i64, VaultError> {
@@ -173,7 +241,8 @@ pub fn add_site(conn: &Connection, name: &str, url: Option<&str>, notes: Option<
 
 pub fn list_sites(conn: &Connection) -> Result<Vec<Site>, VaultError> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, url, notes FROM sites WHERE deleted_at IS NULL ORDER BY name",
+        "SELECT id, name, url, notes, favorite, folder_id, item_type, card_brand, card_last4
+         FROM sites WHERE deleted_at IS NULL ORDER BY name",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(Site {
@@ -181,6 +250,11 @@ pub fn list_sites(conn: &Connection) -> Result<Vec<Site>, VaultError> {
             name: row.get(1)?,
             url: row.get(2)?,
             notes: row.get(3)?,
+            favorite: row.get(4)?,
+            folder_id: row.get(5)?,
+            item_type: row.get(6)?,
+            card_brand: row.get(7)?,
+            card_last4: row.get(8)?,
         })
     })?;
     let mut out = Vec::new();
@@ -188,6 +262,167 @@ pub fn list_sites(conn: &Connection) -> Result<Vec<Site>, VaultError> {
         out.push(r?);
     }
     Ok(out)
+}
+
+pub const ITEM_TYPES: [&str; 4] = ["login", "note", "card", "identity"];
+
+// Reserved custom-field labels for non-login items. The label IS the field's identity, so it is a
+// validated constant, never a free string: a typo must fail instead of silently forking a field.
+pub const CARD_NUMBER: &str = "Card Number";
+pub const CARD_EXPIRY: &str = "Expiration Date";
+pub const CARD_CVV: &str = "Security Code (CVV)";
+pub const NOTE_BODY: &str = "Note";
+pub const IDENTITY_NAME: &str = "Full Name";
+
+/// (label, required field type) pairs a non-login item type may carry. None = free-form (login).
+fn reserved_fields_for(item_type: &str) -> Option<&'static [(&'static str, CustomFieldType)]> {
+    use CustomFieldType::{Hidden, Text};
+    match item_type {
+        "card" => Some(&[(CARD_NUMBER, Hidden), (CARD_EXPIRY, Text), (CARD_CVV, Hidden)]),
+        "note" => Some(&[(NOTE_BODY, Hidden)]),
+        "identity" => Some(&[(IDENTITY_NAME, Text)]),
+        _ => None,
+    }
+}
+
+fn validate_fields_for_site(conn: &Connection, site_id: i64, fields: &[CustomField]) -> Result<(), VaultError> {
+    let item_type: Option<String> = conn
+        .query_row("SELECT item_type FROM sites WHERE id = ?1", rusqlite::params![site_id], |r| r.get(0))
+        .optional()?;
+    let item_type = item_type.ok_or(VaultError::NotFound)?;
+    let Some(allowed) = reserved_fields_for(&item_type) else { return Ok(()) };
+    for f in fields {
+        match allowed.iter().find(|(label, _)| *label == f.label) {
+            None => {
+                return Err(VaultError::InvalidInput(format!("\"{}\" is not a valid field for a {} item.", f.label, item_type)))
+            }
+            Some((label, ty)) if *ty != f.field_type => {
+                return Err(VaultError::InvalidInput(format!("\"{label}\" must be a {ty:?} field.")))
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(())
+}
+
+fn expect_one_row(updated: usize) -> Result<(), VaultError> {
+    if updated == 0 { Err(VaultError::NotFound) } else { Ok(()) }
+}
+
+pub fn set_site_favorite(conn: &Connection, site_id: i64, favorite: bool) -> Result<(), VaultError> {
+    expect_one_row(conn.execute(
+        "UPDATE sites SET favorite = ?1 WHERE id = ?2 AND deleted_at IS NULL",
+        rusqlite::params![favorite, site_id],
+    )?)
+}
+
+pub fn set_site_item_type(conn: &Connection, site_id: i64, item_type: &str) -> Result<(), VaultError> {
+    if !ITEM_TYPES.contains(&item_type) {
+        return Err(VaultError::InvalidInput("Unknown item type.".into()));
+    }
+    expect_one_row(conn.execute(
+        "UPDATE sites SET item_type = ?1 WHERE id = ?2 AND deleted_at IS NULL",
+        rusqlite::params![item_type, site_id],
+    )?)
+}
+
+pub fn set_site_card_hint(
+    conn: &Connection,
+    site_id: i64,
+    brand: Option<&str>,
+    last4: Option<&str>,
+) -> Result<(), VaultError> {
+    if let Some(l) = last4 {
+        if l.len() != 4 || !l.chars().all(|c| c.is_ascii_digit()) {
+            return Err(VaultError::InvalidInput("Card hint must be exactly the last 4 digits.".into()));
+        }
+    }
+    expect_one_row(conn.execute(
+        "UPDATE sites SET card_brand = ?1, card_last4 = ?2 WHERE id = ?3 AND deleted_at IS NULL",
+        rusqlite::params![brand, last4, site_id],
+    )?)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Folder {
+    pub id: i64,
+    pub name: String,
+}
+
+fn clean_folder_name(name: &str) -> Result<&str, VaultError> {
+    let n = name.trim();
+    if n.is_empty() {
+        return Err(VaultError::InvalidInput("Folder name can't be empty.".into()));
+    }
+    Ok(n)
+}
+
+// UNIQUE ... COLLATE NOCASE on folders.name is the source of truth for duplicates; translate its
+// constraint violation into a user-facing InvalidInput rather than a generic Db error.
+fn folder_write_err(e: rusqlite::Error) -> VaultError {
+    match e {
+        rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::ConstraintViolation => {
+            VaultError::InvalidInput("A folder with that name already exists.".into())
+        }
+        other => VaultError::Db(other),
+    }
+}
+
+pub fn add_folder(conn: &Connection, name: &str) -> Result<i64, VaultError> {
+    let name = clean_folder_name(name)?;
+    conn.execute("INSERT INTO folders (name) VALUES (?1)", rusqlite::params![name]).map_err(folder_write_err)?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// For the JSON import (jsonio.rs) resolving an exported `folder_name` back to an id - matches the
+/// same case-insensitive uniqueness the `folders.name` column enforces (`UNIQUE ... COLLATE
+/// NOCASE`, see `folder_write_err`'s doc comment), so this can't miss a folder that a byte-exact
+/// comparison would.
+pub fn find_folder_id_by_name(conn: &Connection, name: &str) -> Result<Option<i64>, VaultError> {
+    Ok(conn
+        .query_row(
+            "SELECT id FROM folders WHERE name = ?1 COLLATE NOCASE",
+            rusqlite::params![name],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+pub fn list_folders(conn: &Connection) -> Result<Vec<Folder>, VaultError> {
+    let mut stmt = conn.prepare("SELECT id, name FROM folders ORDER BY name COLLATE NOCASE")?;
+    let rows = stmt.query_map([], |r| Ok(Folder { id: r.get(0)?, name: r.get(1)? }))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+pub fn rename_folder(conn: &Connection, folder_id: i64, name: &str) -> Result<(), VaultError> {
+    let name = clean_folder_name(name)?;
+    expect_one_row(
+        conn.execute("UPDATE folders SET name = ?1 WHERE id = ?2", rusqlite::params![name, folder_id])
+            .map_err(folder_write_err)?,
+    )
+}
+
+/// Deleting a folder UNFILES its items (folder_id -> NULL); it never deletes them. One transaction
+/// so a crash can't leave items pointing at a folder that no longer exists.
+pub fn delete_folder(conn: &Connection, folder_id: i64) -> Result<(), VaultError> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("UPDATE sites SET folder_id = NULL WHERE folder_id = ?1", rusqlite::params![folder_id])?;
+    expect_one_row(tx.execute("DELETE FROM folders WHERE id = ?1", rusqlite::params![folder_id])?)?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn set_site_folder(conn: &Connection, site_id: i64, folder_id: Option<i64>) -> Result<(), VaultError> {
+    if let Some(fid) = folder_id {
+        let exists: bool = conn.query_row("SELECT count(*) FROM folders WHERE id = ?1", rusqlite::params![fid], |r| r.get::<_, i64>(0))? > 0;
+        if !exists {
+            return Err(VaultError::NotFound);
+        }
+    }
+    expect_one_row(conn.execute(
+        "UPDATE sites SET folder_id = ?1 WHERE id = ?2 AND deleted_at IS NULL",
+        rusqlite::params![folder_id, site_id],
+    )?)
 }
 
 pub fn update_site(
@@ -260,7 +495,12 @@ pub struct Credential {
     pub secret: String,
     pub remarks: Option<String>,
     pub custom_fields: Vec<CustomField>,
-    pub reprompt: bool,
+    // B7: inverted from the pre-B7 `reprompt` column's meaning. Every credential is gated by the
+    // master password by default now; this is a per-credential OPT-OUT of that gate, not an
+    // opt-in to it. Backed by the `reprompt_exempt` column, a distinct column from the old
+    // `reprompt` one (see add_credential_columns_if_missing) so existing data can't be silently
+    // reinterpreted with the opposite meaning.
+    pub reprompt_exempt: bool,
     // Presence only - the TOTP seed itself is never eagerly decrypted for a listing, only on
     // demand by `get_totp_secret` (used solely to compute the current code).
     pub has_totp: bool,
@@ -280,7 +520,7 @@ impl std::fmt::Debug for Credential {
             .field("remarks", &self.remarks)
             // A Hidden-type value here is exactly as sensitive as `secret` above - count only.
             .field("custom_fields", &format!("<{} field(s)>", self.custom_fields.len()))
-            .field("reprompt", &self.reprompt)
+            .field("reprompt_exempt", &self.reprompt_exempt)
             .field("has_totp", &self.has_totp)
             .finish()
     }
@@ -294,17 +534,18 @@ pub fn add_credential(
     secret: &str,
     remarks: Option<&str>,
     custom_fields: &[CustomField],
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<i64, VaultError> {
+    validate_fields_for_site(conn, site_id, custom_fields)?;
     let (secret_enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
     let (fields_enc, fields_nonce) = seal_custom_fields(key, custom_fields)?;
     conn.execute(
         "INSERT INTO credentials
-            (site_id, username, secret_enc, secret_nonce, remarks, custom_fields_enc, custom_fields_nonce, reprompt)
+            (site_id, username, secret_enc, secret_nonce, remarks, custom_fields_enc, custom_fields_nonce, reprompt_exempt)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         rusqlite::params![
             site_id, username, secret_enc, nonce.to_vec(), remarks,
-            fields_enc, fields_nonce.to_vec(), reprompt,
+            fields_enc, fields_nonce.to_vec(), reprompt_exempt,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -317,7 +558,7 @@ pub fn list_credentials_for_site(
 ) -> Result<Vec<Credential>, VaultError> {
     let mut stmt = conn.prepare(
         "SELECT c.id, c.site_id, c.username, c.secret_enc, c.secret_nonce, c.remarks,
-                c.custom_fields_enc, c.custom_fields_nonce, c.reprompt, (c.totp_secret_enc IS NOT NULL)
+                c.custom_fields_enc, c.custom_fields_nonce, c.reprompt_exempt, (c.totp_secret_enc IS NOT NULL)
          FROM credentials c
          JOIN sites s ON s.id = c.site_id
          WHERE c.site_id = ?1 AND c.deleted_at IS NULL AND s.deleted_at IS NULL
@@ -332,14 +573,14 @@ pub fn list_credentials_for_site(
         let remarks: Option<String> = row.get(5)?;
         let fields_enc: Option<Vec<u8>> = row.get(6)?;
         let fields_nonce: Option<Vec<u8>> = row.get(7)?;
-        let reprompt: bool = row.get(8)?;
+        let reprompt_exempt: bool = row.get(8)?;
         let has_totp: bool = row.get(9)?;
-        Ok((id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt, has_totp))
+        Ok((id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt_exempt, has_totp))
     })?;
 
     let mut out = Vec::new();
     for r in rows {
-        let (id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt, has_totp) = r?;
+        let (id, site_id, username, secret_enc, secret_nonce, remarks, fields_enc, fields_nonce, reprompt_exempt, has_totp) = r?;
         // secret_nonce comes from the DB row - external input relative to this function, not
         // something this code controls. A malformed/corrupted row (bad migration, manual DB
         // surgery, future bug elsewhere) must not be able to crash the whole read path via an
@@ -352,7 +593,7 @@ pub fn list_credentials_for_site(
         let plaintext = crate::crypto::open(key, &secret_enc, &nonce)?;
         let secret = String::from_utf8(plaintext).map_err(|_| VaultError::UnlockFailed)?;
         let custom_fields = open_custom_fields(key, fields_enc, fields_nonce)?;
-        out.push(Credential { id, site_id, username, secret, remarks, custom_fields, reprompt, has_totp });
+        out.push(Credential { id, site_id, username, secret, remarks, custom_fields, reprompt_exempt, has_totp });
     }
     Ok(out)
 }
@@ -426,16 +667,26 @@ pub fn update_credential(
     secret: &str,
     remarks: Option<&str>,
     custom_fields: &[CustomField],
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<(), VaultError> {
-    let existing: Option<(Vec<u8>, Vec<u8>)> = conn
+    let owner: Option<i64> = conn
         .query_row(
-            "SELECT secret_enc, secret_nonce FROM credentials WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT site_id FROM credentials WHERE id = ?1 AND deleted_at IS NULL",
             rusqlite::params![credential_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |r| r.get(0),
         )
         .optional()?;
-    let (old_enc, old_nonce_bytes) = existing.ok_or(VaultError::NotFound)?;
+    validate_fields_for_site(conn, owner.ok_or(VaultError::NotFound)?, custom_fields)?;
+    let existing: Option<(Vec<u8>, Vec<u8>, Option<String>, Option<String>, bool)> = conn
+        .query_row(
+            "SELECT secret_enc, secret_nonce, username, remarks, reprompt_exempt
+             FROM credentials WHERE id = ?1 AND deleted_at IS NULL",
+            rusqlite::params![credential_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        )
+        .optional()?;
+    let (old_enc, old_nonce_bytes, old_username, old_remarks, old_reprompt_exempt) =
+        existing.ok_or(VaultError::NotFound)?;
     if old_nonce_bytes.len() != 12 {
         return Err(VaultError::UnlockFailed);
     }
@@ -447,31 +698,274 @@ pub fn update_credential(
 
     let (secret_enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
     let (fields_enc, fields_nonce) = seal_custom_fields(key, custom_fields)?;
+    if secret_changed {
+        // B1-4: the outgoing secret is already sealed (old_enc/old_nonce_bytes) - no extra
+        // encrypt work needed, just carry the existing ciphertext into the history table. Every
+        // historical password is as sensitive as the live one, so it gets the exact same seal,
+        // never a weaker one. Capped at 5 (oldest beyond that pruned immediately) - unbounded
+        // growth was never the intent (see the plan's own B1-4 entry).
+        conn.execute(
+            "INSERT INTO credential_history (credential_id, secret_enc, secret_nonce) VALUES (?1, ?2, ?3)",
+            rusqlite::params![credential_id, old_enc, old_nonce_bytes],
+        )?;
+        conn.execute(
+            "DELETE FROM credential_history WHERE credential_id = ?1 AND id NOT IN (
+                SELECT id FROM credential_history WHERE credential_id = ?1 ORDER BY changed_at DESC, id DESC LIMIT 5
+             )",
+            rusqlite::params![credential_id],
+        )?;
+    }
     let updated = if secret_changed {
         conn.execute(
             "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
-             custom_fields_enc = ?5, custom_fields_nonce = ?6, reprompt = ?7,
+             custom_fields_enc = ?5, custom_fields_nonce = ?6, reprompt_exempt = ?7,
              updated_at = datetime('now'), password_updated_at = datetime('now')
              WHERE id = ?8 AND deleted_at IS NULL",
             rusqlite::params![
                 username, secret_enc, nonce.to_vec(), remarks,
-                fields_enc, fields_nonce.to_vec(), reprompt, credential_id,
+                fields_enc, fields_nonce.to_vec(), reprompt_exempt, credential_id,
             ],
         )?
     } else {
         conn.execute(
             "UPDATE credentials SET username = ?1, secret_enc = ?2, secret_nonce = ?3, remarks = ?4,
-             custom_fields_enc = ?5, custom_fields_nonce = ?6, reprompt = ?7,
+             custom_fields_enc = ?5, custom_fields_nonce = ?6, reprompt_exempt = ?7,
              updated_at = datetime('now') WHERE id = ?8 AND deleted_at IS NULL",
             rusqlite::params![
                 username, secret_enc, nonce.to_vec(), remarks,
-                fields_enc, fields_nonce.to_vec(), reprompt, credential_id,
+                fields_enc, fields_nonce.to_vec(), reprompt_exempt, credential_id,
             ],
         )?
     };
     if updated == 0 {
         return Err(VaultError::NotFound);
     }
+
+    // Per-credential change log (Wave 4 follow-up, M7.2): separate from credential_history above,
+    // which only ever records outgoing *secrets*. This records non-secret field edits - username,
+    // remarks, the reprompt-exempt flag - none of which credential_history sees at all, so a
+    // username-only save previously left no trace anywhere. Custom fields are deliberately excluded:
+    // some are marked hidden/secret-like (N3) and this log's rows are plain TEXT, so logging them
+    // could leak a hidden value that has its own separate protection.
+    log_field_change(conn, credential_id, "username", old_username.as_deref(), username)?;
+    log_field_change(conn, credential_id, "remarks", old_remarks.as_deref(), remarks)?;
+    if old_reprompt_exempt != reprompt_exempt {
+        log_field_change(
+            conn,
+            credential_id,
+            "reprompt_exempt",
+            Some(if old_reprompt_exempt { "true" } else { "false" }),
+            Some(if reprompt_exempt { "true" } else { "false" }),
+        )?;
+    }
+
+    Ok(())
+}
+
+fn log_field_change(
+    conn: &Connection,
+    credential_id: i64,
+    field: &str,
+    old_value: Option<&str>,
+    new_value: Option<&str>,
+) -> Result<(), VaultError> {
+    if old_value == new_value {
+        return Ok(());
+    }
+    conn.execute(
+        "INSERT INTO credential_change_log (credential_id, field, old_value, new_value) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![credential_id, field, old_value, new_value],
+    )?;
+    // Capped at 20 most recent rows per credential - plain-text metadata, not a secret, but still
+    // unbounded growth is not the intent (same reasoning as credential_history's cap-5, just a
+    // looser bound since these rows carry far less sensitive weight).
+    conn.execute(
+        "DELETE FROM credential_change_log WHERE credential_id = ?1 AND id NOT IN (
+            SELECT id FROM credential_change_log WHERE credential_id = ?1 ORDER BY changed_at DESC, id DESC LIMIT 20
+         )",
+        rusqlite::params![credential_id],
+    )?;
+    Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChangeLogEntry {
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub changed_at: String,
+}
+
+/// Up to 20 most recent non-secret field changes for one credential, most recent first. See
+/// `log_field_change` for what gets recorded and why (never secrets/custom fields).
+pub fn list_credential_change_log(conn: &Connection, credential_id: i64) -> Result<Vec<ChangeLogEntry>, VaultError> {
+    let mut stmt = conn.prepare(
+        "SELECT field, old_value, new_value, changed_at FROM credential_change_log
+         WHERE credential_id = ?1 ORDER BY changed_at DESC, id DESC",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![credential_id], |row| {
+        Ok(ChangeLogEntry {
+            field: row.get(0)?,
+            old_value: row.get(1)?,
+            new_value: row.get(2)?,
+            changed_at: row.get(3)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+#[derive(Clone, PartialEq)]
+pub struct HistoryEntry {
+    pub secret: String,
+    pub changed_at: String,
+}
+
+// No `Debug` derive (same rule as `Credential` above) - this carries a past plaintext password,
+// so an accidental log/panic message must not be able to print it.
+impl std::fmt::Debug for HistoryEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HistoryEntry").field("secret", &"<redacted>").field("changed_at", &self.changed_at).finish()
+    }
+}
+
+/// Up to 5 past secrets for one credential, most recent first - what `update_credential` wrote to
+/// `credential_history` (B1-4). Every row was sealed with the same key as the live secret.
+pub fn list_credential_history(conn: &Connection, key: &VaultKey, credential_id: i64) -> Result<Vec<HistoryEntry>, VaultError> {
+    let mut stmt = conn.prepare(
+        "SELECT secret_enc, secret_nonce, changed_at FROM credential_history
+         WHERE credential_id = ?1 ORDER BY changed_at DESC, id DESC",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![credential_id], |row| {
+        Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?, row.get::<_, String>(2)?))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let (enc, nonce_bytes, changed_at) = r?;
+        if nonce_bytes.len() != 12 {
+            return Err(VaultError::UnlockFailed);
+        }
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&nonce_bytes);
+        let plaintext = crate::crypto::open(key, &enc, &nonce)?;
+        let secret = String::from_utf8(plaintext).map_err(|_| VaultError::UnlockFailed)?;
+        out.push(HistoryEntry { secret, changed_at });
+    }
+    Ok(out)
+}
+
+fn reseal_bytes(old_key: &VaultKey, new_key: &VaultKey, enc: &[u8], nonce_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), VaultError> {
+    if nonce_bytes.len() != 12 {
+        return Err(VaultError::UnlockFailed);
+    }
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(nonce_bytes);
+    let plaintext = crate::crypto::open(old_key, enc, &nonce)?;
+    let (new_enc, new_nonce) = crate::crypto::seal(new_key, &plaintext)?;
+    Ok((new_enc, new_nonce.to_vec()))
+}
+
+/// B1-6, step 2a: re-seals every app-level sealed blob - `credentials.secret_enc`,
+/// `.custom_fields_enc` (nullable), `.totp_secret_enc` (nullable), `credential_history.secret_enc`,
+/// `ssh_keys.private_key_enc` - decrypting with `old_key` and writing back under `new_key`.
+///
+/// Must run BEFORE `rekey_vault`, not after: these are ordinary `UPDATE`s against a database that
+/// right now is still opened, at the SQLCipher/file level, under `old_key` - this function only
+/// ever changes the *app-level* key (the one `derive_key` hands out), which is layered on top of
+/// and entirely independent of SQLCipher's own page encryption. Running this first means a
+/// rolled-back transaction here leaves every blob exactly as it was, still fully readable under
+/// `old_key` - the database file itself was never touched, so no separate recovery is needed for
+/// a failure at this stage specifically (only for a failure at the `rekey_vault` stage after this
+/// one commits - see that function's own doc comment).
+///
+/// Scans every row unconditionally, regardless of `deleted_at` - a soft-deleted-but-not-yet-purged
+/// credential must stay restorable after a password change, not silently become undecryptable.
+pub fn reseal_all_blobs(conn: &Connection, old_key: &VaultKey, new_key: &VaultKey) -> Result<(), VaultError> {
+    let tx = conn.unchecked_transaction()?;
+
+    type CredRow = (i64, Vec<u8>, Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
+    let cred_rows: Vec<CredRow> = {
+        let mut stmt = tx.prepare(
+            "SELECT id, secret_enc, secret_nonce, custom_fields_enc, custom_fields_nonce,
+                    totp_secret_enc, totp_secret_nonce
+             FROM credentials",
+        )?;
+        let mapped = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?))
+        })?
+        .collect::<Result<_, _>>()?;
+        mapped
+    };
+    for (id, secret_enc, secret_nonce, fields_enc, fields_nonce, totp_enc, totp_nonce) in cred_rows {
+        let (new_secret_enc, new_secret_nonce) = reseal_bytes(old_key, new_key, &secret_enc, &secret_nonce)?;
+        let (new_fields_enc, new_fields_nonce) = match (fields_enc, fields_nonce) {
+            (Some(e), Some(n)) => {
+                let (ne, nn) = reseal_bytes(old_key, new_key, &e, &n)?;
+                (Some(ne), Some(nn))
+            }
+            _ => (None, None),
+        };
+        let (new_totp_enc, new_totp_nonce) = match (totp_enc, totp_nonce) {
+            (Some(e), Some(n)) => {
+                let (ne, nn) = reseal_bytes(old_key, new_key, &e, &n)?;
+                (Some(ne), Some(nn))
+            }
+            _ => (None, None),
+        };
+        tx.execute(
+            "UPDATE credentials SET secret_enc = ?1, secret_nonce = ?2,
+             custom_fields_enc = ?3, custom_fields_nonce = ?4,
+             totp_secret_enc = ?5, totp_secret_nonce = ?6
+             WHERE id = ?7",
+            rusqlite::params![new_secret_enc, new_secret_nonce, new_fields_enc, new_fields_nonce, new_totp_enc, new_totp_nonce, id],
+        )?;
+    }
+
+    let history_rows: Vec<(i64, Vec<u8>, Vec<u8>)> = {
+        let mut stmt = tx.prepare("SELECT id, secret_enc, secret_nonce FROM credential_history")?;
+        let mapped = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?.collect::<Result<_, _>>()?;
+        mapped
+    };
+    for (id, enc, nonce) in history_rows {
+        let (new_enc, new_nonce) = reseal_bytes(old_key, new_key, &enc, &nonce)?;
+        tx.execute(
+            "UPDATE credential_history SET secret_enc = ?1, secret_nonce = ?2 WHERE id = ?3",
+            rusqlite::params![new_enc, new_nonce, id],
+        )?;
+    }
+
+    let ssh_rows: Vec<(i64, Vec<u8>, Vec<u8>)> = {
+        let mut stmt = tx.prepare("SELECT id, private_key_enc, private_key_nonce FROM ssh_keys")?;
+        let mapped = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?.collect::<Result<_, _>>()?;
+        mapped
+    };
+    for (id, enc, nonce) in ssh_rows {
+        let (new_enc, new_nonce) = reseal_bytes(old_key, new_key, &enc, &nonce)?;
+        tx.execute(
+            "UPDATE ssh_keys SET private_key_enc = ?1, private_key_nonce = ?2 WHERE id = ?3",
+            rusqlite::params![new_enc, new_nonce, id],
+        )?;
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
+/// B1-6, step 2b: re-encrypts the database FILE itself under `new_key` - SQLCipher's own
+/// page-level encryption, entirely separate from the app-level blob sealing `reseal_all_blobs`
+/// just finished. Uses the same raw-key `x'<hex>'` PRAGMA syntax `open_vault` uses for `PRAGMA
+/// key`, so SQLCipher's own internal PBKDF2 is bypassed here too - this crate's Argon2id
+/// `derive_key` already did the password -> key work, `new_key` is already the final key.
+///
+/// Must run AFTER `reseal_all_blobs` commits, not before - see that function's doc comment for
+/// why. If this call itself fails or the process dies mid-call, the two key layers are left out
+/// of sync (blobs sealed under `new_key`, file still keyed under `old_key`, or vice versa if
+/// SQLCipher's own rekey didn't complete atomically) - this is the one window a pre-flight vault
+/// backup exists to rescue: restoring it discards both the reseal and the rekey, returning to a
+/// fully `old_key`-consistent file.
+pub fn rekey_vault(conn: &Connection, new_key: &VaultKey) -> Result<(), VaultError> {
+    let key_hex: zeroize::Zeroizing<String> =
+        zeroize::Zeroizing::new(new_key.as_bytes().iter().map(|b| format!("{:02x}", b)).collect());
+    conn.pragma_update(None, "rekey", format!("x'{}'", key_hex.as_str()))?;
     Ok(())
 }
 
@@ -516,11 +1010,14 @@ pub struct TrashedCredential {
     pub site_name: String,
     pub username: Option<String>,
     pub deleted_at: String,
+    /// The site's item type (D-11 gap fix) - lets a trash view show a type-appropriate icon
+    /// instead of assuming every trashed row is a login.
+    pub item_type: String,
 }
 
 pub fn list_trash(conn: &Connection) -> Result<Vec<TrashedCredential>, VaultError> {
     let mut stmt = conn.prepare(
-        "SELECT c.id, c.site_id, s.name, c.username, c.deleted_at
+        "SELECT c.id, c.site_id, s.name, c.username, c.deleted_at, s.item_type
          FROM credentials c
          JOIN sites s ON s.id = c.site_id
          WHERE c.deleted_at IS NOT NULL
@@ -533,6 +1030,7 @@ pub fn list_trash(conn: &Connection) -> Result<Vec<TrashedCredential>, VaultErro
             site_name: row.get(2)?,
             username: row.get(3)?,
             deleted_at: row.get(4)?,
+            item_type: row.get(5)?,
         })
     })?;
     let mut out = Vec::new();
@@ -542,8 +1040,23 @@ pub fn list_trash(conn: &Connection) -> Result<Vec<TrashedCredential>, VaultErro
     Ok(out)
 }
 
+// B1-5: purging trash only ever hard-deleted credentials - a site trashed with zero credentials
+// (e.g. an empty login that was never given one, or a site whose sole credential was already
+// purged in an earlier call) had no purge path of its own: it isn't in `list_sites` (deleted_at
+// set) and it isn't in Trash either (Trash lists credentials, not sites), so it lived in the
+// database forever with no UI ever able to reach it again. Fix: after credentials are purged,
+// also hard-delete any trashed site left with no credential row (live or trashed) still
+// referencing it - same transaction, so a crash between the two deletes can't leave one without
+// the other.
 pub fn purge_trash(conn: &Connection) -> Result<usize, VaultError> {
-    let count = conn.execute("DELETE FROM credentials WHERE deleted_at IS NOT NULL", [])?;
+    let tx = conn.unchecked_transaction()?;
+    let count = tx.execute("DELETE FROM credentials WHERE deleted_at IS NOT NULL", [])?;
+    tx.execute(
+        "DELETE FROM sites WHERE deleted_at IS NOT NULL
+         AND id NOT IN (SELECT DISTINCT site_id FROM credentials)",
+        [],
+    )?;
+    tx.commit()?;
     Ok(count)
 }
 
@@ -591,41 +1104,69 @@ pub struct SearchResult {
     pub username: Option<String>,
 }
 
-pub fn search(conn: &Connection, query: &str) -> Result<Vec<SearchResult>, VaultError> {
-    // SQLite's LIKE treats '%' and '_' as wildcards even inside the user's own query text, so a
-    // literal search for e.g. "50% off" or "jane_doe" would silently behave like a wildcard match
-    // instead of a literal one. Escape them (and the escape character itself) before wrapping in
-    // the leading/trailing '%' that makes this a substring search, and tell SQLite which escape
-    // character to honor via ESCAPE.
-    let escaped: String = query
-        .to_lowercase()
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_");
-    let pattern = format!("%{}%", escaped);
+// B1-7: search covers metadata (site name/notes, username, remarks - all plaintext columns, still
+// pushed down as a SQL LIKE) AND secret content (D-I) - a non-login item's whole reason for
+// existing lives in its sealed custom fields (note body, card number/expiry/CVV, full name), so a
+// search that only looked at plaintext columns would never find a note or card by its content.
+// There is no SQL-level index into an encrypted blob, so the secret-content half necessarily scans
+// every live credential and decrypts its custom-fields blob in Rust - O(n) per query, fine at
+// personal-vault scale (a few hundred items), revisit only if it measurably drags (same ceiling
+// B1-7's plan entry already named).
+pub fn search(conn: &Connection, key: &VaultKey, query: &str) -> Result<Vec<SearchResult>, VaultError> {
+    let needle = query.to_lowercase();
+    if needle.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let mut stmt = conn.prepare(
-        "SELECT s.id, s.name, c.id, c.username
+        "SELECT s.id, s.name, s.notes, s.card_last4, c.id, c.username, c.remarks, c.custom_fields_enc, c.custom_fields_nonce
          FROM credentials c
          JOIN sites s ON s.id = c.site_id
          WHERE c.deleted_at IS NULL AND s.deleted_at IS NULL
-           AND (
-             lower(s.name) LIKE ?1 ESCAPE '\\'
-             OR lower(coalesce(c.username, '')) LIKE ?1 ESCAPE '\\'
-             OR lower(coalesce(c.remarks, '')) LIKE ?1 ESCAPE '\\'
-           )
          ORDER BY s.name",
     )?;
-    let rows = stmt.query_map(rusqlite::params![pattern], |row| {
-        Ok(SearchResult {
-            site_id: row.get(0)?,
-            site_name: row.get(1)?,
-            credential_id: row.get(2)?,
-            username: row.get(3)?,
-        })
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, Option<String>>(5)?,
+            row.get::<_, Option<String>>(6)?,
+            row.get::<_, Option<Vec<u8>>>(7)?,
+            row.get::<_, Option<Vec<u8>>>(8)?,
+        ))
     })?;
+
     let mut out = Vec::new();
     for r in rows {
-        out.push(r?);
+        let (site_id, site_name, site_notes, card_last4, credential_id, username, remarks, fields_enc, fields_nonce) = r?;
+
+        let plaintext_match = site_name.to_lowercase().contains(&needle)
+            || site_notes.as_deref().unwrap_or("").to_lowercase().contains(&needle)
+            || username.as_deref().unwrap_or("").to_lowercase().contains(&needle)
+            || remarks.as_deref().unwrap_or("").to_lowercase().contains(&needle)
+            // J4/N10: card_last4 is a non-secret hint column (kept unencrypted precisely so the
+            // list row can show "Visa •••• 1111" without decrypting anything, see
+            // add_site_columns_if_missing above) - safe to index directly, unlike the full card
+            // number sealed in custom_fields_enc below.
+            || card_last4.as_deref().unwrap_or("").to_lowercase().contains(&needle);
+
+        let secret_match = if plaintext_match {
+            false // already matched, no need to decrypt
+        } else {
+            // J4: Hidden fields (full card number, CVV, recovery codes, secure-note bodies) are
+            // excluded from search entirely - only Text/Boolean custom field values are matched.
+            // card_last4 above is the one deliberately-searchable fragment of a card's secret data.
+            open_custom_fields(key, fields_enc, fields_nonce)?
+                .iter()
+                .any(|f| f.field_type != CustomFieldType::Hidden && f.value.to_lowercase().contains(&needle))
+        };
+
+        if plaintext_match || secret_match {
+            out.push(SearchResult { site_id, site_name, credential_id, username });
+        }
     }
     Ok(out)
 }
@@ -636,23 +1177,34 @@ pub struct ImportSummary {
     pub duplicates: usize,
 }
 
+/// Read-only half of `find_or_create_site` - exposed for the JSON import preview (jsonio.rs),
+/// which must not create anything while only computing a duplicate count to show the user.
+pub fn find_site_id_by_name(conn: &Connection, name: &str) -> Result<Option<i64>, VaultError> {
+    Ok(conn
+        .query_row(
+            "SELECT id FROM sites WHERE name = ?1 AND deleted_at IS NULL",
+            rusqlite::params![name],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
 fn find_or_create_site(
     conn: &Connection,
     name: &str,
     url: Option<&str>,
     notes: Option<&str>,
 ) -> Result<i64, VaultError> {
-    let existing: Option<i64> = conn
-        .query_row(
-            "SELECT id FROM sites WHERE name = ?1 AND deleted_at IS NULL",
-            rusqlite::params![name],
-            |row| row.get(0),
-        )
-        .optional()?;
-    match existing {
+    match find_site_id_by_name(conn, name)? {
         Some(id) => Ok(id),
         None => add_site(conn, name, url, notes),
     }
+}
+
+/// Exposed as `credential_exists_for_import_check` for the JSON import preview (jsonio.rs) - same
+/// query `credential_exists` below runs, just named for its one external caller's read-only intent.
+pub fn credential_exists_for_import_check(conn: &Connection, site_id: i64, username: Option<&str>) -> Result<bool, VaultError> {
+    credential_exists(conn, site_id, username)
 }
 
 fn credential_exists(conn: &Connection, site_id: i64, username: Option<&str>) -> Result<bool, VaultError> {
@@ -695,6 +1247,32 @@ pub fn import_credentials(
 
     tx.commit()?;
     Ok(ImportSummary { imported, duplicates })
+}
+
+/// For the JSON import's history round-trip (jsonio.rs): seals `secret` under the CURRENT vault's
+/// key (which may differ from whatever key the export was originally made under) and inserts it
+/// with the caller-supplied `changed_at`, preserving the original timestamp rather than stamping
+/// `datetime('now')` on every imported entry. Caps at 5 same as `update_credential`'s own history
+/// write, so importing a credential that already has 5 entries can't grow the table unbounded.
+pub fn insert_history_entry(
+    conn: &Connection,
+    key: &VaultKey,
+    credential_id: i64,
+    secret: &str,
+    changed_at: &str,
+) -> Result<(), VaultError> {
+    let (secret_enc, nonce) = crate::crypto::seal(key, secret.as_bytes())?;
+    conn.execute(
+        "INSERT INTO credential_history (credential_id, secret_enc, secret_nonce, changed_at) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![credential_id, secret_enc, nonce.to_vec(), changed_at],
+    )?;
+    conn.execute(
+        "DELETE FROM credential_history WHERE credential_id = ?1 AND id NOT IN (
+            SELECT id FROM credential_history WHERE credential_id = ?1 ORDER BY changed_at DESC, id DESC LIMIT 5
+         )",
+        rusqlite::params![credential_id],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1004,6 +1582,129 @@ mod tests {
     }
 
     #[test]
+    fn update_credential_writes_history_only_when_the_secret_actually_changes() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[21u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "v1", None, &[], false).unwrap();
+
+        // Same secret, different username - not a secret change, no history row.
+        update_credential(&conn, &key, cred_id, Some("alice2"), "v1", None, &[], false).unwrap();
+        assert!(list_credential_history(&conn, &key, cred_id).unwrap().is_empty());
+
+        update_credential(&conn, &key, cred_id, Some("alice2"), "v2", None, &[], false).unwrap();
+        let history = list_credential_history(&conn, &key, cred_id).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].secret, "v1"); // the outgoing secret, not the new one
+    }
+
+    #[test]
+    fn update_credential_logs_non_secret_field_changes() {
+        // M7.2: a username-only edit writes no credential_history row (asserted above) but must
+        // still leave a trace somewhere - that's what credential_change_log is for.
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[23u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "v1", None, &[], false).unwrap();
+
+        // Same everything - no log rows at all.
+        update_credential(&conn, &key, cred_id, Some("alice"), "v1", None, &[], false).unwrap();
+        assert!(list_credential_change_log(&conn, cred_id).unwrap().is_empty());
+
+        // Username-only change: one row, secret change produces none of its own.
+        update_credential(&conn, &key, cred_id, Some("alice2"), "v1", None, &[], false).unwrap();
+        let log = list_credential_change_log(&conn, cred_id).unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].field, "username");
+        assert_eq!(log[0].old_value.as_deref(), Some("alice"));
+        assert_eq!(log[0].new_value.as_deref(), Some("alice2"));
+
+        // Remarks and reprompt_exempt both change in the same call - two more rows, most recent first.
+        update_credential(&conn, &key, cred_id, Some("alice2"), "v1", Some("work"), &[], true).unwrap();
+        let log = list_credential_change_log(&conn, cred_id).unwrap();
+        assert_eq!(log.len(), 3);
+        assert_eq!(log[0].field, "reprompt_exempt");
+        assert_eq!(log[0].old_value.as_deref(), Some("false"));
+        assert_eq!(log[0].new_value.as_deref(), Some("true"));
+        assert_eq!(log[1].field, "remarks");
+        assert_eq!(log[1].old_value, None);
+        assert_eq!(log[1].new_value.as_deref(), Some("work"));
+    }
+
+    #[test]
+    fn credential_change_log_caps_at_twenty_most_recent() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[24u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("u0"), "v1", None, &[], false).unwrap();
+
+        for i in 1..=25 {
+            update_credential(&conn, &key, cred_id, Some(&format!("u{i}")), "v1", None, &[], false).unwrap();
+        }
+
+        let log = list_credential_change_log(&conn, cred_id).unwrap();
+        assert_eq!(log.len(), 20);
+        assert_eq!(log[0].new_value.as_deref(), Some("u25")); // most recent first
+    }
+
+    #[test]
+    fn purging_a_trashed_credential_cascades_its_change_log() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[25u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, Some("alice"), "v1", None, &[], false).unwrap();
+        update_credential(&conn, &key, cred_id, Some("alice2"), "v1", None, &[], false).unwrap();
+        assert_eq!(list_credential_change_log(&conn, cred_id).unwrap().len(), 1);
+
+        soft_delete_credential(&conn, cred_id).unwrap();
+        purge_trash(&conn).unwrap();
+
+        assert!(list_credential_change_log(&conn, cred_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn credential_history_caps_at_five_most_recent() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[22u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, None, "v0", None, &[], false).unwrap();
+
+        for i in 1..=6 {
+            update_credential(&conn, &key, cred_id, None, &format!("v{i}"), None, &[], false).unwrap();
+        }
+
+        // 6 changes (v0->v1 .. v5->v6) means 6 outgoing secrets went to history; capped at 5, and
+        // the oldest (v0) is the one pruned - the 5 most recent outgoing secrets survive.
+        let history = list_credential_history(&conn, &key, cred_id).unwrap();
+        assert_eq!(history.len(), 5);
+        let secrets: Vec<&str> = history.iter().map(|h| h.secret.as_str()).collect();
+        assert_eq!(secrets, vec!["v5", "v4", "v3", "v2", "v1"]); // most recent first, v0 pruned
+    }
+
+    #[test]
+    fn purging_a_trashed_credential_cascades_its_history() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[23u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site_id = add_site(&conn, "example.com", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, site_id, None, "v1", None, &[], false).unwrap();
+        update_credential(&conn, &key, cred_id, None, "v2", None, &[], false).unwrap();
+        assert_eq!(list_credential_history(&conn, &key, cred_id).unwrap().len(), 1);
+
+        soft_delete_credential(&conn, cred_id).unwrap();
+        purge_trash(&conn).unwrap();
+
+        // ON DELETE CASCADE on credential_history.credential_id - no orphaned history row left
+        // pointing at a credential id that no longer exists.
+        assert!(list_credential_history(&conn, &key, cred_id).unwrap().is_empty());
+    }
+
+    #[test]
     fn update_credential_on_nonexistent_id_returns_not_found() {
         let dir = tempdir().unwrap();
         let key = derive_key("pw", &[21u8; 16]).unwrap();
@@ -1169,6 +1870,40 @@ mod tests {
     }
 
     #[test]
+    fn purge_trash_also_removes_an_orphaned_trashed_site_with_no_credentials() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[26u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        // A site with zero credentials, trashed directly - before B1-5 this row had no purge path
+        // at all: not in list_sites (deleted_at set), not in Trash (Trash lists credentials).
+        let empty_site = add_site(&conn, "empty.example", None, None).unwrap();
+        soft_delete_site(&conn, empty_site).unwrap();
+
+        // A second site whose sole credential gets purged in this same call - also orphaned.
+        let credless_after_purge = add_site(&conn, "purged-away.example", None, None).unwrap();
+        let cred_id = add_credential(&conn, &key, credless_after_purge, None, "s3cret", None, &[], false).unwrap();
+        soft_delete_site(&conn, credless_after_purge).unwrap();
+        assert!(list_credentials_for_site(&conn, &key, credless_after_purge).unwrap().is_empty()); // cascaded to trash
+
+        // Control: a site with a still-live credential must survive.
+        let untouched_site = add_site(&conn, "untouched.example", None, None).unwrap();
+        add_credential(&conn, &key, untouched_site, None, "keep-me", None, &[], false).unwrap();
+
+        purge_trash(&conn).unwrap();
+
+        let site_exists = |id: i64| -> bool {
+            conn.query_row("SELECT count(*) FROM sites WHERE id = ?1", rusqlite::params![id], |r| r.get::<_, i64>(0))
+                .unwrap()
+                > 0
+        };
+        assert!(!site_exists(empty_site));
+        assert!(!site_exists(credless_after_purge));
+        assert!(site_exists(untouched_site));
+        let _ = cred_id; // only needed to construct the scenario
+    }
+
+    #[test]
     fn list_credentials_for_site_returns_only_that_sites_credentials() {
         let dir = tempdir().unwrap();
         let key = derive_key("pw", &[9u8; 16]).unwrap();
@@ -1215,19 +1950,19 @@ mod tests {
         let site_b = add_site(&conn, "example.com", None, None).unwrap();
         add_credential(&conn, &key, site_b, Some("bob"), "secret2", None, &[], false).unwrap();
 
-        let by_site_name = search(&conn, "github").unwrap();
+        let by_site_name = search(&conn, &key, "github").unwrap();
         assert_eq!(by_site_name.len(), 1);
         assert_eq!(by_site_name[0].site_name, "GitHub");
 
-        let by_username = search(&conn, "bob").unwrap();
+        let by_username = search(&conn, &key, "bob").unwrap();
         assert_eq!(by_username.len(), 1);
         assert_eq!(by_username[0].username.as_deref(), Some("bob"));
 
-        let by_remarks = search(&conn, "work").unwrap();
+        let by_remarks = search(&conn, &key, "work").unwrap();
         assert_eq!(by_remarks.len(), 1);
         assert_eq!(by_remarks[0].site_name, "GitHub");
 
-        let no_match = search(&conn, "nonexistent").unwrap();
+        let no_match = search(&conn, &key, "nonexistent").unwrap();
         assert!(no_match.is_empty());
     }
 
@@ -1241,11 +1976,78 @@ mod tests {
         add_credential(&conn, &key, site_id, Some("jane_doe"), "secret", None, &[], false).unwrap();
 
         // A literal '%' in the query must match only the literal text, not act as a wildcard.
-        assert_eq!(search(&conn, "50% off").unwrap().len(), 1);
+        assert_eq!(search(&conn, &key, "50% off").unwrap().len(), 1);
 
         // A literal '_' must not behave like "match any single character".
-        assert!(search(&conn, "jane.doe").unwrap().is_empty());
-        assert_eq!(search(&conn, "jane_doe").unwrap().len(), 1);
+        assert!(search(&conn, &key, "jane.doe").unwrap().is_empty());
+        assert_eq!(search(&conn, &key, "jane_doe").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn search_matches_sealed_text_custom_field_content_but_not_the_plaintext_columns() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[12u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let login_site = add_site(&conn, "Some Login", None, None).unwrap();
+        add_credential(
+            &conn, &key, login_site, Some("carol"), "secret", None,
+            &[CustomField { label: "Platform".into(), value: "linux-only".into(), field_type: CustomFieldType::Text }],
+            false,
+        ).unwrap();
+
+        let other_site = add_site(&conn, "Unrelated Login", None, None).unwrap();
+        add_credential(&conn, &key, other_site, Some("dave"), "secret", None, &[], false).unwrap();
+
+        // The needle only appears inside a sealed (but non-Hidden) custom-fields value - a
+        // plaintext-only search (the pre-B1-7 behavior) would find nothing here.
+        let results = search(&conn, &key, "linux-only").unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].site_id, login_site);
+
+        assert!(search(&conn, &key, "unrelated").unwrap().iter().any(|r| r.site_id == other_site));
+    }
+
+    #[test]
+    fn search_excludes_hidden_custom_field_values_but_still_matches_card_last4() {
+        // J4/N10: a Hidden field's value (recovery code, note body, full card number, CVV) must
+        // never surface in search results, even though the pre-fix code decrypted and matched
+        // every custom field regardless of type. card_last4 is the one deliberate exception - it's
+        // a plaintext site column by design (see add_site_columns_if_missing), not part of the
+        // sealed blob, so indexing it doesn't expose anything the list row doesn't already show.
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[13u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+
+        let card_site = add_site(&conn, "Visa Primary", None, None).unwrap();
+        set_site_item_type(&conn, card_site, "card").unwrap();
+        set_site_card_hint(&conn, card_site, Some("Visa"), Some("1111")).unwrap();
+        add_credential(
+            &conn, &key, card_site, None, "", None,
+            &[
+                CustomField { label: CARD_NUMBER.into(), value: "4111111111111111".into(), field_type: CustomFieldType::Hidden },
+                CustomField { label: CARD_CVV.into(), value: "123".into(), field_type: CustomFieldType::Hidden },
+            ],
+            false,
+        ).unwrap();
+
+        let note_site = add_site(&conn, "Bank Note", None, None).unwrap();
+        set_site_item_type(&conn, note_site, "note").unwrap();
+        add_credential(
+            &conn, &key, note_site, None, "", None,
+            &[CustomField { label: NOTE_BODY.into(), value: "routing number 021000021".into(), field_type: CustomFieldType::Hidden }],
+            false,
+        ).unwrap();
+
+        // Full card number and CVV: not searchable.
+        assert!(search(&conn, &key, "4111111111111111").unwrap().is_empty());
+        assert!(search(&conn, &key, "123").unwrap().is_empty());
+        // Hidden note body: not searchable.
+        assert!(search(&conn, &key, "routing number").unwrap().is_empty());
+        // Last 4 digits: still searchable, from the plaintext card_last4 column.
+        let results = search(&conn, &key, "1111").unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].site_id, card_site);
     }
 
     #[test]
@@ -1256,16 +2058,16 @@ mod tests {
 
         let site_id = add_site(&conn, "deleteme.com", None, None).unwrap();
         let cred_id = add_credential(&conn, &key, site_id, Some("carol"), "secret", None, &[], false).unwrap();
-        assert_eq!(search(&conn, "deleteme").unwrap().len(), 1);
+        assert_eq!(search(&conn, &key, "deleteme").unwrap().len(), 1);
 
         soft_delete_credential(&conn, cred_id).unwrap();
-        assert!(search(&conn, "deleteme").unwrap().is_empty());
+        assert!(search(&conn, &key, "deleteme").unwrap().is_empty());
 
         restore_credential(&conn, cred_id).unwrap();
-        assert_eq!(search(&conn, "deleteme").unwrap().len(), 1);
+        assert_eq!(search(&conn, &key, "deleteme").unwrap().len(), 1);
 
         soft_delete_site(&conn, site_id).unwrap();
-        assert!(search(&conn, "deleteme").unwrap().is_empty());
+        assert!(search(&conn, &key, "deleteme").unwrap().is_empty());
     }
 
     #[test]
@@ -1434,5 +2236,225 @@ mod tests {
         soft_delete_site(&conn, site_id).unwrap();
 
         assert!(list_old_credentials(&conn, 365).unwrap().is_empty());
+    }
+
+    // ---- Make UI: favorites / folders / item types (plan B1-0..B1-3) ----
+
+    /// Builds a vault file with the ORIGINAL pre-Make `sites` table (no favorite/folder/type
+    /// columns), the way a real existing user's vault looks, then reopens it through open_vault.
+    fn open_pre_migration_vault(dir: &std::path::Path, key: &VaultKey) -> Connection {
+        let path = dir.join("old.vault");
+        {
+            let raw = Connection::open(&path).unwrap();
+            let key_hex: String = key.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+            raw.pragma_update(None, "key", format!("x'{}'", key_hex)).unwrap();
+            raw.execute_batch(
+                "CREATE TABLE sites (
+                    id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT, notes TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')), deleted_at TEXT);
+                 INSERT INTO sites (name, url) VALUES ('legacy.com', 'https://legacy.com');",
+            )
+            .unwrap();
+        }
+        open_vault(&path, key).unwrap()
+    }
+
+    fn site_columns(conn: &Connection) -> Vec<String> {
+        let mut stmt = conn.prepare("PRAGMA table_info(sites)").unwrap();
+        stmt.query_map([], |r| r.get::<_, String>(1)).unwrap().map(|c| c.unwrap()).collect()
+    }
+
+    #[test]
+    fn opening_a_pre_migration_vault_adds_site_columns_with_defaults_and_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[60u8; 16]).unwrap();
+        let conn = open_pre_migration_vault(dir.path(), &key);
+
+        for col in ["favorite", "folder_id", "item_type", "card_brand", "card_last4"] {
+            assert!(site_columns(&conn).iter().any(|c| c == col), "missing column {col}");
+        }
+        let sites = list_sites(&conn).unwrap();
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].name, "legacy.com");
+        assert!(!sites[0].favorite);
+        assert_eq!(sites[0].folder_id, None);
+        assert_eq!(sites[0].item_type, "login");
+        drop(conn);
+
+        // Second open must not try to re-add columns.
+        let again = open_vault(&dir.path().join("old.vault"), &key).unwrap();
+        assert_eq!(list_sites(&again).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn set_site_favorite_toggles_and_unknown_site_is_not_found() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[61u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let id = add_site(&conn, "a.com", None, None).unwrap();
+
+        set_site_favorite(&conn, id, true).unwrap();
+        assert!(list_sites(&conn).unwrap()[0].favorite);
+        set_site_favorite(&conn, id, false).unwrap();
+        assert!(!list_sites(&conn).unwrap()[0].favorite);
+        assert!(matches!(set_site_favorite(&conn, 999, true), Err(VaultError::NotFound)));
+    }
+
+    #[test]
+    fn folders_crud_assign_and_delete_unfiles_sites_without_deleting_them() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[62u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let site = add_site(&conn, "a.com", None, None).unwrap();
+
+        let work = add_folder(&conn, "  Work ").unwrap();
+        let dev = add_folder(&conn, "Development").unwrap();
+        assert_eq!(list_folders(&conn).unwrap().iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["Development", "Work"]);
+
+        assert!(matches!(add_folder(&conn, "work"), Err(VaultError::InvalidInput(_))), "case-insensitive duplicate");
+        assert!(matches!(add_folder(&conn, "   "), Err(VaultError::InvalidInput(_))), "blank name");
+
+        rename_folder(&conn, work, "Office").unwrap();
+        assert!(matches!(rename_folder(&conn, work, "development"), Err(VaultError::InvalidInput(_))));
+        assert!(matches!(rename_folder(&conn, 999, "x"), Err(VaultError::NotFound)));
+
+        set_site_folder(&conn, site, Some(dev)).unwrap();
+        assert_eq!(list_sites(&conn).unwrap()[0].folder_id, Some(dev));
+        assert!(matches!(set_site_folder(&conn, site, Some(999)), Err(VaultError::NotFound)));
+
+        delete_folder(&conn, dev).unwrap();
+        let sites = list_sites(&conn).unwrap();
+        assert_eq!(sites.len(), 1, "deleting a folder must never delete its items");
+        assert_eq!(sites[0].folder_id, None);
+        assert!(matches!(delete_folder(&conn, dev), Err(VaultError::NotFound)));
+
+        set_site_folder(&conn, site, Some(work)).unwrap();
+        set_site_folder(&conn, site, None).unwrap();
+        assert_eq!(list_sites(&conn).unwrap()[0].folder_id, None);
+    }
+
+    #[test]
+    fn item_type_defaults_to_login_and_rejects_unknown_values() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[63u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let id = add_site(&conn, "a.com", None, None).unwrap();
+        assert_eq!(list_sites(&conn).unwrap()[0].item_type, "login");
+
+        for t in ["note", "card", "identity", "login"] {
+            set_site_item_type(&conn, id, t).unwrap();
+            assert_eq!(list_sites(&conn).unwrap()[0].item_type, t);
+        }
+        assert!(matches!(set_site_item_type(&conn, id, "passport"), Err(VaultError::InvalidInput(_))));
+        assert!(matches!(set_site_item_type(&conn, 999, "note"), Err(VaultError::NotFound)));
+    }
+
+    #[test]
+    fn card_hint_accepts_brand_and_exactly_four_digits_only() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[64u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let id = add_site(&conn, "Chase", None, None).unwrap();
+
+        set_site_card_hint(&conn, id, Some("Visa"), Some("3921")).unwrap();
+        let s = &list_sites(&conn).unwrap()[0];
+        assert_eq!((s.card_brand.as_deref(), s.card_last4.as_deref()), (Some("Visa"), Some("3921")));
+
+        for bad in ["392", "39211", "39a1", "3921 "] {
+            assert!(matches!(set_site_card_hint(&conn, id, None, Some(bad)), Err(VaultError::InvalidInput(_))), "{bad}");
+        }
+        set_site_card_hint(&conn, id, None, None).unwrap();
+        assert_eq!(list_sites(&conn).unwrap()[0].card_last4, None);
+    }
+
+    #[test]
+    fn non_login_items_only_accept_their_reserved_field_labels() {
+        let dir = tempdir().unwrap();
+        let key = derive_key("pw", &[65u8; 16]).unwrap();
+        let conn = open_vault(&dir.path().join("t.vault"), &key).unwrap();
+        let card = add_site(&conn, "Chase", None, None).unwrap();
+        set_site_item_type(&conn, card, "card").unwrap();
+        let field = |label: &str, t: CustomFieldType| CustomField { label: label.into(), value: "v".into(), field_type: t };
+
+        let ok = [
+            field(CARD_NUMBER, CustomFieldType::Hidden),
+            field(CARD_EXPIRY, CustomFieldType::Text),
+            field(CARD_CVV, CustomFieldType::Hidden),
+        ];
+        let cred = add_credential(&conn, &key, card, None, "", None, &ok, false).unwrap();
+
+        // A typo must fail loudly instead of silently forking the field.
+        let typo = [field("Card Numbr", CustomFieldType::Hidden)];
+        assert!(matches!(add_credential(&conn, &key, card, None, "", None, &typo, false), Err(VaultError::InvalidInput(_))));
+        assert!(matches!(update_credential(&conn, &key, cred, None, "", None, &typo, false), Err(VaultError::InvalidInput(_))));
+        // Another type's label is also rejected.
+        let wrong = [field(NOTE_BODY, CustomFieldType::Hidden)];
+        assert!(matches!(add_credential(&conn, &key, card, None, "", None, &wrong, false), Err(VaultError::InvalidInput(_))));
+
+        // Secret-bearing reserved fields must be Hidden so they never render as plain text.
+        let leaky = [field(CARD_CVV, CustomFieldType::Text)];
+        assert!(matches!(add_credential(&conn, &key, card, None, "", None, &leaky, false), Err(VaultError::InvalidInput(_))));
+
+        // Logins stay free-form.
+        let login = add_site(&conn, "GitHub", None, None).unwrap();
+        let any = [field("Recovery Code", CustomFieldType::Hidden)];
+        add_credential(&conn, &key, login, Some("u"), "pw", None, &any, false).unwrap();
+    }
+
+    #[test]
+    fn reseal_all_blobs_then_rekey_vault_makes_every_sealed_value_readable_under_the_new_key_only() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.vault");
+        let old_key = derive_key("old password", &[70u8; 16]).unwrap();
+        let conn = open_vault(&path, &old_key).unwrap();
+
+        let site = add_site(&conn, "example.com", None, None).unwrap();
+        let fields = [CustomField { label: "Recovery Code".into(), value: "8842-1923".into(), field_type: CustomFieldType::Hidden }];
+        let cred = add_credential(&conn, &old_key, site, Some("alice"), "v1", None, &fields, false).unwrap();
+        update_credential(&conn, &old_key, cred, Some("alice"), "v2", None, &fields, false).unwrap(); // writes one history row
+        set_totp_secret(&conn, &old_key, cred, "JBSWY3DPEHPK3PXP").unwrap();
+        crate::ssh_keys::add_ssh_key(&conn, &old_key, "laptop", "ssh-ed25519 AAAA...fake-key-material").unwrap();
+
+        let new_key = derive_key("new password", &[71u8; 16]).unwrap();
+        reseal_all_blobs(&conn, &old_key, &new_key).unwrap();
+        rekey_vault(&conn, &new_key).unwrap();
+
+        // The still-open connection keeps working transparently once rekey completes.
+        let creds = list_credentials_for_site(&conn, &new_key, site).unwrap();
+        assert_eq!(creds[0].secret, "v2");
+        assert_eq!(creds[0].custom_fields[0].value, "8842-1923");
+        assert!(creds[0].has_totp);
+        let history = list_credential_history(&conn, &new_key, cred).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].secret, "v1");
+        let ssh_keys = crate::ssh_keys::list_ssh_keys(&conn, &new_key).unwrap();
+        assert_eq!(ssh_keys[0].private_key_openssh, "ssh-ed25519 AAAA...fake-key-material");
+
+        // Reopening the file from scratch proves the rekey persisted to disk, not just to the
+        // live connection's in-memory state - and that the old key no longer opens it at all.
+        assert!(open_vault(&path, &new_key).is_ok());
+        drop(conn);
+        assert!(matches!(open_vault(&path, &old_key), Err(VaultError::UnlockFailed)));
+    }
+
+    #[test]
+    fn reseal_all_blobs_with_the_wrong_old_key_fails_and_changes_nothing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.vault");
+        let real_key = derive_key("real password", &[72u8; 16]).unwrap();
+        let conn = open_vault(&path, &real_key).unwrap();
+        let site = add_site(&conn, "example.com", None, None).unwrap();
+        add_credential(&conn, &real_key, site, Some("alice"), "s3cret", None, &[], false).unwrap();
+
+        let wrong_old_key = derive_key("not the real password", &[73u8; 16]).unwrap();
+        let new_key = derive_key("new password", &[74u8; 16]).unwrap();
+        let result = reseal_all_blobs(&conn, &wrong_old_key, &new_key);
+
+        assert!(result.is_err());
+        // The transaction must have rolled back - the credential is still readable under the
+        // original key, exactly as if reseal_all_blobs had never been called.
+        let creds = list_credentials_for_site(&conn, &real_key, site).unwrap();
+        assert_eq!(creds[0].secret, "s3cret");
     }
 }

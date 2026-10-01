@@ -3,11 +3,11 @@ import { toast } from "../../lib/toast";
 import { Tooltip } from "../../components/Tooltip";
 import { Icon } from "../../components/Icon";
 
-// Tooltip-wrapped copy control for non-secret values, routed through the one clipboard seam that
-// implements the 30-second "clear only if unchanged" auto-clear on both the desktop (Rust) and
-// web (browser) transports - matches SecretField's own copy handler verbatim. Secrets are
-// SecretField's job, not this component's - they need the reprompt gate before anything is
-// copied, which this component does not provide.
+// Tooltip-wrapped copy control for non-secret values, routed through the one clipboard seam.
+// Secrets are SecretField's job, not this component's - they need the reprompt gate before
+// anything is copied, which this component does not provide.
+// N9: autoClear=false and a plain "Copied." toast - the 30s auto-clear and its notice previously
+// applied here too, but that behavior belongs to secrets (passwords), not a username or URL.
 export function CopyButton({ text, tooltip }: { text: string; tooltip: string }) {
   return (
     <Tooltip text={tooltip}>
@@ -15,8 +15,8 @@ export function CopyButton({ text, tooltip }: { text: string; tooltip: string })
         type="button"
         onClick={() => {
           api
-            .copyToClipboard(text)
-            .then(() => toast("Copied. It will clear from the clipboard in 30s."))
+            .copyToClipboard(text, false)
+            .then(() => toast("Copied."))
             .catch(() => toast("Couldn't copy to the clipboard. Please try again."));
         }}
         className="rounded px-2 py-0.5 border border-[var(--border)]"

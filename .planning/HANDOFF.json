@@ -1,0 +1,43 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-27T18:10:39.999Z",
+  "phase": "none",
+  "phase_name": "ad-hoc UAT remediation (feature/modern-ui-overhaul), not a GSD phase",
+  "phase_dir": "docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md",
+  "plan": null,
+  "task": "Wave 4, item 2 of 4 (per-credential change log) — not started",
+  "total_tasks": "4 user-ordered Wave-4 items; see remaining_tasks",
+  "status": "paused",
+  "completed_tasks": [
+    { "id": "triage", "name": "Full UAT findings triage into docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md (Waves 0-4)", "status": "done" },
+    { "id": "wave1-3", "name": "All Wave 1/2/3 codeable fixes (B1,B3-B8,J1-J5/J6,M8.1,N1,N2,N4-N9,N13,N16-launch-half,N17,N18)", "status": "done", "commits": ["bb4bfdd","7dab2c5","ef44145","1b47756","900512d","aaba94d","c575573","f071dff"] },
+    { "id": "wave4-json-export-import", "name": "Full-fidelity JSON vault export + import (Wave 4, item 1 of the user's 4-item sequence)", "status": "done", "commit": "7534127" }
+  ],
+  "remaining_tasks": [
+    { "id": "wave4-change-log", "name": "Per-credential change log (from M7.2) — general audit trail (username changed, field added) separate from password history", "status": "not_started" },
+    { "id": "wave4-makeshell", "name": "MakeShell restructure (B1 Option B) — extract MakeApp's vault-screen tree into a shell mounted only when screen === \"vault\"", "status": "not_started" },
+    { "id": "n16-ui-port", "name": "N16 UI-port half — restyle ViewerApp.tsx/ViewerVault.tsx onto Make UI (currently Classic-styled)", "status": "not_started" },
+    { "id": "wave0-live-retests", "name": "R1-R5 live retests, vault-data-loss investigation, blank-window-launch investigation, N15 settings-race repro", "status": "not_started", "note": "Queued before this 4-item sequence in the plan doc but not reprioritized by the user; needs a live app session (Claude in Chrome / computer-use), not code reading" },
+    { "id": "web-mode-pass", "name": "Deferred web-mode pass: B2, J7, N11, N14, plus a full W re-run of the UAT script", "status": "not_started" },
+    { "id": "fresh-uat-script", "name": "Author a fresh UAT script for everything fixed this session", "status": "not_started" }
+  ],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    { "decision": "Every credential is gated by the master password by default now (B7); the per-credential flag is inverted to `reprompt_exempt` (opt-out), backed by a NEW `reprompt_exempt` DB column rather than reinterpreting the old `reprompt` column's stored values", "rationale": "Reusing the old column under a flipped meaning would silently un-protect any credential a user had previously flagged true under the old opt-in semantics - a real security regression on existing vaults. A new column defaults to 0 (not exempt) for every row, old and new, which is the only migration that can't invert anyone's existing protection.", "phase": "wave1-B7" },
+    { "decision": "Config's reprompt_mode renamed perCredential/global -> always/grace with a load-time migration in Config::load for the old spellings", "rationale": "The old \"perCredential\" mode (only flagged items ever prompt, no grace) has no meaning once every credential is gated by default - the toggle now only picks how the shared grace window behaves.", "phase": "wave1-B7" },
+    { "decision": "JSON export/import (Wave 4 item 1) reuses CSV export's exact sealed envelope (portio::encode_sealed_csv) and added the decoder (decode_sealed_bytes) that format never had", "rationale": "portio.rs literally had a `// ponytail: no decoder; add one only if a future milestone needs to re-import this format` comment - this is that milestone. Reuse avoids inventing a second file format.", "phase": "wave4-json" },
+    { "decision": "JSON import is preview-then-commit but shows a COUNT SUMMARY (sites/credentials/duplicates), not CSV import's per-row editable table", "rationale": "An arbitrary nested export (sites -> credentials -> custom fields -> history) doesn't fit a flat editable table without much more UI work than this pass budgeted; the summary still shows the outcome before committing.", "phase": "wave4-json" },
+    { "decision": "JSON import merges by name (folders case-insensitively, sites exactly) and skips duplicate credentials (same site+username rule as CSV import); a single bad TOTP secret / malformed card hint / field-validation failure skips just that item instead of aborting the whole batch", "rationale": "Matches CSV import's own duplicate contract for consistency, and resilience to one bad record matters more than all-or-nothing correctness for a personal-vault-scale import.", "phase": "wave4-json" },
+    { "decision": "\"Remember last username\" (B5) and sidebar section collapse state (N18) are stored in localStorage, not the Rust-persisted vault config", "rationale": "Both are per-device UI conveniences involving no secret data (a username is already shown in plaintext on the Login screen), so a lighter-weight client-side store is proportionate and avoids touching the Config struct/migration for cosmetic state.", "phase": "wave1-B5-N18" },
+    { "decision": "Card brand and last-4 (N4-N6) are derived from the card number via a LOCAL IIN prefix table in src/lib/card.ts, never a network lookup, and both fields stay manually editable after the derivation", "rationale": "Matches the user's explicit \"no network calls\" constraint and \"allow editing the auto-fetched value\" instruction from earlier in the session.", "phase": "wave1-N4-N6" }
+  ],
+  "uncommitted_files": [
+    " M docs/testing/UAT_FINDINGS_2026-09-23.md",
+    " M viewer-src-tauri/Cargo.toml"
+  ],
+  "uncommitted_files_note": "Both are PRE-EXISTING dirty files that predate this entire session (present in the very first `git status` at session start) and are NOT part of any of this session's work - docs/testing/UAT_FINDINGS_2026-09-23.md is live-edited by the user's own UAT ledger tooling outside this session, and viewer-src-tauri/Cargo.toml's diff is a line-ending-only no-op (`git diff` on it is empty). Every commit this session used `git add -A -- ':!docs/testing/UAT_FINDINGS_2026-09-23.md' ':!viewer-src-tauri/Cargo.toml'` to exclude them. A resuming agent MUST keep excluding these two paths from any commit unless the user explicitly says otherwise - do not fold them into a commit just because `git status` shows them dirty.",
+  "next_action": "Start Wave 4 item 2: design and implement a per-credential change log (separate table from credential_history, which stays password-only per core/src/vault.rs:656's existing, correct, tested behavior). Read core/src/vault.rs's update_credential/credential_history section first (already fully understood this session, see decisions above for the pattern to extend). Land it with the same discipline as every other fix this session: cargo test --workspace + npm test + npm run build all green before committing, one command/DTO layer at a time (core -> src-tauri -> web-src-tauri -> frontend), excluding the two pre-existing dirty files from the commit.",
+  "context_notes": "This is the SECOND session of an ongoing UAT-findings remediation effort on feature/modern-ui-overhaul (an earlier session did initial UAT testing and is documented in docs/testing/UAT_FINDINGS_2026-09-23.md; this session triaged all ~43 findings into docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md and has been implementing fixes wave-by-wave with the user's live steering). The user gave an explicit 4-item priority order for what was Wave 4's 'filed follow-ups': (1) full-fidelity JSON export+import [DONE], (2) per-credential change log, (3) MakeShell restructure, (4) N16's Viewer UI-port half. This handoff is written after finishing item 1 and pausing at the user's explicit /gsd-pause-work request before starting item 2. The three .planning/phases directories (08-new-vault-ui-figma-port, 09-web-mode-security-hardening) are UNRELATED prior GSD-phase work, not part of this remediation effort - do not conflate them. All work this session lives outside the GSD phase system, tracked entirely via docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md and plain git commits on feature/modern-ui-overhaul."
+}

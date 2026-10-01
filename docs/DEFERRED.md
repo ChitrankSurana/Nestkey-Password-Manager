@@ -19,3 +19,7 @@ version first, revisit if breakpoint regressions actually start happening in pra
 **Revisit when:** Either (a) a real regression slips through manual QA that automated tests would
 have caught, or (b) responsive layout code accumulates enough screens/breakpoints that manual
 re-verification on every future frontend change becomes the bottleneck.
+
+**Status (2026-09-30):** Still deferred. The Make UI overhaul added three UI variants, which
+raises the cost of manual re-verification; the UAT remediation effort (`docs/testing/UAT_*.md`)
+relies on manual and live-app runs. Revisit condition (b) is arguably approaching.

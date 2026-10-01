@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { toast } from "../lib/toast";
 import { Icon } from "./Icon";
+import { IconCopy } from "../makeui/icons";
+import { MK_COPY_BUTTON_CLASS } from "../makeui/components/CopyButton";
 
 // Polled once a second while a TOTP-configured row is visible - the backend computes the code
 // from the seed (kept out of the WebView entirely), this just displays what comes back.
-export function TotpDisplay({ credentialId }: { credentialId: number }) {
+export function TotpDisplay({ credentialId, variant }: { credentialId: number; variant?: "make" }) {
   const [totp, setTotp] = useState<{ code: string; secondsRemaining: number } | null>(null);
 
   useEffect(() => {
@@ -39,9 +41,9 @@ export function TotpDisplay({ credentialId }: { credentialId: number }) {
           api.copyToClipboard(totp.code);
           toast("Code copied. It will clear from the clipboard in 30s.");
         }}
-        className="rounded px-2 py-0.5 border border-[var(--border)]"
+        className={variant === "make" ? MK_COPY_BUTTON_CLASS : "rounded px-2 py-0.5 border border-[var(--border)]"}
       >
-        <Icon name="clipboard" />
+        {variant === "make" ? <IconCopy size={12} /> : <Icon name="clipboard" />}
       </button>
     </div>
   );

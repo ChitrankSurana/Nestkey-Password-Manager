@@ -88,6 +88,77 @@ pub fn verify_master_password(
     Ok(crypto::verifier_matches(&verifier_key, &rec.verifier_hash))
 }
 
+/// What `change_master_password` derives before anything is written: the still-valid old vault
+/// key (needed to decrypt every sealed blob so it can be re-sealed), the new vault key, and the
+/// new registry record. Kept as one struct so `commands.rs` can compute all of this from a single
+/// `registry` lock, drop it, then acquire `vault` separately - the same "never hold both locks at
+/// once" discipline every other function in `commands.rs` already follows (see its own comment on
+/// `do_set_pin`, the one deliberate exception, which this is not).
+pub struct PasswordChangeMaterial {
+    pub old_vault_key: crypto::VaultKey,
+    pub new_vault_key: crypto::VaultKey,
+    pub new_user_record: registry::UserRecord,
+}
+
+/// B1-6, step 1 of 3 (registry-only, no vault access yet): verifies `current_password`, then
+/// derives everything a password change needs under a *new* kdf/verifier salt pair - exactly the
+/// same salt/verifier/sentinel shape `register_user` creates for a brand-new account, since a
+/// password change is, from the registry's point of view, indistinguishable from re-registering
+/// with new salts. Does not touch the vault or write anything - purely preparatory.
+pub fn prepare_password_change(
+    registry_conn: &Connection,
+    username: &str,
+    current_password: &str,
+    new_password: &str,
+) -> Result<PasswordChangeMaterial, AuthError> {
+    let rec = registry::find_user(registry_conn, username)?;
+
+    let verifier_key = crypto::derive_key(current_password, &rec.verifier_salt)
+        .map_err(|_| AuthError::InvalidCredentials)?;
+    if !crypto::verifier_matches(&verifier_key, &rec.verifier_hash) {
+        return Err(AuthError::InvalidCredentials);
+    }
+    let old_vault_key =
+        crypto::derive_key(current_password, &rec.kdf_salt).map_err(|_| AuthError::InvalidCredentials)?;
+
+    let new_kdf_salt = crypto::random_salt();
+    let new_verifier_salt = crypto::random_salt();
+    let new_vault_key = crypto::derive_key(new_password, &new_kdf_salt)?;
+    let new_verifier_key = crypto::derive_key(new_password, &new_verifier_salt)?;
+    let (sentinel_ciphertext, sentinel_nonce) = crypto::seal(&new_vault_key, SENTINEL_PLAINTEXT)?;
+
+    Ok(PasswordChangeMaterial {
+        old_vault_key,
+        new_vault_key,
+        new_user_record: registry::UserRecord {
+            username: username.to_string(),
+            kdf_salt: new_kdf_salt.to_vec(),
+            verifier_salt: new_verifier_salt.to_vec(),
+            verifier_hash: new_verifier_key.as_bytes().to_vec(),
+            sentinel_ciphertext,
+            sentinel_nonce: sentinel_nonce.to_vec(),
+        },
+    })
+}
+
+/// B1-6, step 3 of 3 (registry-only, after the vault has already been re-sealed and re-keyed
+/// under `material.new_vault_key` - see `vault::reseal_all_blobs`/`vault::rekey_vault`): commits
+/// the new salts/verifier/sentinel and clears PIN + biometric, both of which wrap the *old* vault
+/// key and are now unusable. Ordering this last means an interruption anywhere before this call
+/// leaves the registry untouched - the old password still logs in, and restoring the pre-flight
+/// vault backup (the caller's responsibility, taken before any of this starts) makes the vault
+/// file consistent with it again.
+pub fn commit_password_change(
+    registry_conn: &Connection,
+    username: &str,
+    material: &PasswordChangeMaterial,
+) -> Result<(), AuthError> {
+    registry::upsert_user(registry_conn, &material.new_user_record)?;
+    registry::clear_pin(registry_conn, username)?;
+    registry::clear_biometric(registry_conn, username)?;
+    Ok(())
+}
+
 pub fn login(
     registry_conn: &Connection,
     vault_path: &Path,
@@ -396,6 +467,60 @@ mod tests {
 
         clear_pin(&registry_conn, "alice").unwrap();
 
+        assert!(!has_pin(&registry_conn, "alice").unwrap());
+        assert!(matches!(
+            unlock_with_pin(&registry_conn, "alice", "1234"),
+            Err(AuthError::InvalidCredentials)
+        ));
+    }
+
+    #[test]
+    fn prepare_password_change_rejects_the_wrong_current_password() {
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+        let vault_path = dir.path().join("alice.vault");
+        register_user(&registry_conn, &vault_path, "alice", "correct horse battery staple").unwrap();
+
+        let result = prepare_password_change(&registry_conn, "alice", "wrong password", "new password");
+
+        assert!(matches!(result, Err(AuthError::InvalidCredentials)));
+    }
+
+    #[test]
+    fn change_master_password_end_to_end_makes_the_new_password_the_only_way_in() {
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+        let vault_path = dir.path().join("alice.vault");
+        let vault_key =
+            register_user(&registry_conn, &vault_path, "alice", "correct horse battery staple").unwrap();
+        let vault_conn = vault::open_vault(&vault_path, &vault_key).unwrap();
+        let site = vault::add_site(&vault_conn, "example.com", None, None).unwrap();
+        vault::add_credential(&vault_conn, &vault_key, site, Some("alice"), "s3cret", None, &[], false).unwrap();
+        set_pin(&registry_conn, "alice", "1234", &vault_key).unwrap();
+        assert!(has_pin(&registry_conn, "alice").unwrap());
+
+        // Mirrors do_change_master_password's exact three-step orchestration (registry, then
+        // vault, then registry again - see PasswordChangeMaterial's own doc comment).
+        let material =
+            prepare_password_change(&registry_conn, "alice", "correct horse battery staple", "new correct horse").unwrap();
+        vault::reseal_all_blobs(&vault_conn, &material.old_vault_key, &material.new_vault_key).unwrap();
+        vault::rekey_vault(&vault_conn, &material.new_vault_key).unwrap();
+        commit_password_change(&registry_conn, "alice", &material).unwrap();
+        drop(vault_conn);
+
+        // New password logs in and reveals the same data.
+        let new_key = login(&registry_conn, &vault_path, "alice", "new correct horse").unwrap();
+        let reopened = vault::open_vault(&vault_path, &new_key).unwrap();
+        let creds = vault::list_credentials_for_site(&reopened, &new_key, site).unwrap();
+        assert_eq!(creds[0].secret, "s3cret");
+
+        // Old password no longer works anywhere - not the registry verifier, not the vault file.
+        assert!(matches!(
+            login(&registry_conn, &vault_path, "alice", "correct horse battery staple"),
+            Err(AuthError::InvalidCredentials)
+        ));
+
+        // PIN wrapped the old key - it must be gone, not silently broken.
         assert!(!has_pin(&registry_conn, "alice").unwrap());
         assert!(matches!(
             unlock_with_pin(&registry_conn, "alice", "1234"),

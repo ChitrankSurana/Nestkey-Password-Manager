@@ -83,14 +83,14 @@ All three should pass/succeed with 0 errors before you go further — see
 
 **Main App** (full read/write desktop app):
 ```powershell
-npm run tauri dev
+npm run tauri:dev
 ```
+(`tauri:dev` passes `src-tauri/tauri.dev.conf.json`. A single-instance guard means a second
+launch focuses the running window instead of opening another.)
 
 **Viewer App** (read-only desktop app — separate crate, own `tauri.conf.json`):
 ```powershell
-cd viewer-src-tauri
-npx tauri dev
-cd ..
+npm run viewer:dev
 ```
 
 **Web Portal** (localhost browser access — plain Axum server, not Tauri):
@@ -109,8 +109,9 @@ another machine on the network.
 3. Log into the **Viewer App** and **Web Portal** with the same username/password — same account,
    same data, three surfaces.
 
-See `docs/HOW_TO_USE_MAIN_APP.md`, `docs/HOW_TO_USE_VIEWER_APP.md`, `docs/HOW_TO_USE_WEB_PORTAL.md`
-for what each app can do, and `docs/testing/` for full manual test walkthroughs.
+See `docs/HOW_TO_USE_APP.md` (current, all three UIs), `docs/HOW_TO_USE_VIEWER_APP.md` and
+`docs/HOW_TO_USE_WEB_PORTAL.md` for what each app can do, and `docs/testing/` for full manual test
+walkthroughs. After first login, Settings → Interface switches between the Classic, New and Make UIs.
 
 ## Troubleshooting
 
@@ -120,5 +121,7 @@ for what each app can do, and `docs/testing/` for full manual test walkthroughs.
   missing; re-run `scripts/setup-dependencies.ps1` or the manual `winget` command in step 2.
 - **Tauri window never opens / blank window** → WebView2 Runtime missing; install via step 2's
   table.
-- **`npx tauri dev` in `viewer-src-tauri` doesn't pick up its config** → run
-  `npx tauri dev --config tauri.conf.json` explicitly from inside `viewer-src-tauri/`.
+- **`npm run viewer:dev` doesn't pick up its config** → from inside `viewer-src-tauri/`, run
+  `npx tauri dev --config tauri.conf.json` explicitly.
+- **Black/blank window on launch (WebView2)** → a mitigation shipped in commit `c891ce6`; update to
+  the latest build, and make sure the WebView2 Runtime is installed (step 2).

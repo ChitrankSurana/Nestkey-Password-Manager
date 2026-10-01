@@ -20,6 +20,9 @@ pub const PRUNE_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 pub enum UploadCache {
     Csv(Zeroizing<Vec<u8>>),
     Backup(Zeroizing<Vec<u8>>),
+    /// The full-fidelity JSON vault export/import feature's upload slot - same one-shot cache
+    /// discipline as Csv/Backup above.
+    Json(Zeroizing<Vec<u8>>),
 }
 
 /// One logged-in browser session. Owns a full `AppState` (its own vault connection + lock timer +
@@ -58,10 +61,18 @@ impl UserSession {
     }
 
     /// Clones out the cached backup bytes, if any. Returns `None` if nothing is cached or the
-    /// cached upload is a `Csv`, not a `Backup`.
+    /// cached upload is a `Csv`/`Json`, not a `Backup`.
     pub fn backup_upload(&self) -> Option<Vec<u8>> {
         match &*self.upload_cache.lock().unwrap() {
             Some(UploadCache::Backup(bytes)) => Some(bytes.to_vec()),
+            _ => None,
+        }
+    }
+
+    /// Clones out the cached JSON vault export bytes, if any.
+    pub fn json_upload(&self) -> Option<Vec<u8>> {
+        match &*self.upload_cache.lock().unwrap() {
+            Some(UploadCache::Json(bytes)) => Some(bytes.to_vec()),
             _ => None,
         }
     }

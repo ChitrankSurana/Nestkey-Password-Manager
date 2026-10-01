@@ -1,7 +1,8 @@
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { api, isCommandError, isTauri } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 import { Spinner } from "../components/Spinner";
+import { getLastUsername, getRememberLastUsername, recordLastUsername } from "../lib/lastUsername";
 
 export function Login({
   onSuccess,
@@ -10,7 +11,7 @@ export function Login({
   onSuccess: (username: string) => void;
   onSwitchToRegister?: () => void;
 }) {
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(() => (getRememberLastUsername() ? getLastUsername() : ""));
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
   const [pinAvailable, setPinAvailable] = useState(false);
@@ -19,21 +20,38 @@ export function Login({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  async function checkQuickUnlockAvailable() {
-    if (username.trim() === "") return;
+  async function checkQuickUnlockAvailable(forUsername: string) {
+    if (forUsername.trim() === "") {
+      setPinAvailable(false);
+      setBiometricAvailable(false);
+      return;
+    }
     try {
-      setPinAvailable(await api.hasPin(username));
+      setPinAvailable(await api.hasPin(forUsername));
     } catch {
       setPinAvailable(false);
     }
     if (isTauri) {
       try {
-        setBiometricAvailable(await api.hasBiometric(username));
+        setBiometricAvailable(await api.hasBiometric(forUsername));
       } catch {
         setBiometricAvailable(false);
       }
     }
   }
+
+  // B5: previously only ran on the username field's onBlur, so the "Unlock with Windows Hello"
+  // button's actual appearance depended on a blur event firing at all - fragile for anything that
+  // sets the input value programmatically (a password manager's own autofill, browser automation)
+  // without dispatching one. A debounced effect on `username` itself is the reliable trigger, and
+  // also covers a remembered/prefilled username on mount with no blur involved.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      checkQuickUnlockAvailable(username);
+    }, 200);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [username]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -41,12 +59,22 @@ export function Login({
     setSubmitting(true);
     try {
       const result = usePin ? await api.unlockWithPin(username, pin) : await api.login(username, password);
+      recordLastUsername(result.username);
       onSuccess(result.username);
     } catch (err) {
       // Single generic message on any failure (TRD §3.2 / THREAT_MODEL wrong-password oracle) -
       // do not display err.message variations beyond what the backend already collapsed to one
       // string; just surface it as-is since the backend already guarantees it's generic.
-      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+      // B8: the shared backend message ("Incorrect master password.") is correct wording for a
+      // reauth prompt (this user's own password, no username field), but on the Login screen it
+      // names the wrong field when the actual problem could equally be the username - reword only
+      // here, not in core/src/error.rs, since that message is also used by reauth prompts where the
+      // more specific wording is accurate.
+      if (isCommandError(err) && err.code === "invalid_credentials") {
+        setError("Invalid username or password.");
+      } else {
+        setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+      }
     } finally {
       setPassword("");
       setPin("");
@@ -59,6 +87,7 @@ export function Login({
     setSubmitting(true);
     try {
       const result = await api.unlockWithBiometric(username);
+      recordLastUsername(result.username);
       onSuccess(result.username);
     } catch (err) {
       setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
@@ -77,7 +106,6 @@ export function Login({
             className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            onBlur={checkQuickUnlockAvailable}
             autoFocus
             autoComplete="username"
             title="Your registered username"

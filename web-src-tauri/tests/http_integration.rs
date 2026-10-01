@@ -247,7 +247,7 @@ async fn update_reprompt_mode_route_persists_and_is_visible_in_get_config() {
     let res = client
         .post(format!("{base}/api/update_reprompt_mode"))
         .header("x-pwmgr-csrf", "1")
-        .json(&serde_json::json!({"mode":"global"}))
+        .json(&serde_json::json!({"mode":"grace"}))
         .send()
         .await
         .unwrap();
@@ -263,7 +263,7 @@ async fn update_reprompt_mode_route_persists_and_is_visible_in_get_config() {
         .json()
         .await
         .unwrap();
-    assert_eq!(config["repromptMode"], "global");
+    assert_eq!(config["repromptMode"], "grace");
 }
 
 #[tokio::test]
@@ -282,11 +282,11 @@ async fn update_reprompt_mode_route_rejects_an_unknown_mode() {
     let res = client
         .post(format!("{base}/api/update_reprompt_mode"))
         .header("x-pwmgr-csrf", "1")
-        .json(&serde_json::json!({"mode":"always"}))
+        .json(&serde_json::json!({"mode":"perCredential"}))
         .send()
         .await
         .unwrap();
-    assert_ne!(res.status(), 200, "an unknown reprompt mode must not succeed");
+    assert_ne!(res.status(), 200, "a retired/unknown reprompt mode must not succeed");
     let body: serde_json::Value = res.json().await.unwrap();
     assert_eq!(body["code"], "invalid_input");
 }
@@ -1402,4 +1402,44 @@ async fn five_failed_pin_unlocks_lock_the_key_out_with_429() {
     assert_eq!(body["code"], "throttled");
     // Even the correct PIN is refused while locked out.
     assert_eq!(attempt("123456").await.status(), 429);
+}
+
+#[tokio::test]
+async fn vault_exists_route_reflects_registration_state() {
+    // N1: the Login/Register choice needs this before any session exists - same "public,
+    // pre-session" contract as has_pin, verified end-to-end here over real HTTP.
+    let (base, _dir) = spawn_server().await;
+    let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
+
+    let before: bool = client
+        .post(format!("{base}/api/vault_exists"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(before, false);
+
+    client
+        .post(format!("{base}/api/register_user"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({"username":"alice","masterPassword":"correct horse battery staple"}))
+        .send()
+        .await
+        .unwrap();
+
+    let after: bool = client
+        .post(format!("{base}/api/vault_exists"))
+        .header("x-pwmgr-csrf", "1")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(after, true);
 }

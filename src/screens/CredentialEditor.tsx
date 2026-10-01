@@ -3,6 +3,9 @@ import { api, isCommandError, CredentialDto, CustomField, CustomFieldType } from
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 import { PasswordGeneratorPanel } from "../components/PasswordGeneratorPanel";
+import { MasterPasswordPrompt } from "../components/MasterPasswordPrompt";
+import { isRepromptRequired, markRepromptSuccess } from "../lib/reprompt";
+import { isPlausibleTotpSecret } from "../lib/totp";
 
 let nextFieldKey = 0;
 type EditableField = CustomField & { key: number };
@@ -21,7 +24,7 @@ export function CredentialEditor({
   const [username, setUsername] = useState(existing?.username ?? "");
   const [secret, setSecret] = useState(existing?.secret ?? "");
   const [remarks, setRemarks] = useState(existing?.remarks ?? "");
-  const [reprompt, setReprompt] = useState(existing?.reprompt ?? false);
+  const [repromptExempt, setRepromptExempt] = useState(existing?.repromptExempt ?? false);
   const [fields, setFields] = useState<EditableField[]>(
     () => (existing?.customFields ?? []).map((f) => ({ ...f, key: nextFieldKey++ })),
   );
@@ -29,6 +32,16 @@ export function CredentialEditor({
   const [removeTotp, setRemoveTotp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // B3/N22: a brand-new credential's password is fresh input the user is actively typing/
+  // generating, nothing to protect yet - starts revealed. An existing credential's already-stored
+  // secret starts masked, matching how it's shown everywhere else in the app; revealing it here
+  // goes through the same reprompt gate as SecretField.
+  const [passwordRevealed, setPasswordRevealed] = useState(existing === null);
+  const [showReauth, setShowReauth] = useState(false);
+  // B3: the generator panel is one of the biggest contributors to the modal's overflow height:
+  // collapsed by default when editing (the password is presumably already fine), open by default
+  // when adding (about to pick one).
+  const [generatorOpen, setGeneratorOpen] = useState(existing === null);
 
   function addField() {
     setFields((fs) => [...fs, { key: nextFieldKey++, label: "", value: "", fieldType: "text" }]);
@@ -40,6 +53,18 @@ export function CredentialEditor({
     setFields((fs) => fs.map((f) => (f.key === key ? { ...f, ...patch } : f)));
   }
 
+  function togglePasswordReveal() {
+    if (passwordRevealed) {
+      setPasswordRevealed(false);
+      return;
+    }
+    if (isRepromptRequired(repromptExempt)) {
+      setShowReauth(true);
+      return;
+    }
+    setPasswordRevealed(true);
+  }
+
   const [algorithm, setAlgorithm] = useState("simple");
 
   useEffect(() => {
@@ -48,6 +73,12 @@ export function CredentialEditor({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    // J2: validate before starting the add/edit + TOTP sequence - previously a bad secret's
+    // rejection only arrived after the credential itself had already been persisted.
+    if (totpSecretInput.trim() !== "" && !isPlausibleTotpSecret(totpSecretInput)) {
+      setError("TOTP secret must be a valid base32 string.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -55,16 +86,26 @@ export function CredentialEditor({
         .filter((f) => f.label.trim() !== "")
         .map(({ label, value, fieldType }) => ({ label, value, fieldType }));
       let credentialId: number;
+      let isNewCredential = false;
       if (existing) {
-        await api.updateCredential(existing.id, username || null, secret, remarks || null, customFields, reprompt);
+        await api.updateCredential(existing.id, username || null, secret, remarks || null, customFields, repromptExempt);
         credentialId = existing.id;
       } else {
-        credentialId = await api.addCredential(siteId, username || null, secret, remarks || null, customFields, reprompt);
+        credentialId = await api.addCredential(siteId, username || null, secret, remarks || null, customFields, repromptExempt);
+        isNewCredential = true;
       }
-      if (totpSecretInput.trim() !== "") {
-        await api.setTotpSecret(credentialId, totpSecretInput.trim());
-      } else if (removeTotp) {
-        await api.clearTotpSecret(credentialId);
+      try {
+        if (totpSecretInput.trim() !== "") {
+          await api.setTotpSecret(credentialId, totpSecretInput.trim());
+        } else if (removeTotp) {
+          await api.clearTotpSecret(credentialId);
+        }
+      } catch (err) {
+        // J2: only roll back a credential THIS submit just created - undoing an edit to an
+        // existing one isn't as simple as a delete, and the credential existed before this
+        // attempt regardless of whether TOTP now fails to attach.
+        if (isNewCredential) await api.softDeleteCredential(credentialId).catch(() => {});
+        throw err;
       }
       onSaved();
     } catch (err) {
@@ -76,7 +117,26 @@ export function CredentialEditor({
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-80 space-y-3 rounded bg-[var(--surface)] p-4 text-[var(--fg)]">
+      {showReauth && (
+        <MasterPasswordPrompt
+          title="Re-enter your master password"
+          onResult={(ok) => {
+            setShowReauth(false);
+            if (ok) {
+              markRepromptSuccess();
+              setPasswordRevealed(true);
+            }
+          }}
+        />
+      )}
+      {/* B3: no scroll container here previously - content taller than the viewport (the always-
+          mounted generator panel, custom fields, TOTP) pushed the Save/Cancel footer off-screen with
+          no way to reach it. max-h + overflow-y-auto keeps the footer reachable regardless of
+          window size. */}
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-80 max-h-[calc(100vh-2rem)] overflow-y-auto space-y-3 rounded bg-[var(--surface)] p-4 text-[var(--fg)]"
+      >
         <h2 className="text-lg font-semibold">{existing ? "Edit credential" : "Add credential"}</h2>
         <label className="block">
           <span className="text-sm">Username (optional)</span>
@@ -90,15 +150,37 @@ export function CredentialEditor({
         </label>
         <label className="block">
           <span className="text-sm">Password</span>
-          <input
-            className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            title="The password to store, encrypted"
-          />
+          <div className="mt-1 flex items-center gap-1">
+            <input
+              className="flex-1 rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
+              type={passwordRevealed ? "text" : "password"}
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              title="The password to store, encrypted"
+            />
+            <button
+              type="button"
+              onClick={togglePasswordReveal}
+              className="rounded border px-2 py-1 text-xs border-[var(--border)]"
+              title={passwordRevealed ? "Hide password" : "Show password"}
+            >
+              {passwordRevealed ? "Hide" : "Show"}
+            </button>
+          </div>
         </label>
 
-        <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm={algorithm} disabled={submitting} />
+        <div>
+          <button
+            type="button"
+            onClick={() => setGeneratorOpen((v) => !v)}
+            className="text-xs opacity-70 hover:opacity-100"
+          >
+            {generatorOpen ? "▾ Hide generator" : "▸ Generate a password"}
+          </button>
+          {generatorOpen && (
+            <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm={algorithm} disabled={submitting} />
+          )}
+        </div>
 
         <label className="block">
           <span className="text-sm">Remarks (optional)</span>
@@ -188,10 +270,12 @@ export function CredentialEditor({
           )}
         </label>
 
+        {/* B7: every credential is gated by the master password by default now - this checkbox is
+            the opt-OUT, not the opt-in the old "Require master password to view" copy described. */}
         <label className="flex items-center gap-2">
-          <input type="checkbox" checked={reprompt} onChange={(e) => setReprompt(e.target.checked)} />
-          <span className="text-sm" title="Ask for the master password again before revealing or copying this item, even while the vault is unlocked">
-            Require master password to view
+          <input type="checkbox" checked={repromptExempt} onChange={(e) => setRepromptExempt(e.target.checked)} />
+          <span className="text-sm" title="Skip the master-password prompt when revealing or copying this item - not recommended">
+            Don't require master password to view
           </span>
         </label>
 

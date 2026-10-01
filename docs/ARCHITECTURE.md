@@ -1,6 +1,6 @@
 # Architecture
 
-**Last updated:** 2026-07-01
+**Last updated:** 2026-09-30
 
 ## 1. Overview
 
@@ -8,9 +8,11 @@
 +---------------------------------------------------------------+
 |  Frontend  (React + TypeScript + Tailwind, runs in webview)   |
 |                                                                 |
-|  Screens: Login/Register · Vault (list+search) · Entry editor  |
-|  Generator · Health Dashboard · Settings/Themes · Backup       |
-|  Import/Export · Trash                                         |
+|  Three UI variants (config.ui_variant): Classic · New · Make   |
+|  (src/, src/newui, src/makeui), plus ViewerApp for the viewer. |
+|  Screens: Login/Register · Vault (folders, item types, search) |
+|  Entry editor · Generator · Health · Settings · Data Hub       |
+|  (backup, CSV/JSON import-export) · Trash                      |
 |                                                                 |
 |  Holds: UI state, currently-displayed plaintext fields only.   |
 |  Never holds: master password beyond the login form submit,    |
@@ -27,7 +29,13 @@
 |   health      entropy · reuse · age · HIBP (opt-in)             |
 |   backup      encrypted backup file · restore                  |
 |   portio      CSV import (Chromium/Firefox/mapper) + export     |
-|   commands    #[tauri::command] IPC surface                     |
+|   jsonio      full-fidelity JSON export/import (sealed envelope)|
+|   totp        TOTP code generation                              |
+|   biometric   Windows Hello unlock (desktop)                    |
+|   ssh_agent   SSH agent over named pipe; ssh_keys key storage   |
+|   hibp        opt-in breach check (k-anonymity)                 |
+|   autolock · config · paths · dto · state                       |
+|   commands    shared do_* command logic (IPC/HTTP agnostic)     |
 +---------------------------------------------------------------+
 |  Disk                                                          |
 |   ~/.pwmgr/registry.db          (unencrypted: usernames+salts) |
@@ -53,8 +61,19 @@
 - **Read-only viewer (M5) reuses `crypto` + `vault` + `registry`** as a library crate, compiled into a
   second, smaller Tauri binary with no write-path commands registered — so "read-only" is enforced by
   what code exists in the binary, not just by UI restrictions.
-- **Web mode (M6) reuses the same Rust core**, adding an HTTP layer bound to `127.0.0.1` only, with a
-  session-token middleware in front of the same `commands` module.
+- **Web mode (M6) reuses the same Rust core**, adding an HTTP layer (`web-src-tauri`, Axum) bound to
+  `127.0.0.1` only, with a session-token middleware in front of the same `commands` module. Phase 9
+  hardened it: no client-supplied filesystem paths (export is a download body; CSV import and backup
+  restore are raw-body uploads cached per session), a login/register/PIN throttle with doubling
+  lockout, a bounded Argon2 semaphore, and a strict CSP plus security headers.
+- **Four crates, one core.** `pwmgr-core` (`core/`) is shared by `src-tauri` (desktop app),
+  `viewer-src-tauri` (read-only), and `web-src-tauri` (web portal). Each feature lands in the order
+  core → desktop wrapper → web wrapper/route → frontend API client + UI.
+- **Reprompt gate.** Secrets are gated by the master password by default; the per-credential
+  `reprompt_exempt` column opts one item out (the retired `reprompt` column is unused).
+- **History vs. change log.** Password history (`credential_history`) stays password-only; the
+  per-credential change log (`credential_change_log` table, written from `core/src/vault.rs`)
+  records general edits (username, fields, etc.).
 
 ## 3. Key Data Flows
 

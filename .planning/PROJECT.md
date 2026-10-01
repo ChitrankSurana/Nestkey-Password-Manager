@@ -34,14 +34,22 @@ dated 2026-09-13. See REQUIREMENTS.md for the full checklist with REQ-IDs. -->
 - ✓ Windows Hello biometric unlock (opt-in) and an SSH agent over a Windows named pipe (opt-in,
   desktop-only) — Phase 7 (shipped on `feature/bitwarden-port-phase1`, post-dates the original PRD)
 
+- ✓ New vault UI port (Figma design): item types (Login/Secure Note/Payment Card/Identity),
+  favorites, folders, per-item health card, reprompt gate — Phase 8 (completed 2026-09-19)
+- ✓ Security hardening of the shipped web mode: no client-supplied filesystem paths (export =
+  download, import/restore = upload), login/register/PIN throttle + bounded Argon2 concurrency,
+  strict CSP/security headers — Phase 9 (verified 2026-09-19, `threats_open: 0`)
+
 ### Active
 
-<!-- Current scope. Not yet started as of this writing. -->
+<!-- Current scope. Work is ad-hoc on feature/modern-ui-overhaul, outside GSD phases. -->
 
-- [ ] New vault UI port (Figma design): item types (Login/Secure Note/Payment Card/Identity),
-  favorites, folders, per-item health card — Phase 8
-- [ ] Security hardening of the already-shipped web mode: file-path confinement, login
-  rate-limiting + bounded Argon2 concurrency, CSP/security headers — Phase 9
+- [ ] Modern UI overhaul: Make UI (third UI variant, `ui_variant: "make"`) ported from the Figma
+  Make prototype, with full folders/item types/custom fields/password history UI — largely built
+  on `feature/modern-ui-overhaul`, not yet merged to `main`
+- [ ] UAT remediation (Waves 0-4, `docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md`): Waves 1-4
+  fixed and committed (incl. full-fidelity JSON export/import, per-credential change log, Viewer
+  restyle); Wave 0 live retests and the deferred web-mode pass still open
 
 ### Out of Scope
 
@@ -75,9 +83,9 @@ as already complete (see codebase map at `.planning/codebase/`, especially `ARCH
 `STRUCTURE.md`, for what actually exists on disk today) rather than re-planning shipped work.
 
 **Developer-facing success metric (as originally scoped):** all PRD milestones M1-M6 shipped and
-manually tested. This is already true. Remaining active scope (Phases 8-9) extends past the
-original PRD into a Figma-driven UI port and a security-hardening pass, both surfaced during this
-onboarding rather than in the original PRD.
+manually tested. This is already true. Phases 8-9 (Figma-driven UI port, security hardening)
+extended past the original PRD and are now complete; the Make UI overhaul and UAT remediation
+continue as ad-hoc work after them.
 
 **Where the forward scope came from:**
 - Phase 8 traces to `docs/FIGMA_UI_VS_CURRENT_FEATURES.md`, which compares a Figma mockup against
@@ -93,12 +101,10 @@ onboarding rather than in the original PRD.
   `strength_algorithm` Settings toggle, contradicting one design doc's wording but confirmed
   intentional per `docs/KNOWN_LIMITATIONS.md`. Tracked as a doc-only cleanup todo, not a defect:
   `.planning/todos/pending/2026-09-13-resolve-m4-health-dashboard-weak-classification-doc-conflict.md`.
-- Rust-side (`cargo test --workspace`) test counts reported in the ingested M1-M6 plan docs (up to
-  243 tests) could not be cross-checked against the fresh codebase map, whose `CONCERNS.md` and
-  `TESTING.md` describe only the frontend TypeScript/Vitest suite (2 test files) and flag auth,
-  crypto, and vault operations as untested. These two views were generated from different sources
-  (doc ingest vs. static code scan) and were not reconciled by this roadmapping pass — worth a
-  direct `cargo test --workspace` run before Phase 9 is planned.
+- *(Resolved)* The Rust test-count discrepancy: `cargo test --workspace` is run before every
+  commit. At commit `7534127` (2026-09-27) it reported 439 passing (`core` 366, `src-tauri` 2,
+  `viewer-src-tauri` 26, `web-src-tauri` 45) plus 54 frontend vitest tests. `.planning/codebase/`
+  `CONCERNS.md` / `TESTING.md` (2026-09-13) understate coverage and are stale.
 
 ## Constraints
 
@@ -128,8 +134,8 @@ onboarding rather than in the original PRD.
 | One shared Rust core (`pwmgr-core`) reused by desktop, Viewer, and web binaries instead of 3 separate implementations | Keeps crypto/vault logic in exactly one place; Viewer's read-only guarantee becomes structural (compile-time), not a UI restriction | ✓ Good |
 | Web mode hard-bound to `127.0.0.1`, not a config option | Prevents accidentally exposing a zero-knowledge vault to the LAN | ✓ Good |
 | M4 Health Dashboard "Weak" always classifies via zxcvbn, ignoring the `strength_algorithm` Settings toggle | No Rust port of the "simple" entropy formula exists; corroborated as intentional by `KNOWN_LIMITATIONS.md`, `HOW_TO_USE_MAIN_APP.md`, and the M4 test checklist | ⚠️ Revisit — doc-vs-shipped-behavior mismatch tracked as a todo, not a functional defect |
-| Phase 8 (new-UI port) keeps item types + folders in scope, despite Bitwarden-comparison research explicitly recommending against both (speculative scope, no PRD user story) | `docs/FIGMA_UI_VS_CURRENT_FEATURES.md` already scheduled this exact scope as "Closing"; the Bitwarden-comparison docs are explicitly research-only/advisory, not a locked project decision | ⚠️ Revisit — worth an explicit go/no-go before Phase 8 planning starts |
+| Phase 8 (new-UI port) keeps item types + folders in scope, despite Bitwarden-comparison research explicitly recommending against both (speculative scope, no PRD user story) | `docs/FIGMA_UI_VS_CURRENT_FEATURES.md` already scheduled this exact scope as "Closing"; the Bitwarden-comparison docs are explicitly research-only/advisory, not a locked project decision | ✓ Resolved — Phase 8 shipped with item types and folders in scope |
 | No ADR-type documents exist for this project; architectural decisions live narratively inside `docs/PRD.md` / `docs/TRD.md` / `docs/THREAT_MODEL.md` / the M4-M6 design specs | 0 of 39 ingested docs were classified `type: ADR` (doc-ingest run, 2026-09-13) | — Pending — formalize as ADRs later if desired |
 
 ---
-*Last updated: 2026-09-13 after brownfield doc-ingest and initial roadmap creation*
+*Last updated: 2026-09-30 after Phases 8-9 completion and Make UI / UAT remediation work (originally 2026-09-13, brownfield doc-ingest)*

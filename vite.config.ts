@@ -37,6 +37,7 @@ export default defineConfig(async () => ({
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         viewer: fileURLToPath(new URL("./viewer.html", import.meta.url)),
         newui: fileURLToPath(new URL("./newui.html", import.meta.url)),
+        makeui: fileURLToPath(new URL("./makeui.html", import.meta.url)),
       },
     },
   },

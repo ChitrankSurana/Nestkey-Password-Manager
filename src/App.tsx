@@ -17,6 +17,18 @@ function App() {
 
   useActivityWatcher(screen === "vault");
 
+  // N1: a fresh install had no way to know it was fresh, so it always opened on Login even though
+  // there was no account yet to log into (M1.1/M2.1). Only flips to Register if still on the
+  // default "login" screen when this resolves.
+  useEffect(() => {
+    api
+      .vaultExists()
+      .then((exists) => {
+        if (!exists) setScreen((s) => (s === "login" ? "register" : s));
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     // Defaults to dark/indigo (this app's original look) until config loads, matching the
     // hardcoded class index.html used to set unconditionally - no unstyled flash either way.

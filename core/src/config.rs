@@ -7,10 +7,16 @@ pub const VALID_STRENGTH_ALGORITHMS: [&str; 2] = ["simple", "zxcvbn"];
 pub const VALID_ACCENT_COLORS: [&str; 5] = ["indigo", "sky", "teal", "purple", "pink"];
 pub const VALID_OLD_PASSWORD_DAYS: [u32; 3] = [90, 180, 365];
 pub const VALID_MOBILE_NAV_STYLES: [&str; 3] = ["icon-rail", "bottom-tabs", "drawer"];
-pub const VALID_UI_VARIANTS: [&str; 2] = ["classic", "new"];
+pub const VALID_UI_VARIANTS: [&str; 3] = ["classic", "new", "make"];
 // Exact camelCase spellings the UAT's locked decision names and the frontend compares against
 // directly - keeping one spelling end to end avoids a translation layer.
-pub const VALID_REPROMPT_MODES: [&str; 2] = ["perCredential", "global"];
+// B7: replaces the old ["perCredential", "global"] pair. Every credential is gated by the master
+// password now, unconditionally - there is no more "unflagged credentials never prompt" case, so
+// a per-credential mode with no grace window no longer means anything. This toggle now only picks
+// how the *shared* grace window behaves: "grace" keeps a window open after a correct entry (same
+// mechanics the old "global" mode had), "always" never opens one. See Config::load for the
+// migration mapping from the retired spellings.
+pub const VALID_REPROMPT_MODES: [&str; 2] = ["grace", "always"];
 // A fixed allowlist rather than a free integer, matching how VALID_AUTO_LOCK_MINUTES constrains
 // the other timeout the user can pick - a free integer would need its own range validation and
 // would let a user disable the reprompt gate by entering an enormous grace window.
@@ -60,10 +66,10 @@ fn default_ssh_agent_enabled() -> bool {
     false
 }
 
-// Every existing install must keep today's exact behavior until the user opts in - only
-// credentials with "Require reprompt" on ask for the master password, and they ask every time.
+// B7: "grace" (a shared window after one correct entry) is the friendlier default for a policy
+// that now applies to every credential rather than just ones an existing install had flagged.
 fn default_reprompt_mode() -> String {
-    "perCredential".to_string()
+    "grace".to_string()
 }
 
 fn default_reprompt_grace_seconds() -> u32 {
@@ -100,15 +106,17 @@ pub struct Config {
     #[serde(default = "default_ssh_agent_enabled")]
     pub ssh_agent_enabled: bool,
     // Selects which frontend entry the desktop window builds from at boot (Phase 8, D-02/D-03):
-    // "classic" -> index.html (today's UI, unchanged), "new" -> newui.html (Figma port). Read
+    // "classic" -> index.html (today's UI, unchanged), "new" -> newui.html (Figma port), "make" ->
+    // makeui.html (Figma Make port). Read
     // once at startup in src-tauri/src/lib.rs, applied on next launch after a Settings change.
     #[serde(default = "default_ui_variant")]
     pub ui_variant: String,
-    // Reprompt policy (Phase 8 gap G-08-2): "perCredential" (default, today's behavior) only
-    // gates credentials with their own "Require reprompt" flag on, every single time. "global"
-    // gates every credential's reveal/copy, but a correct entry opens a grace window
-    // (reprompt_grace_seconds) during which further reveals/copies for ANY credential do not
-    // re-prompt. The grace window applies only in "global" mode.
+    // Reprompt policy (Phase 8 gap G-08-2, reworked for B7): every credential's reveal/copy is
+    // gated by the master password now, with no per-credential opt-out from this field - a
+    // credential's own `reprompt` flag instead means "exempt me from this gate" (see vault.rs).
+    // "grace" (default): a correct entry opens a vault-wide grace window (reprompt_grace_seconds)
+    // during which further reveals/copies for ANY credential do not re-prompt. "always": no grace
+    // window, every reveal prompts.
     #[serde(default = "default_reprompt_mode")]
     pub reprompt_mode: String,
     #[serde(default = "default_reprompt_grace_seconds")]
@@ -187,6 +195,17 @@ impl Config {
             Config { ui_variant: default_ui_variant(), ..parsed }
         } else {
             parsed
+        };
+        // B7 migration: a config.json saved by a pre-B7 build has "perCredential" or "global",
+        // neither of which is in the new VALID_REPROMPT_MODES. Map them to the closest new
+        // meaning rather than letting the generic snap-to-default below silently pick "grace" for
+        // an install that had deliberately chosen the no-grace behavior: old "global" already had
+        // a grace window (map to "grace"); old "perCredential" prompted every time with no grace
+        // window at all for the credentials it covered (map to "always", the closest match).
+        let parsed = match parsed.reprompt_mode.as_str() {
+            "perCredential" => Config { reprompt_mode: "always".to_string(), ..parsed },
+            "global" => Config { reprompt_mode: "grace".to_string(), ..parsed },
+            _ => parsed,
         };
         let parsed = if !VALID_REPROMPT_MODES.contains(&parsed.reprompt_mode.as_str()) {
             Config { reprompt_mode: default_reprompt_mode(), ..parsed }
@@ -444,6 +463,18 @@ mod tests {
     }
 
     #[test]
+    fn save_then_load_roundtrips_make_ui_variant() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let config = Config { ui_variant: "make".to_string(), ..Config::default() };
+
+        config.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+
+        assert_eq!(loaded.ui_variant, "make");
+    }
+
+    #[test]
     fn load_rejects_invalid_ui_variant_by_falling_back_to_default() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.json");
@@ -452,10 +483,10 @@ mod tests {
     }
 
     #[test]
-    fn load_defaults_reprompt_mode_to_per_credential() {
+    fn load_defaults_reprompt_mode_to_grace() {
         let dir = tempdir().unwrap();
         let config = Config::load(&dir.path().join("config.json")).unwrap();
-        assert_eq!(config.reprompt_mode, "perCredential");
+        assert_eq!(config.reprompt_mode, "grace");
         assert_eq!(config.reprompt_grace_seconds, 30);
     }
 
@@ -468,7 +499,7 @@ mod tests {
         let config = Config::load(&path).unwrap();
 
         assert_eq!(config.theme, "light");
-        assert_eq!(config.reprompt_mode, "perCredential");
+        assert_eq!(config.reprompt_mode, "grace");
         assert_eq!(config.reprompt_grace_seconds, 30);
     }
 
@@ -477,7 +508,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.json");
         let config = Config {
-            reprompt_mode: "global".to_string(),
+            reprompt_mode: "always".to_string(),
             reprompt_grace_seconds: 60,
             ..Config::default()
         };
@@ -485,7 +516,7 @@ mod tests {
         config.save(&path).unwrap();
         let loaded = Config::load(&path).unwrap();
 
-        assert_eq!(loaded.reprompt_mode, "global");
+        assert_eq!(loaded.reprompt_mode, "always");
         assert_eq!(loaded.reprompt_grace_seconds, 60);
     }
 
@@ -493,8 +524,23 @@ mod tests {
     fn load_rejects_invalid_reprompt_mode_by_falling_back_to_default() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.json");
-        std::fs::write(&path, r#"{"reprompt_mode":"always"}"#).unwrap();
-        assert_eq!(Config::load(&path).unwrap().reprompt_mode, "perCredential");
+        std::fs::write(&path, r#"{"reprompt_mode":"nonsense"}"#).unwrap();
+        assert_eq!(Config::load(&path).unwrap().reprompt_mode, "grace");
+    }
+
+    #[test]
+    fn load_migrates_pre_b7_reprompt_mode_spellings() {
+        // B7 retired "perCredential"/"global" in favor of "always"/"grace" - a config.json saved
+        // by an older build must not silently reset to the new default, which could be the
+        // opposite of what the install had configured.
+        let dir = tempdir().unwrap();
+        let per_credential_path = dir.path().join("per-credential.json");
+        std::fs::write(&per_credential_path, r#"{"reprompt_mode":"perCredential"}"#).unwrap();
+        assert_eq!(Config::load(&per_credential_path).unwrap().reprompt_mode, "always");
+
+        let global_path = dir.path().join("global.json");
+        std::fs::write(&global_path, r#"{"reprompt_mode":"global"}"#).unwrap();
+        assert_eq!(Config::load(&global_path).unwrap().reprompt_mode, "grace");
     }
 
     #[test]

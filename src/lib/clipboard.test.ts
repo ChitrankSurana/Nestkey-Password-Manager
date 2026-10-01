@@ -32,4 +32,18 @@ describe("webCopyToClipboard", () => {
     await vi.advanceTimersByTimeAsync(CLIPBOARD_CLEAR_MS);
     expect(value).toBe("user-copied-something-else");
   });
+
+  it("N9: with autoClear=false, writes immediately and never schedules a clear", async () => {
+    let value = "";
+    const clipboard = {
+      writeText: vi.fn(async (t: string) => { value = t; }),
+      readText: vi.fn(async () => value),
+    };
+
+    await webCopyToClipboard("bob@example.com", clipboard, false);
+    expect(value).toBe("bob@example.com");
+
+    await vi.advanceTimersByTimeAsync(CLIPBOARD_CLEAR_MS * 2);
+    expect(value).toBe("bob@example.com");
+  });
 });

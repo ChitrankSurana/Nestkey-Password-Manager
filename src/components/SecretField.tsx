@@ -2,8 +2,16 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { toast } from "../lib/toast";
 import { classifyChar } from "../lib/passwordColor";
-import { ensureRepromptConfig, isRepromptRequired, markRepromptSuccess } from "../lib/reprompt";
+import {
+  ensureRepromptConfig,
+  isRepromptRequired,
+  markRepromptSuccess,
+  subscribeToRepromptExpiry,
+} from "../lib/reprompt";
+import { maskString, randomMaskLength } from "../lib/mask";
 import { Icon } from "./Icon";
+import { IconCopy } from "../makeui/icons";
+import { MK_COPY_BUTTON_CLASS } from "../makeui/components/CopyButton";
 import { Spinner } from "./Spinner";
 
 const CLASS_COLOR: Record<"digit" | "symbol", string> = {
@@ -16,12 +24,17 @@ const CLASS_COLOR: Record<"digit" | "symbol", string> = {
 // Colorizes digits/symbols on reveal (Bitwarden's bit-color-password idea) - letters inherit the
 // default text color, only digit/symbol runs get a wrapping span.
 //
-// `reprompt` is the per-item "require master password to view" flag - it still fully gates
-// reveal/copy in Per-credential mode (today's default). In Global mode (G-08-2) every credential
-// prompts regardless of this flag, and one correct entry opens a shared grace window read by
-// every mounted SecretField; see src/lib/reprompt.ts and src/lib/repromptPolicy.ts.
-export function SecretField({ secret, reprompt }: { secret: string; reprompt?: boolean }) {
+// B7: every credential is gated by the master password now. `exempt` (the credential's own
+// `repromptExempt` flag, inverted from its pre-B7 meaning) is a per-credential opt-OUT of that
+// gate - the exception, not the rule. One correct entry opens a shared grace window (in "grace"
+// mode) read by every mounted SecretField; see src/lib/reprompt.ts and src/lib/repromptPolicy.ts.
+export function SecretField({ secret, exempt, variant }: { secret: string; exempt?: boolean; variant?: "make" }) {
   const [revealed, setRevealed] = useState(false);
+  // N8: computed once per mount (lazy initializer), not on every render - a mask whose length
+  // visibly changed on every re-render would be its own tell that it's fake/random, defeating the
+  // point. Stable for the life of this field instance is enough to stop it correlating with the
+  // real secret's length.
+  const [maskLength] = useState(() => randomMaskLength(secret.length));
   const [pendingAction, setPendingAction] = useState<"reveal" | "copy" | null>(null);
   const [password, setPassword] = useState("");
   const [reauthError, setReauthError] = useState<string | null>(null);
@@ -33,6 +46,14 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
     void ensureRepromptConfig();
   }, []);
 
+  useEffect(() => {
+    // B7: re-mask this field the instant the shared grace window expires, rather than leaving a
+    // revealed secret on screen indefinitely until some unrelated action happens to re-check the
+    // gate. Only subscribes while actually revealed - an already-masked field has nothing to do.
+    if (!revealed) return;
+    return subscribeToRepromptExpiry(() => setRevealed(false));
+  }, [revealed]);
+
   function runAction(action: "reveal" | "copy") {
     if (action === "reveal") {
       setRevealed((r) => !r);
@@ -43,13 +64,19 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
   }
 
   function requestAction(action: "reveal" | "copy") {
+    // B7: hiding an already-revealed value must never itself prompt - only the reveal direction
+    // is gated. Previously this ran the same gate for both directions, so hiding a field after
+    // the grace window expired would (bizarrely) ask for the master password just to mask it.
+    if (action === "reveal" && revealed) {
+      setRevealed(false);
+      return;
+    }
     // Decides through the shared reprompt policy instead of a bare flag check (G-08-2). If the
-    // config read hasn't resolved yet, the default policy is Per-credential - today's behavior -
-    // so this deliberately fails open rather than prompting spuriously on every field before
-    // config loads. The reprompt gate is a convenience gate over an already-unlocked vault, not a
-    // security boundary (SECURITY_CONCERNS.md records that decrypted secrets are in the DOM while
-    // unlocked).
-    if (isRepromptRequired(reprompt === true)) {
+    // config read hasn't resolved yet, the default policy still gates every reveal - see
+    // DEFAULT_REPROMPT_POLICY - so this never fails open on a slow config load. The reprompt gate
+    // is a convenience gate over an already-unlocked vault, not a security boundary
+    // (SECURITY_CONCERNS.md records that decrypted secrets are in the DOM while unlocked).
+    if (isRepromptRequired(exempt === true)) {
       setPendingAction(action);
     } else {
       runAction(action);
@@ -92,7 +119,7 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
                 ch
               );
             })
-          : "••••••••"}
+          : maskString(maskLength)}
       </span>
       <button
         type="button"
@@ -106,9 +133,15 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
         type="button"
         title="Copy"
         onClick={() => requestAction("copy")}
-        className="rounded px-2 py-0.5 border border-[var(--border)]"
+        className={variant === "make" ? MK_COPY_BUTTON_CLASS : "rounded px-2 py-0.5 border border-[var(--border)]"}
       >
-        <Icon name="clipboard" /> Copy
+        {variant === "make" ? (
+          <IconCopy size={12} />
+        ) : (
+          <>
+            <Icon name="clipboard" /> Copy
+          </>
+        )}
       </button>
 
       {pendingAction !== null && (
@@ -136,6 +169,12 @@ export function SecretField({ secret, reprompt }: { secret: string; reprompt?: b
                   setPendingAction(null);
                   setPassword("");
                   setReauthError(null);
+                  // B7: this dialog only ever opens on a reveal attempt (hiding now skips the gate
+                  // entirely, above), so `revealed` is already false here by construction - this
+                  // is a defensive no-op, not something normal execution relies on, but it means
+                  // "Cancel never leaves a secret visible" holds even if a future change to
+                  // requestAction's short-circuit above ever let this dialog open while revealed.
+                  setRevealed(false);
                 }}
                 className="px-3 py-1 text-sm"
               >

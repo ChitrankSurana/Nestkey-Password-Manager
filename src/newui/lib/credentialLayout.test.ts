@@ -10,7 +10,7 @@ function credential(id: number): CredentialDto {
     secret: "secret",
     remarks: null,
     customFields: [],
-    reprompt: false,
+    repromptExempt: false,
     hasTotp: false,
   };
 }

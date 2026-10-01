@@ -1,5 +1,5 @@
 use crate::config::{VALID_ACCENT_COLORS, VALID_AUTO_LOCK_MINUTES, VALID_MOBILE_NAV_STYLES, VALID_OLD_PASSWORD_DAYS, VALID_REPROMPT_GRACE_SECONDS, VALID_REPROMPT_MODES, VALID_STRENGTH_ALGORITHMS, VALID_UI_VARIANTS};
-use crate::dto::{AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest, HealthEntryDto, HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
+use crate::dto::{AuthSuccess, BreachReportDto, ChangeLogEntryDto, ConfigDto, CredentialDto, ExportMode, FolderDto, GenerateRequest, HealthEntryDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, ReusedGroupDto, SearchResultDto, SiteDto, StrengthDto, TotpCodeDto, TrashedCredentialDto};
 use crate::error::CommandError;
 use crate::paths::AppPaths;
 use crate::session::SystemClock;
@@ -53,6 +53,15 @@ pub fn do_verify_master_password(state: &AppState, master_password: &str) -> Res
 pub fn do_has_pin(state: &AppState, username: &str) -> Result<bool, CommandError> {
     let registry = state.registry.lock().unwrap();
     Ok(crate::auth::has_pin(&registry, username)?)
+}
+
+/// N1: whether ANY account has ever been registered on this machine - callable while locked (the
+/// Login/Register choice happens before any vault is open), so this only touches the registry.
+/// `registry::list_usernames` (used only here until now) has no per-user filter because there is
+/// none to apply: this is a single yes/no over the whole registry, not a lookup for one username.
+pub fn do_vault_exists(state: &AppState) -> Result<bool, CommandError> {
+    let registry = state.registry.lock().unwrap();
+    Ok(!crate::registry::list_usernames(&registry)?.is_empty())
 }
 
 // Holds `session` while acquiring `registry` (needs the live vault key to seal, and the registry
@@ -196,8 +205,97 @@ pub fn do_list_credentials_for_site(
 pub fn do_search(state: &AppState, query: &str) -> Result<Vec<SearchResultDto>, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
-    let results = crate::vault::search(conn, query)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let results = crate::vault::search(conn, key, query)?;
     Ok(results.into_iter().map(SearchResultDto::from).collect())
+}
+
+pub fn do_list_credential_history(
+    state: &AppState,
+    credential_id: i64,
+) -> Result<Vec<HistoryEntryDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let history = crate::vault::list_credential_history(conn, key, credential_id)?;
+    Ok(history.into_iter().map(HistoryEntryDto::from).collect())
+}
+
+/// Wave 4 follow-up (M7.2): the per-credential change log, separate from password history above -
+/// no key needed since these rows are plain TEXT, not sealed (see `log_field_change`'s doc comment
+/// on why: never secrets or custom fields, just username/remarks/reprompt-exempt).
+pub fn do_list_credential_change_log(
+    state: &AppState,
+    credential_id: i64,
+) -> Result<Vec<ChangeLogEntryDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let log = crate::vault::list_credential_change_log(conn, credential_id)?;
+    Ok(log.into_iter().map(ChangeLogEntryDto::from).collect())
+}
+
+/// B1-6, the orchestrator: three sequential, non-overlapping lock windows (registry, then vault,
+/// then registry again), matching the "never hold `vault` and `registry` at once" discipline every
+/// other function in this file already follows (see `do_set_pin`'s own comment on its one
+/// deliberate exception, which this is not - this function never holds two of these locks
+/// simultaneously). See `auth::PasswordChangeMaterial`, `vault::reseal_all_blobs` and
+/// `vault::rekey_vault`'s doc comments for why this exact ordering and the pre-flight backup are
+/// both load-bearing, not defensive extras.
+pub fn do_change_master_password(
+    state: &AppState,
+    paths: &AppPaths,
+    current_password: &str,
+    new_password: &str,
+) -> Result<(), CommandError> {
+    if new_password.is_empty() {
+        return Err(crate::error::invalid_input_error("Choose a new master password."));
+    }
+
+    let username = {
+        let session = state.session.lock().unwrap();
+        session.username().ok_or_else(crate::error::locked_error)?.to_string()
+    };
+
+    // Step 1 (registry only): verify current_password, derive old/new keys and the new registry
+    // record. No vault access yet.
+    let material = {
+        let registry = state.registry.lock().unwrap();
+        crate::auth::prepare_password_change(&registry, &username, current_password, new_password)?
+    };
+
+    // Pre-flight backup - same bundle format the Data Hub's own backup command writes - taken
+    // BEFORE any mutation. The one recovery path if step 2 fails partway: restore this file and
+    // the vault is fully consistent again under the OLD password (registry hasn't changed yet).
+    let (backup_username, bundle) = build_backup_bundle(state)?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let backup_path = paths.backups_dir().join(format!("{}-premasterchange-{}.bak", backup_username, timestamp));
+    std::fs::write(&backup_path, &bundle).map_err(|_| crate::error::internal_error())?;
+
+    // Step 2 (vault only): re-seal every sealed blob under the new key, then re-key the file
+    // itself. Order matters - see vault::reseal_all_blobs's doc comment.
+    {
+        let vault_guard = state.vault.lock().unwrap();
+        let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+        crate::vault::reseal_all_blobs(conn, &material.old_vault_key, &material.new_vault_key)?;
+        crate::vault::rekey_vault(conn, &material.new_vault_key)?;
+    }
+
+    // Step 3 (registry only): commit the new salts/verifier/sentinel, clear PIN + biometric (both
+    // wrap the old key). Only reached once the vault is fully consistent under the new key.
+    {
+        let registry = state.registry.lock().unwrap();
+        crate::auth::commit_password_change(&registry, &username, &material)?;
+    }
+
+    // Re-arm the session with the new key so the vault stays usable without a fresh login.
+    state.session.lock().unwrap().unlock(material.new_vault_key, &username, &SystemClock);
+
+    Ok(())
 }
 
 pub fn do_get_config(state: &AppState) -> ConfigDto {
@@ -259,6 +357,60 @@ pub fn do_update_site(
     Ok(crate::vault::update_site(conn, site_id, name, url, notes)?)
 }
 
+pub fn do_set_site_favorite(state: &AppState, site_id: i64, favorite: bool) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::set_site_favorite(conn, site_id, favorite)?)
+}
+
+pub fn do_set_site_item_type(state: &AppState, site_id: i64, item_type: &str) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::set_site_item_type(conn, site_id, item_type)?)
+}
+
+pub fn do_set_site_card_hint(
+    state: &AppState,
+    site_id: i64,
+    brand: Option<&str>,
+    last4: Option<&str>,
+) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::set_site_card_hint(conn, site_id, brand, last4)?)
+}
+
+pub fn do_set_site_folder(state: &AppState, site_id: i64, folder_id: Option<i64>) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::set_site_folder(conn, site_id, folder_id)?)
+}
+
+pub fn do_list_folders(state: &AppState) -> Result<Vec<FolderDto>, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::list_folders(conn)?.into_iter().map(FolderDto::from).collect())
+}
+
+pub fn do_add_folder(state: &AppState, name: &str) -> Result<i64, CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::add_folder(conn, name)?)
+}
+
+pub fn do_rename_folder(state: &AppState, folder_id: i64, name: &str) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::rename_folder(conn, folder_id, name)?)
+}
+
+/// Unfiles the folder's items; never deletes them (see vault::delete_folder).
+pub fn do_delete_folder(state: &AppState, folder_id: i64) -> Result<(), CommandError> {
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::vault::delete_folder(conn, folder_id)?)
+}
+
 pub fn do_soft_delete_site(state: &AppState, site_id: i64) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
@@ -277,13 +429,13 @@ pub fn do_add_credential(
     secret: &str,
     remarks: Option<&str>,
     custom_fields: &[crate::vault::CustomField],
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<i64, CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
-    Ok(crate::vault::add_credential(conn, key, site_id, username, secret, remarks, custom_fields, reprompt)?)
+    Ok(crate::vault::add_credential(conn, key, site_id, username, secret, remarks, custom_fields, reprompt_exempt)?)
 }
 
 pub fn do_update_credential(
@@ -293,13 +445,13 @@ pub fn do_update_credential(
     secret: &str,
     remarks: Option<&str>,
     custom_fields: &[crate::vault::CustomField],
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<(), CommandError> {
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
-    Ok(crate::vault::update_credential(conn, key, credential_id, username, secret, remarks, custom_fields, reprompt)?)
+    Ok(crate::vault::update_credential(conn, key, credential_id, username, secret, remarks, custom_fields, reprompt_exempt)?)
 }
 
 pub fn do_soft_delete_credential(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
@@ -312,11 +464,16 @@ pub fn do_set_totp_secret(state: &AppState, credential_id: i64, secret: &str) ->
     // Fail fast on a bad secret before persisting it - generate_code's own base32 decode is the
     // validation; the timestamp passed here is irrelevant to whether decoding succeeds.
     crate::totp::generate_code(secret, 0)?;
+    // J2: persist the normalized form (whitespace/dashes/padding stripped, uppercased), not the
+    // raw pasted string - do_totp_code already re-normalizes on every read regardless, so this
+    // doesn't change behavior, it just stores the value it actually reads as instead of leaving
+    // the raw one sitting in the vault only because normalize_secret happens to be idempotent.
+    let normalized = crate::totp::normalize_secret(secret);
     let vault_guard = state.vault.lock().unwrap();
     let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
     let session = state.session.lock().unwrap();
     let key = session.key().ok_or_else(crate::error::locked_error)?;
-    Ok(crate::vault::set_totp_secret(conn, key, credential_id, secret)?)
+    Ok(crate::vault::set_totp_secret(conn, key, credential_id, &normalized)?)
 }
 
 pub fn do_clear_totp_secret(state: &AppState, credential_id: i64) -> Result<(), CommandError> {
@@ -841,6 +998,120 @@ pub fn do_read_csv_headers(path: &str) -> Result<Vec<String>, CommandError> {
     do_read_csv_headers_from_str(&text)
 }
 
+// --- Full-fidelity JSON vault export/import (Wave 4 follow-up) ---
+// Mirrors the CSV export functions immediately above (same three modes via the same
+// `ExportMode`, same sealed envelope from `portio::encode_sealed_csv`) plus a real import path,
+// which the CSV encrypted export has never had (see portio.rs's decode_sealed_bytes doc comment).
+
+pub fn do_export_json_bytes(state: &AppState, mode: &ExportMode, confirmed: bool) -> Result<Vec<u8>, CommandError> {
+    if matches!(mode, ExportMode::Plaintext) && !confirmed {
+        return Err(crate::error::invalid_input_error(
+            "Plaintext export requires explicit confirmation.",
+        ));
+    }
+
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+
+    let export = crate::jsonio::build_json_export(conn, key)?;
+    let json_bytes = crate::jsonio::export_to_json_bytes(&export)?;
+
+    let bytes: Vec<u8> = match mode {
+        ExportMode::Plaintext => json_bytes,
+        ExportMode::ThisDevice => {
+            let (ciphertext, nonce) = crate::crypto::seal(key, &json_bytes).map_err(|_| crate::error::internal_error())?;
+            crate::portio::encode_sealed_csv(None, &nonce, &ciphertext)
+        }
+        ExportMode::WithPassword { password } => {
+            let salt = crate::crypto::random_salt();
+            let pw_key = crate::crypto::derive_key(password, &salt).map_err(|_| crate::error::internal_error())?;
+            let (ciphertext, nonce) = crate::crypto::seal(&pw_key, &json_bytes).map_err(|_| crate::error::internal_error())?;
+            crate::portio::encode_sealed_csv(Some(&salt), &nonce, &ciphertext)
+        }
+    };
+    Ok(bytes)
+}
+
+pub fn do_export_json_download(
+    state: &AppState,
+    paths: &AppPaths,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(String, Vec<u8>), CommandError> {
+    let bytes = do_export_json_bytes(state, mode, confirmed)?;
+    let filename = if matches!(mode, ExportMode::Plaintext) {
+        if let Err(e) = append_plaintext_export_log(paths, "<web download>") {
+            eprintln!("warning: failed to append plaintext export log entry: {e}");
+        }
+        "vault-export.json"
+    } else {
+        "vault-export.pwenc.json"
+    };
+    Ok((filename.to_string(), bytes))
+}
+
+pub fn do_export_json(
+    state: &AppState,
+    paths: &AppPaths,
+    path: &str,
+    mode: &ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    let bytes = do_export_json_bytes(state, mode, confirmed)?;
+    std::fs::write(path, &bytes).map_err(|_| crate::error::internal_error())?;
+    if matches!(mode, ExportMode::Plaintext) {
+        if let Err(e) = append_plaintext_export_log(paths, path) {
+            eprintln!("warning: failed to append plaintext export log entry: {e}");
+        }
+    }
+    Ok(())
+}
+
+/// Unseals (if needed) and parses an uploaded/read export file into the structure both preview and
+/// commit need. `password` is required only when the file turns out to be in with-password mode;
+/// `ThisDevice`-mode files decrypt with the CURRENT session's vault key, so they can only be
+/// re-imported into the same vault they were exported from - portability across vaults needs
+/// with-password or plaintext mode, same distinction the export side already documents.
+fn decrypt_json_export(state: &AppState, bytes: &[u8], password: Option<&str>) -> Result<crate::jsonio::JsonExportVault, CommandError> {
+    // Plaintext files parse directly as JSON; anything else is our sealed envelope.
+    if let Ok(export) = crate::jsonio::parse_json_export(bytes) {
+        return Ok(export);
+    }
+    let payload = crate::portio::decode_sealed_bytes(bytes)?;
+    let plaintext = match payload {
+        crate::portio::SealedPayload::ThisDevice { nonce, ciphertext } => {
+            let session = state.session.lock().unwrap();
+            let key = session.key().ok_or_else(crate::error::locked_error)?;
+            crate::crypto::open(key, &ciphertext, &nonce).map_err(|_| crate::error::invalid_input_error("Could not decrypt that file with this vault's key."))?
+        }
+        crate::portio::SealedPayload::WithPassword { salt, nonce, ciphertext } => {
+            let password = password.ok_or_else(|| crate::error::invalid_input_error("This file needs the password it was exported with."))?;
+            let pw_key = crate::crypto::derive_key(password, &salt).map_err(|_| crate::error::internal_error())?;
+            crate::crypto::open(&pw_key, &ciphertext, &nonce).map_err(|_| crate::error::invalid_input_error("Incorrect export password."))?
+        }
+    };
+    Ok(crate::jsonio::parse_json_export(&plaintext)?)
+}
+
+pub fn do_import_json_preview(state: &AppState, bytes: &[u8], password: Option<&str>) -> Result<crate::jsonio::JsonImportPreview, CommandError> {
+    let export = decrypt_json_export(state, bytes, password)?;
+    let vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_ref().ok_or_else(crate::error::locked_error)?;
+    Ok(crate::jsonio::preview_json_import(conn, &export)?)
+}
+
+pub fn do_import_json_commit(state: &AppState, bytes: &[u8], password: Option<&str>) -> Result<ImportSummaryDto, CommandError> {
+    let export = decrypt_json_export(state, bytes, password)?;
+    let mut vault_guard = state.vault.lock().unwrap();
+    let (conn, _) = vault_guard.as_mut().ok_or_else(crate::error::locked_error)?;
+    let session = state.session.lock().unwrap();
+    let key = session.key().ok_or_else(crate::error::locked_error)?;
+    let summary = crate::jsonio::import_json_vault(conn, key, &export)?;
+    Ok(ImportSummaryDto::from(summary))
+}
+
 /// Path-free preview parse (SEC-01/D-01/D-03): the web branch reads no filesystem path at all —
 /// its caller decodes the session's cached upload bytes into a `&str` and hands it here directly.
 /// Reading does not consume anything (this takes `&str`, not ownership of the cache), so the same
@@ -1208,6 +1479,21 @@ mod tests {
         assert_eq!(login.username, "alice");
         assert!(!state.session.lock().unwrap().is_locked());
         assert!(state.vault.lock().unwrap().is_some());
+    }
+
+    #[test]
+    fn vault_exists_reflects_whether_any_account_has_ever_registered() {
+        let (state, paths, _dir) = test_state_and_paths();
+        assert_eq!(do_vault_exists(&state).unwrap(), false);
+
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        assert_eq!(do_vault_exists(&state).unwrap(), true);
+
+        // Still true even locked - this only ever looks at the registry, never state.session or
+        // state.vault (both are None/locked here), matching do_has_pin's own "works while locked"
+        // contract that the Login/Register screen relies on.
+        do_lock(&state);
+        assert_eq!(do_vault_exists(&state).unwrap(), true);
     }
 
     #[test]
@@ -1844,6 +2130,79 @@ mod tests {
     }
 
     #[test]
+    fn export_json_with_password_then_import_json_preview_and_commit_round_trips_through_commands() {
+        // Command-layer round trip (unlike jsonio.rs's own unit tests, which call jsonio functions
+        // directly): export from one state, import into a second, fresh, differently-keyed vault -
+        // the actual portability use case this feature exists for.
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.json");
+        do_export_json(
+            &state, &paths, out_path.to_str().unwrap(),
+            &ExportMode::WithPassword { password: "export password".to_string() }, false,
+        ).unwrap();
+        let bytes = std::fs::read(&out_path).unwrap();
+
+        let (target_state, target_paths, _target_dir) = test_state_and_paths();
+        do_register(&target_state, &target_paths, "bob", "another password entirely").unwrap();
+
+        let preview = do_import_json_preview(&target_state, &bytes, Some("export password")).unwrap();
+        assert_eq!(preview.site_count, 1);
+        assert_eq!(preview.credential_count, 1);
+        assert_eq!(preview.duplicate_credential_count, 0);
+
+        let summary = do_import_json_commit(&target_state, &bytes, Some("export password")).unwrap();
+        assert_eq!(summary.imported, 1);
+        assert_eq!(summary.duplicates, 0);
+
+        let sites = do_list_sites(&target_state).unwrap();
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].name, "example.com");
+    }
+
+    #[test]
+    fn import_json_commit_rejects_the_wrong_export_password() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.json");
+        do_export_json(
+            &state, &paths, out_path.to_str().unwrap(),
+            &ExportMode::WithPassword { password: "correct password".to_string() }, false,
+        ).unwrap();
+        let bytes = std::fs::read(&out_path).unwrap();
+
+        let result = do_import_json_commit(&state, &bytes, Some("wrong password"));
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn import_json_commit_rejects_a_file_that_is_not_a_vault_export() {
+        let (state, _paths, _dir) = seeded_vault_state();
+        let result = do_import_json_commit(&state, b"just some random bytes, not an export", None);
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn export_json_plaintext_mode_without_confirmation_is_rejected() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.json");
+        let result = do_export_json(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, false);
+        assert_eq!(result.unwrap_err().code(), "invalid_input");
+        assert!(!out_path.exists());
+    }
+
+    #[test]
+    fn export_json_plaintext_mode_writes_readable_json_with_every_field() {
+        let (state, paths, dir) = seeded_vault_state();
+        let out_path = dir.path().join("export.json");
+        do_export_json(&state, &paths, out_path.to_str().unwrap(), &ExportMode::Plaintext, true).unwrap();
+        let text = std::fs::read_to_string(&out_path).unwrap();
+        assert!(text.contains("example.com"));
+        assert!(text.contains("s3cret!"));
+        // Confirms this is not just the CSV shape re-serialized - fields CSV never carried.
+        assert!(text.contains("repromptExempt"));
+        assert!(text.contains("customFields"));
+    }
+
+    #[test]
     fn export_csv_plaintext_mode_appends_an_entry_to_the_local_export_log() {
         let (state, paths, dir) = seeded_vault_state();
         let out_path = dir.path().join("export.csv");
@@ -2099,6 +2458,30 @@ mod tests {
         assert_eq!(totp.code.len(), 6);
         assert!(totp.code.chars().all(|c| c.is_ascii_digit()));
         assert!(totp.seconds_remaining >= 1 && totp.seconds_remaining <= 30);
+    }
+
+    #[test]
+    fn set_totp_secret_accepts_a_padded_messy_secret_and_persists_the_normalized_form() {
+        // J2: a padded/spaced/lowercase secret (as pasted from some issuer's setup screen) must
+        // both be accepted and stored normalized, so a later read doesn't depend on
+        // do_totp_code's own re-normalization to work - do_get_ssh... err, list_ssh_keys aside,
+        // reads should see the same clean value that generated the very first code.
+        let (state, paths, dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site_id = do_add_site(&state, "example.com", None, None).unwrap();
+        let cred_id = do_add_credential(&state, site_id, Some("alice"), "s3cret", None, &[], false).unwrap();
+
+        do_set_totp_secret(&state, cred_id, " jbsw-y3dp ehpk3pxp=\t\n").unwrap();
+
+        let vault_guard = state.vault.lock().unwrap();
+        let (conn, _) = vault_guard.as_ref().unwrap();
+        let session = state.session.lock().unwrap();
+        let key = session.key().unwrap();
+        let stored = crate::vault::get_totp_secret(conn, key, cred_id).unwrap().unwrap();
+        assert_eq!(stored, "JBSWY3DPEHPK3PXP");
+        drop(session);
+        drop(vault_guard);
+        drop(dir);
     }
 
     #[test]
@@ -2391,6 +2774,8 @@ mod tests {
         let (state, paths, _dir) = test_state_and_paths();
         do_update_ui_variant(&state, &paths, "new").unwrap();
         assert_eq!(do_get_config(&state).ui_variant, "new");
+        do_update_ui_variant(&state, &paths, "make").unwrap();
+        assert_eq!(do_get_config(&state).ui_variant, "make");
         assert_eq!(do_update_ui_variant(&state, &paths, "figma-preview").unwrap_err().code(), "invalid_input");
     }
 
@@ -2413,9 +2798,9 @@ mod tests {
     #[test]
     fn update_reprompt_mode_persists_and_rejects_invalid_value() {
         let (state, paths, _dir) = test_state_and_paths();
-        do_update_reprompt_mode(&state, &paths, "global").unwrap();
-        assert_eq!(do_get_config(&state).reprompt_mode, "global");
-        assert_eq!(do_update_reprompt_mode(&state, &paths, "always").unwrap_err().code(), "invalid_input");
+        do_update_reprompt_mode(&state, &paths, "always").unwrap();
+        assert_eq!(do_get_config(&state).reprompt_mode, "always");
+        assert_eq!(do_update_reprompt_mode(&state, &paths, "perCredential").unwrap_err().code(), "invalid_input");
     }
 
     #[test]
@@ -2430,7 +2815,7 @@ mod tests {
     fn get_config_includes_reprompt_defaults() {
         let (state, _paths, _dir) = test_state_and_paths();
         let config = do_get_config(&state);
-        assert_eq!(config.reprompt_mode, "perCredential");
+        assert_eq!(config.reprompt_mode, "grace");
         assert_eq!(config.reprompt_grace_seconds, 30);
     }
 
@@ -2439,8 +2824,50 @@ mod tests {
         let (state, _paths, dir) = test_state_and_paths();
         let bad_paths = AppPaths::new(dir.path().join("nonexistent-subdir-xyz"));
         let before = do_get_config(&state).reprompt_mode;
-        let result = do_update_reprompt_mode(&state, &bad_paths, "global");
+        let result = do_update_reprompt_mode(&state, &bad_paths, "always");
         assert!(result.is_err());
         assert_eq!(do_get_config(&state).reprompt_mode, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn make_ui_item_commands_require_unlock_and_roundtrip_through_dtos() {
+        let (state, paths, _dir) = test_state_and_paths();
+        assert!(format!("{:?}", do_list_folders(&state).unwrap_err()).contains("locked"));
+        assert!(format!("{:?}", do_set_site_favorite(&state, 1, true).unwrap_err()).contains("locked"));
+
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site = do_add_site(&state, "Chase", None, None).unwrap();
+        let folder = do_add_folder(&state, "Finance").unwrap();
+
+        do_set_site_favorite(&state, site, true).unwrap();
+        do_set_site_item_type(&state, site, "card").unwrap();
+        do_set_site_card_hint(&state, site, Some("Visa"), Some("3921")).unwrap();
+        do_set_site_folder(&state, site, Some(folder)).unwrap();
+
+        let s = &do_list_sites(&state).unwrap()[0];
+        assert!(s.favorite);
+        assert_eq!(s.item_type, "card");
+        assert_eq!(s.folder_id, Some(folder));
+        assert_eq!(s.card_last4.as_deref(), Some("3921"));
+        assert_eq!(do_list_folders(&state).unwrap()[0].name, "Finance");
+
+        do_rename_folder(&state, folder, "Money").unwrap();
+        assert_eq!(do_list_folders(&state).unwrap()[0].name, "Money");
+        do_delete_folder(&state, folder).unwrap();
+        assert!(do_list_folders(&state).unwrap().is_empty());
+        assert_eq!(do_list_sites(&state).unwrap()[0].folder_id, None);
+    }
+
+    #[test]
+    fn make_ui_item_commands_surface_invalid_input_and_not_found_codes() {
+        let (state, paths, _dir) = test_state_and_paths();
+        do_register(&state, &paths, "alice", "correct horse battery staple").unwrap();
+        let site = do_add_site(&state, "a.com", None, None).unwrap();
+
+        assert_eq!(do_set_site_item_type(&state, site, "passport").unwrap_err().code(), "invalid_input");
+        assert_eq!(do_set_site_card_hint(&state, site, None, Some("12")).unwrap_err().code(), "invalid_input");
+        assert_eq!(do_add_folder(&state, " ").unwrap_err().code(), "invalid_input");
+        assert_eq!(do_set_site_favorite(&state, 999, true).unwrap_err().code(), "not_found");
+        assert_eq!(do_delete_folder(&state, 999).unwrap_err().code(), "not_found");
     }
 }

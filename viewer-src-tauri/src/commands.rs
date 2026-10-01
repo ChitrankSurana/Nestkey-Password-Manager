@@ -66,10 +66,15 @@ const CLIPBOARD_CLEAR_SECS: u64 = 30; // hardcoded constant, NOT a user setting 
 // intentional, justified deviation as src-tauri/src/commands.rs's copy_to_clipboard - duplicated
 // here (not shared via core) because this whole function is Tauri-AppHandle/clipboard-plugin-
 // specific.
+// N9: `auto_clear` matches src-tauri/src/commands.rs's copy_to_clipboard signature - the shared
+// frontend (src/lib/api.ts) calls whichever binary is running with the same arguments either way.
 #[tauri::command]
-pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), CommandError> {
+pub fn copy_to_clipboard(app: tauri::AppHandle, text: String, auto_clear: bool) -> Result<(), CommandError> {
     let secret = Zeroizing::new(text);
     app.clipboard().write_text(secret.as_str()).map_err(|_| pwmgr_core::error::internal_error())?;
+    if !auto_clear {
+        return Ok(());
+    }
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(CLIPBOARD_CLEAR_SECS)).await;

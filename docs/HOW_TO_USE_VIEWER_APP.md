@@ -1,5 +1,7 @@
 # How to Use — Viewer App
 
+> **Status note (2026-09-30):** The Viewer was restyled onto the Make UI's visual language after this guide was written (commit `f417284`), so screenshots/descriptions of the old Classic look no longer match. It remains read-only (master-password login; view, search, copy). Full feature reference for the main app: `docs/HOW_TO_USE_APP.md`.
+
 The Viewer App is a **second, smaller desktop app** for one specific situation: you need to look up
 a password, but the Main App is unavailable — broken, mid-update, or just not installed on the
 machine you're at. It opens the exact same encrypted vault, but can only ever read from it: this

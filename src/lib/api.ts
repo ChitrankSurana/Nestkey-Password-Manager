@@ -39,13 +39,28 @@ export interface SiteDto {
   name: string;
   url: string | null;
   notes: string | null;
+  favorite: boolean;
+  folderId: number | null;
+  /** "login" | "note" | "card" | "identity" (Make UI). */
+  itemType: string;
+  /** Non-secret card display hints; the full number lives only in the sealed custom-fields blob. */
+  cardBrand: string | null;
+  cardLast4: string | null;
+}
+
+export interface FolderDto {
+  id: number;
+  name: string;
 }
 
 export type CustomFieldType = "text" | "hidden" | "boolean";
 
 // A union rather than `string` so the reprompt gate (plan 08-12) cannot typo a mode and silently
 // fall through to the permissive branch.
-export type RepromptMode = "perCredential" | "global";
+// B7: "grace" (a vault-wide grace window after one correct entry) / "always" (no grace, every
+// reveal prompts) - replaces the old "perCredential"/"global" pair now that every credential is
+// gated by default instead of only ones with their own flag set.
+export type RepromptMode = "grace" | "always";
 
 export interface CustomField {
   label: string;
@@ -60,7 +75,9 @@ export interface CredentialDto {
   secret: string;
   remarks: string | null;
   customFields: CustomField[];
-  reprompt: boolean;
+  // B7: inverted from the pre-B7 meaning. Every credential is gated by the master password by
+  // default now; this is a per-credential opt-OUT of that gate, not an opt-in to it.
+  repromptExempt: boolean;
   hasTotp: boolean;
 }
 
@@ -76,12 +93,25 @@ export interface SearchResultDto {
   username: string | null;
 }
 
+export interface HistoryEntryDto {
+  secret: string;
+  changedAt: string;
+}
+
+export interface ChangeLogEntryDto {
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedAt: string;
+}
+
 export interface TrashedCredentialDto {
   credentialId: number;
   siteId: number;
   siteName: string;
   username: string | null;
   deletedAt: string;
+  itemType: string;
 }
 
 export interface ConfigDto {
@@ -135,6 +165,13 @@ export interface ImportRecordDto {
 }
 
 export interface ImportSummaryDto { imported: number; duplicates: number; }
+
+export interface JsonImportPreviewDto {
+  folderCount: number;
+  siteCount: number;
+  credentialCount: number;
+  duplicateCredentialCount: number;
+}
 
 export interface HealthEntryDto {
   credentialId: number;
@@ -280,6 +317,10 @@ export const api = {
   login: (username: string, masterPassword: string) =>
     call<AuthSuccess>("login", { username, masterPassword }),
   hasPin: (username: string) => call<boolean>("has_pin", { username }),
+  // N1: whether ANY account has ever been registered on this machine - lets the Login/Register
+  // choice open on the right screen for a genuinely fresh install instead of always defaulting to
+  // Login even when there's no account yet to log into.
+  vaultExists: () => call<boolean>("vault_exists"),
   unlockWithPin: (username: string, pin: string) =>
     call<AuthSuccess>("unlock_with_pin", { username, pin }),
   setPin: (pin: string) => call<void>("set_pin", { pin }),
@@ -297,6 +338,8 @@ export const api = {
   touch: () => call<void>("touch"),
   verifyMasterPassword: (masterPassword: string) =>
     call<boolean>("verify_master_password", { masterPassword }),
+  changeMasterPassword: (currentPassword: string, newPassword: string) =>
+    call<void>("change_master_password", { currentPassword, newPassword }),
   unlockStatus: () => call<boolean>("unlock_status"),
   listSites: () => call<SiteDto[]>("list_sites"),
   addSite: (name: string, url: string | null, notes: string | null) =>
@@ -304,22 +347,31 @@ export const api = {
   updateSite: (siteId: number, name: string, url: string | null, notes: string | null) =>
     call<void>("update_site", { siteId, name, url, notes }),
   softDeleteSite: (siteId: number) => call<void>("soft_delete_site", { siteId }),
+  setSiteFavorite: (siteId: number, favorite: boolean) => call<void>("set_site_favorite", { siteId, favorite }),
+  setSiteItemType: (siteId: number, itemType: string) => call<void>("set_site_item_type", { siteId, itemType }),
+  setSiteCardHint: (siteId: number, brand: string | null, last4: string | null) =>
+    call<void>("set_site_card_hint", { siteId, brand, last4 }),
+  setSiteFolder: (siteId: number, folderId: number | null) => call<void>("set_site_folder", { siteId, folderId }),
+  listFolders: () => call<FolderDto[]>("list_folders"),
+  addFolder: (name: string) => call<number>("add_folder", { name }),
+  renameFolder: (folderId: number, name: string) => call<void>("rename_folder", { folderId, name }),
+  deleteFolder: (folderId: number) => call<void>("delete_folder", { folderId }),
   addCredential: (
     siteId: number,
     username: string | null,
     secret: string,
     remarks: string | null,
     customFields: CustomField[] = [],
-    reprompt: boolean = false,
-  ) => call<number>("add_credential", { siteId, username, secret, remarks, customFields, reprompt }),
+    repromptExempt: boolean = false,
+  ) => call<number>("add_credential", { siteId, username, secret, remarks, customFields, repromptExempt }),
   updateCredential: (
     credentialId: number,
     username: string | null,
     secret: string,
     remarks: string | null,
     customFields: CustomField[] = [],
-    reprompt: boolean = false,
-  ) => call<void>("update_credential", { credentialId, username, secret, remarks, customFields, reprompt }),
+    repromptExempt: boolean = false,
+  ) => call<void>("update_credential", { credentialId, username, secret, remarks, customFields, repromptExempt }),
   listCredentialsForSite: (siteId: number) =>
     call<CredentialDto[]>("list_credentials_for_site", { siteId }),
   search: (query: string) => call<SearchResultDto[]>("search", { query }),
@@ -329,6 +381,8 @@ export const api = {
     call<void>("set_totp_secret", { credentialId, secret }),
   clearTotpSecret: (credentialId: number) => call<void>("clear_totp_secret", { credentialId }),
   totpCode: (credentialId: number) => call<TotpCodeDto | null>("totp_code", { credentialId }),
+  listCredentialHistory: (credentialId: number) => call<HistoryEntryDto[]>("list_credential_history", { credentialId }),
+  listCredentialChangeLog: (credentialId: number) => call<ChangeLogEntryDto[]>("list_credential_change_log", { credentialId }),
   listTrash: () => call<TrashedCredentialDto[]>("list_trash"),
   restoreCredential: (credentialId: number) => call<void>("restore_credential", { credentialId }),
   purgeTrash: () => call<number>("purge_trash"),
@@ -347,8 +401,10 @@ export const api = {
   generatePassword: (request: GenerateRequest) => call<string>("generate_password", { request }),
   analyzeStrength: (password: string) => call<StrengthDto>("analyze_strength", { password }),
   // No HTTP endpoint for clipboard - the browser has its own API. Desktop keeps the Tauri command.
-  copyToClipboard: (text: string) =>
-    isTauri ? invoke<void>("copy_to_clipboard", { text }) : webCopyToClipboard(text),
+  // N9: autoClear defaults to true (every pre-existing call site copies a secret) - CopyButton is
+  // the one caller that passes false, for non-secret copies (username, URL, a Text custom field).
+  copyToClipboard: (text: string, autoClear = true) =>
+    isTauri ? invoke<void>("copy_to_clipboard", { text, autoClear }) : webCopyToClipboard(text, undefined, autoClear),
   // Desktop writes to the path from the native save dialog; web downloads the bytes (save picker
   // where the browser supports it) and resolves to the file name instead of a server path.
   createBackup: async (destinationPath: string | null = null): Promise<string> => {
@@ -386,6 +442,26 @@ export const api = {
       : httpPost<ImportRecordDto[]>("import_csv_preview", { format }),
   importCsvCommit: (records: ImportRecordDto[]) =>
     call<ImportSummaryDto>("import_csv_commit", { records }),
+  // Full-fidelity JSON vault export/import (Wave 4 follow-up) - unlike CSV, carries folders,
+  // favorites, item type, card hints, custom fields, TOTP secrets, and password history. Same
+  // three ExportMode modes, same desktop-path-vs-web-upload split as exportCsv/uploadCsv above.
+  exportJson: (path: string | null, mode: ExportMode, confirmed: boolean) =>
+    isTauri
+      ? invoke<void>("export_json", { path, mode, confirmed })
+      : httpDownload(
+          "export_json",
+          { mode, confirmed },
+          mode.mode === "plaintext" ? "vault-export.json" : "vault-export.pwenc.json",
+        ),
+  uploadJsonExport: (file: File) => httpUpload("upload_json", file),
+  importJsonPreview: (path: string | null, password: string | null) =>
+    isTauri
+      ? invoke<JsonImportPreviewDto>("import_json_preview", { path, password })
+      : httpPost<JsonImportPreviewDto>("import_json_preview", { password }),
+  importJsonCommit: (path: string | null, password: string | null) =>
+    isTauri
+      ? invoke<ImportSummaryDto>("import_json_commit", { path, password })
+      : httpPost<ImportSummaryDto>("import_json_commit", { password }),
   healthReport: () => call<HealthReportDto>("health_report"),
   checkBreach: () => call<BreachReportDto>("check_breach"),
   updateHibpOptIn: (enabled: boolean) => call<void>("update_hibp_opt_in", { enabled }),

@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.pwmgr.viewer",
   "build": {
-    "beforeDevCommand": "npm --prefix .. run dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420/viewer.html",
-    "beforeBuildCommand": "npm --prefix .. run build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {

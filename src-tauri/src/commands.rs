@@ -1,9 +1,11 @@
 use crate::biometric_provider::WindowsHelloProvider;
 use pwmgr_core::commands::{
-    do_add_credential, do_add_site, do_add_ssh_key, do_analyze_strength, do_check_breach,
+    do_add_credential, do_add_folder, do_add_site, do_delete_folder, do_list_folders, do_rename_folder,
+    do_set_site_card_hint, do_set_site_favorite, do_set_site_folder, do_set_site_item_type, do_add_ssh_key, do_analyze_strength, do_check_breach,
     do_clear_biometric, do_clear_pin, do_clear_totp_secret, do_create_backup, do_delete_ssh_key,
-    do_export_csv, do_generate_password, do_get_config, do_has_biometric, do_has_pin,
-    do_health_report, do_import_csv_commit, do_import_csv_preview, do_list_credentials_for_site,
+    do_export_csv, do_export_json, do_generate_password, do_get_config, do_has_biometric, do_has_pin,
+    do_import_json_commit, do_import_json_preview,
+    do_change_master_password, do_health_report, do_import_csv_commit, do_import_csv_preview, do_list_credential_change_log, do_list_credential_history, do_list_credentials_for_site,
     do_list_sites, do_list_ssh_keys, do_list_trash, do_lock, do_login, do_purge_trash,
     do_read_csv_headers, do_register, do_restore_backup, do_restore_credential, do_search,
     do_set_biometric, do_set_pin, do_set_totp_secret, do_soft_delete_credential,
@@ -13,11 +15,11 @@ use pwmgr_core::commands::{
     do_update_mobile_nav_style, do_update_nav_collapsed, do_update_old_password_days,
     do_update_reprompt_grace_seconds, do_update_reprompt_mode, do_update_site,
     do_update_ssh_agent_enabled, do_update_strength_algorithm, do_update_theme,
-    do_update_ui_variant, do_verify_master_password,
+    do_update_ui_variant, do_vault_exists, do_verify_master_password,
 };
 use pwmgr_core::dto::{
-    AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
-    HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
+    AuthSuccess, BreachReportDto, ChangeLogEntryDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
+    FolderDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     SshKeyDto, StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
 use pwmgr_core::error::CommandError;
@@ -57,6 +59,11 @@ pub fn login(
 #[tauri::command]
 pub fn has_pin(state: State<AppState>, username: String) -> Result<bool, CommandError> {
     do_has_pin(&state, &username)
+}
+
+#[tauri::command]
+pub fn vault_exists(state: State<AppState>) -> Result<bool, CommandError> {
+    do_vault_exists(&state)
 }
 
 #[tauri::command]
@@ -136,7 +143,16 @@ pub fn update_ssh_agent_enabled(
 ) -> Result<(), CommandError> {
     do_update_ssh_agent_enabled(&state, &paths, enabled)?;
     if enabled {
-        crate::ssh_agent_service::start(&app);
+        // B4/D2: if start() reports a failure, don't leave the persisted flag as enabled - that is
+        // exactly what turned a single failed start into the M9.0 crash-loop (every relaunch
+        // re-read `ssh_agent_enabled: true` and re-attempted the broken start). Revert it here so a
+        // failure degrades to "SSH agent off, toggle reports an error" instead of an unbootable app.
+        if let Err(msg) = crate::ssh_agent_service::start(&app) {
+            do_update_ssh_agent_enabled(&state, &paths, false)?;
+            return Err(pwmgr_core::error::invalid_input_error(&format!(
+                "Could not start the SSH agent: {msg}"
+            )));
+        }
     } else {
         crate::ssh_agent_service::stop(&app);
     }
@@ -188,6 +204,51 @@ pub fn update_site(
 }
 
 #[tauri::command]
+pub fn set_site_favorite(state: State<AppState>, site_id: i64, favorite: bool) -> Result<(), CommandError> {
+    do_set_site_favorite(&state, site_id, favorite)
+}
+
+#[tauri::command]
+pub fn set_site_item_type(state: State<AppState>, site_id: i64, item_type: String) -> Result<(), CommandError> {
+    do_set_site_item_type(&state, site_id, &item_type)
+}
+
+#[tauri::command]
+pub fn set_site_card_hint(
+    state: State<AppState>,
+    site_id: i64,
+    brand: Option<String>,
+    last4: Option<String>,
+) -> Result<(), CommandError> {
+    do_set_site_card_hint(&state, site_id, brand.as_deref(), last4.as_deref())
+}
+
+#[tauri::command]
+pub fn set_site_folder(state: State<AppState>, site_id: i64, folder_id: Option<i64>) -> Result<(), CommandError> {
+    do_set_site_folder(&state, site_id, folder_id)
+}
+
+#[tauri::command]
+pub fn list_folders(state: State<AppState>) -> Result<Vec<FolderDto>, CommandError> {
+    do_list_folders(&state)
+}
+
+#[tauri::command]
+pub fn add_folder(state: State<AppState>, name: String) -> Result<i64, CommandError> {
+    do_add_folder(&state, &name)
+}
+
+#[tauri::command]
+pub fn rename_folder(state: State<AppState>, folder_id: i64, name: String) -> Result<(), CommandError> {
+    do_rename_folder(&state, folder_id, &name)
+}
+
+#[tauri::command]
+pub fn delete_folder(state: State<AppState>, folder_id: i64) -> Result<(), CommandError> {
+    do_delete_folder(&state, folder_id)
+}
+
+#[tauri::command]
 pub fn soft_delete_site(state: State<AppState>, site_id: i64) -> Result<(), CommandError> {
     do_soft_delete_site(&state, site_id)
 }
@@ -200,9 +261,9 @@ pub fn add_credential(
     secret: String,
     remarks: Option<String>,
     custom_fields: Vec<CustomField>,
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<i64, CommandError> {
-    do_add_credential(&state, site_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt)
+    do_add_credential(&state, site_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt_exempt)
 }
 
 #[tauri::command]
@@ -213,9 +274,9 @@ pub fn update_credential(
     secret: String,
     remarks: Option<String>,
     custom_fields: Vec<CustomField>,
-    reprompt: bool,
+    reprompt_exempt: bool,
 ) -> Result<(), CommandError> {
-    do_update_credential(&state, credential_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt)
+    do_update_credential(&state, credential_id, username.as_deref(), &secret, remarks.as_deref(), &custom_fields, reprompt_exempt)
 }
 
 #[tauri::command]
@@ -249,6 +310,16 @@ pub fn clear_totp_secret(state: State<AppState>, credential_id: i64) -> Result<(
 #[tauri::command]
 pub fn totp_code(state: State<AppState>, credential_id: i64) -> Result<Option<TotpCodeDto>, CommandError> {
     do_totp_code(&state, credential_id)
+}
+
+#[tauri::command]
+pub fn list_credential_history(state: State<AppState>, credential_id: i64) -> Result<Vec<HistoryEntryDto>, CommandError> {
+    do_list_credential_history(&state, credential_id)
+}
+
+#[tauri::command]
+pub fn list_credential_change_log(state: State<AppState>, credential_id: i64) -> Result<Vec<ChangeLogEntryDto>, CommandError> {
+    do_list_credential_change_log(&state, credential_id)
 }
 
 #[tauri::command]
@@ -353,9 +424,17 @@ const CLIPBOARD_CLEAR_SECS: u64 = 30; // hardcoded constant, NOT a user setting
 // Thin wrapper only - the effect is an OS clipboard side effect requiring a real `AppHandle`, so it
 // stays a per-Tauri-binary command (promoting it would force pwmgr-core to depend on tauri).
 #[tauri::command]
-pub fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), CommandError> {
+// N9: `auto_clear` lets a non-secret copy (username, URL, a Text-type custom field) skip the 30s
+// wipe entirely - that behavior should only apply to actual secrets. Every existing frontend call
+// site passes `true` explicitly except CopyButton (see src/lib/api.ts), so this is not defaulted
+// on the Rust side; Tauri's JS bridge has no notion of a parameter default, only the TS wrapper
+// does.
+pub fn copy_to_clipboard(app: tauri::AppHandle, text: String, auto_clear: bool) -> Result<(), CommandError> {
     let secret = Zeroizing::new(text);
     app.clipboard().write_text(secret.as_str()).map_err(|_| pwmgr_core::error::internal_error())?;
+    if !auto_clear {
+        return Ok(());
+    }
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(CLIPBOARD_CLEAR_SECS)).await;
@@ -376,6 +455,16 @@ pub fn create_backup(
     destination_path: Option<String>,
 ) -> Result<String, CommandError> {
     do_create_backup(&state, &paths, destination_path.as_deref())
+}
+
+#[tauri::command]
+pub fn change_master_password(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    current_password: String,
+    new_password: String,
+) -> Result<(), CommandError> {
+    do_change_master_password(&state, &paths, &current_password, &new_password)
 }
 
 #[tauri::command]
@@ -427,6 +516,41 @@ pub fn import_csv_commit(
     records: Vec<ImportRecordDto>,
 ) -> Result<ImportSummaryDto, CommandError> {
     do_import_csv_commit(&state, records)
+}
+
+#[tauri::command]
+pub fn export_json(
+    state: State<AppState>,
+    paths: State<AppPaths>,
+    path: String,
+    mode: ExportMode,
+    confirmed: bool,
+) -> Result<(), CommandError> {
+    do_export_json(&state, &paths, &path, &mode, confirmed)
+}
+
+fn read_import_file(path: &str) -> Result<Vec<u8>, CommandError> {
+    std::fs::read(path).map_err(|_| pwmgr_core::error::invalid_input_error("Could not read that file."))
+}
+
+#[tauri::command]
+pub fn import_json_preview(
+    state: State<AppState>,
+    path: String,
+    password: Option<String>,
+) -> Result<pwmgr_core::jsonio::JsonImportPreview, CommandError> {
+    let bytes = read_import_file(&path)?;
+    do_import_json_preview(&state, &bytes, password.as_deref())
+}
+
+#[tauri::command]
+pub fn import_json_commit(
+    state: State<AppState>,
+    path: String,
+    password: Option<String>,
+) -> Result<ImportSummaryDto, CommandError> {
+    let bytes = read_import_file(&path)?;
+    do_import_json_commit(&state, &bytes, password.as_deref())
 }
 
 #[tauri::command]

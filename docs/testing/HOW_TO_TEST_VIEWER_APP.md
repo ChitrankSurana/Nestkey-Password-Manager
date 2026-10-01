@@ -33,20 +33,31 @@ separate `npm test` suite specific to the viewer — the frontend automated test
 
 The viewer is a **separate Tauri app** living in its own crate (`viewer-src-tauri/`), with its own
 `tauri.conf.json` and `Cargo.toml` sitting side by side (the standard Tauri "multiple apps in one
-workspace" layout). Its config's `beforeDevCommand` (`npm --prefix .. run dev`) assumes you're
-running the Tauri CLI **from inside `viewer-src-tauri/`**, so:
+workspace" layout).
+
+> **N16/D-viewer-launch, fixed in `83066b9`:** the config's `beforeDevCommand` used to be
+> `npm --prefix .. run dev`, which assumed the Tauri CLI runs it with `cwd = viewer-src-tauri/` -
+> the CLI actually always spawns it at the repo root regardless of which crate's `tauri.conf.json`
+> you're pointing it at, so `--prefix ..` overshot one directory up (landing on `Account_1` instead
+> of `Password_Manager`). It's now plain `npm run dev`, which is already correct when run from the
+> repo root. `package.json` also gained `viewer:dev`/`viewer:build` scripts that `cd` into
+> `viewer-src-tauri` first, so the Tauri CLI resolves the right crate without you needing to `cd`
+> there yourself:
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;C:\Strawberry\perl\bin;C:\Strawberry\c\bin;" + $env:PATH
+npm run viewer:dev
+```
+
+**Expected:** a Tauri window opens titled "Password Manager — Viewer", showing the Login screen.
+
+The equivalent manual form (if you want to `cd` there yourself, or pass extra CLI flags):
+```powershell
 cd viewer-src-tauri
 npx tauri dev
 ```
-
 `npx` resolves `tauri` from the repo-root `node_modules/@tauri-apps/cli` (found by walking up from
-`viewer-src-tauri/`), so this works without a separate `package.json` in that folder. This will, in
-turn, run `npm --prefix .. run dev` for you — you don't need Vite running separately first.
-
-**Expected:** a Tauri window opens titled "Password Manager — Viewer", showing the Login screen.
+`viewer-src-tauri/`), so this works without a separate `package.json` in that folder.
 
 If `npx tauri dev` doesn't pick up the right config, the equivalent explicit form is:
 ```powershell

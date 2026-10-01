@@ -15,11 +15,33 @@ pub struct SiteDto {
     pub name: String,
     pub url: Option<String>,
     pub notes: Option<String>,
+    pub favorite: bool,
+    pub folder_id: Option<i64>,
+    pub item_type: String,
+    pub card_brand: Option<String>,
+    pub card_last4: Option<String>,
 }
 
 impl From<Site> for SiteDto {
     fn from(s: Site) -> Self {
-        SiteDto { id: s.id, name: s.name, url: s.url, notes: s.notes }
+        SiteDto {
+            id: s.id, name: s.name, url: s.url, notes: s.notes,
+            favorite: s.favorite, folder_id: s.folder_id, item_type: s.item_type,
+            card_brand: s.card_brand, card_last4: s.card_last4,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderDto {
+    pub id: i64,
+    pub name: String,
+}
+
+impl From<crate::vault::Folder> for FolderDto {
+    fn from(f: crate::vault::Folder) -> Self {
+        FolderDto { id: f.id, name: f.name }
     }
 }
 
@@ -71,7 +93,7 @@ pub struct CredentialDto {
     pub secret: Zeroizing<String>,
     pub remarks: Option<String>,
     pub custom_fields: Vec<CustomField>,
-    pub reprompt: bool,
+    pub reprompt_exempt: bool,
     pub has_totp: bool,
 }
 
@@ -87,7 +109,7 @@ impl std::fmt::Debug for CredentialDto {
             .field("remarks", &self.remarks)
             // A Hidden-type custom field value is exactly as sensitive as `secret` - count only.
             .field("custom_fields", &format!("<{} field(s)>", self.custom_fields.len()))
-            .field("reprompt", &self.reprompt)
+            .field("reprompt_exempt", &self.reprompt_exempt)
             .field("has_totp", &self.has_totp)
             .finish()
     }
@@ -102,7 +124,7 @@ impl From<Credential> for CredentialDto {
             secret: Zeroizing::new(c.secret),
             remarks: c.remarks,
             custom_fields: c.custom_fields,
-            reprompt: c.reprompt,
+            reprompt_exempt: c.reprompt_exempt,
             has_totp: c.has_totp,
         }
     }
@@ -155,6 +177,41 @@ pub struct TrashedCredentialDto {
     pub site_name: String,
     pub username: Option<String>,
     pub deleted_at: String,
+    pub item_type: String,
+}
+
+#[derive(Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryEntryDto {
+    pub secret: Zeroizing<String>,
+    pub changed_at: String,
+}
+
+impl std::fmt::Debug for HistoryEntryDto {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HistoryEntryDto").field("secret", &"<redacted>").field("changed_at", &self.changed_at).finish()
+    }
+}
+
+impl From<crate::vault::HistoryEntry> for HistoryEntryDto {
+    fn from(h: crate::vault::HistoryEntry) -> Self {
+        HistoryEntryDto { secret: Zeroizing::new(h.secret), changed_at: h.changed_at }
+    }
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeLogEntryDto {
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub changed_at: String,
+}
+
+impl From<crate::vault::ChangeLogEntry> for ChangeLogEntryDto {
+    fn from(c: crate::vault::ChangeLogEntry) -> Self {
+        ChangeLogEntryDto { field: c.field, old_value: c.old_value, new_value: c.new_value, changed_at: c.changed_at }
+    }
 }
 
 impl From<TrashedCredential> for TrashedCredentialDto {
@@ -165,6 +222,7 @@ impl From<TrashedCredential> for TrashedCredentialDto {
             site_name: t.site_name,
             username: t.username,
             deleted_at: t.deleted_at,
+            item_type: t.item_type,
         }
     }
 }
@@ -321,8 +379,14 @@ mod tests {
 
     #[test]
     fn site_dto_from_core_site_maps_all_fields() {
-        let site = Site { id: 1, name: "example.com".into(), url: Some("https://example.com".into()), notes: None };
+        let site = Site {
+            id: 1, name: "example.com".into(), url: Some("https://example.com".into()), notes: None,
+            favorite: true, folder_id: Some(7), item_type: "card".into(),
+            card_brand: Some("Visa".into()), card_last4: Some("3921".into()),
+        };
         let dto = SiteDto::from(site);
+        assert_eq!((dto.favorite, dto.folder_id, dto.item_type.as_str()), (true, Some(7), "card"));
+        assert_eq!((dto.card_brand.as_deref(), dto.card_last4.as_deref()), (Some("Visa"), Some("3921")));
         assert_eq!(dto.id, 1);
         assert_eq!(dto.name, "example.com");
         assert_eq!(dto.url.as_deref(), Some("https://example.com"));
@@ -343,7 +407,7 @@ mod tests {
             site_id: 1,
             username: Some("alice".into()),
             secret: "extremely-unique-secret-xyz".into(),
-            remarks: None, custom_fields: Vec::new(), reprompt: false, has_totp: false,
+            remarks: None, custom_fields: Vec::new(), reprompt_exempt: false, has_totp: false,
         };
         let dto = CredentialDto::from(cred);
         let debug_output = format!("{:?}", dto);
@@ -358,7 +422,7 @@ mod tests {
             site_id: 1,
             username: Some("alice".into()),
             secret: "s3cret".into(),
-            remarks: None, custom_fields: Vec::new(), reprompt: false, has_totp: false,
+            remarks: None, custom_fields: Vec::new(), reprompt_exempt: false, has_totp: false,
         };
         let dto = CredentialDto::from(cred);
         // Zeroizing<String> derefs to &str, so equality/usage is transparent to callers - this test

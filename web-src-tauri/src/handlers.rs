@@ -8,8 +8,8 @@ use axum::routing::post;
 use axum::{Extension, Json, Router};
 use pwmgr_core::commands::*;
 use pwmgr_core::dto::{
-    AuthSuccess, BreachReportDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
-    HealthReportDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
+    AuthSuccess, BreachReportDto, ChangeLogEntryDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
+    FolderDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
 use crate::kdf_guard::KdfGuard;
@@ -95,7 +95,7 @@ struct AddCredentialRequest {
     #[serde(default)]
     custom_fields: Vec<CustomField>,
     #[serde(default)]
-    reprompt: bool,
+    reprompt_exempt: bool,
 }
 
 #[derive(Deserialize)]
@@ -108,7 +108,7 @@ struct UpdateCredentialRequest {
     #[serde(default)]
     custom_fields: Vec<CustomField>,
     #[serde(default)]
-    reprompt: bool,
+    reprompt_exempt: bool,
 }
 
 #[derive(Deserialize)]
@@ -118,8 +118,63 @@ struct SiteIdRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetFavoriteRequest {
+    site_id: i64,
+    favorite: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetItemTypeRequest {
+    site_id: i64,
+    item_type: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetCardHintRequest {
+    site_id: i64,
+    brand: Option<String>,
+    last4: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetSiteFolderRequest {
+    site_id: i64,
+    folder_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FolderNameRequest {
+    name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameFolderRequest {
+    folder_id: i64,
+    name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FolderIdRequest {
+    folder_id: i64,
+}
+
+#[derive(Deserialize)]
 struct SearchRequest {
     query: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangeMasterPasswordRequest {
+    current_password: String,
+    new_password: String,
 }
 
 #[derive(Deserialize)]
@@ -221,6 +276,20 @@ struct RestoreBackupRequest {
 struct ExportCsvRequest {
     mode: ExportMode,
     confirmed: bool,
+}
+
+// Same shape as ExportCsvRequest - the JSON vault export reuses the identical three-mode contract.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportJsonRequest {
+    mode: ExportMode,
+    confirmed: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportJsonRequest {
+    password: Option<String>,
 }
 
 // No `path` field (SEC-01/D-01/D-03): reads the CSV bytes this session already uploaded via
@@ -330,6 +399,13 @@ async fn register(
 async fn has_pin(State(ctx): State<AppContext>, Json(body): Json<HasPinRequest>) -> Result<Json<bool>, ApiError> {
     let app_state = build_locked_state(&ctx.paths)?;
     Ok(Json(do_has_pin(&app_state, &body.username)?))
+}
+
+// N1: same "public, pre-session" rationale as has_pin above - the Login/Register choice happens
+// before any session exists.
+async fn vault_exists(State(ctx): State<AppContext>) -> Result<Json<bool>, ApiError> {
+    let app_state = build_locked_state(&ctx.paths)?;
+    Ok(Json(do_vault_exists(&app_state)?))
 }
 
 async fn unlock_with_pin(
@@ -446,13 +522,72 @@ async fn soft_delete_site(
     Ok(StatusCode::OK)
 }
 
+async fn set_site_favorite(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetFavoriteRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_site_favorite(&s.app_state, b.site_id, b.favorite)?;
+    Ok(StatusCode::OK)
+}
+
+async fn set_site_item_type(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetItemTypeRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_site_item_type(&s.app_state, b.site_id, &b.item_type)?;
+    Ok(StatusCode::OK)
+}
+
+async fn set_site_card_hint(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetCardHintRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_site_card_hint(&s.app_state, b.site_id, b.brand.as_deref(), b.last4.as_deref())?;
+    Ok(StatusCode::OK)
+}
+
+async fn set_site_folder(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<SetSiteFolderRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_set_site_folder(&s.app_state, b.site_id, b.folder_id)?;
+    Ok(StatusCode::OK)
+}
+
+async fn list_folders(Extension(s): Extension<Arc<UserSession>>) -> Result<Json<Vec<FolderDto>>, ApiError> {
+    Ok(Json(do_list_folders(&s.app_state)?))
+}
+
+async fn add_folder(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<FolderNameRequest>,
+) -> Result<Json<i64>, ApiError> {
+    Ok(Json(do_add_folder(&s.app_state, &b.name)?))
+}
+
+async fn rename_folder(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<RenameFolderRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_rename_folder(&s.app_state, b.folder_id, &b.name)?;
+    Ok(StatusCode::OK)
+}
+
+async fn delete_folder(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<FolderIdRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_delete_folder(&s.app_state, b.folder_id)?;
+    Ok(StatusCode::OK)
+}
+
 async fn add_credential(
     Extension(s): Extension<Arc<UserSession>>,
     Json(b): Json<AddCredentialRequest>,
 ) -> Result<Json<i64>, ApiError> {
     Ok(Json(do_add_credential(
         &s.app_state, b.site_id, b.username.as_deref(), &b.secret, b.remarks.as_deref(),
-        &b.custom_fields, b.reprompt,
+        &b.custom_fields, b.reprompt_exempt,
     )?))
 }
 
@@ -462,7 +597,7 @@ async fn update_credential(
 ) -> Result<StatusCode, ApiError> {
     do_update_credential(
         &s.app_state, b.credential_id, b.username.as_deref(), &b.secret, b.remarks.as_deref(),
-        &b.custom_fields, b.reprompt,
+        &b.custom_fields, b.reprompt_exempt,
     )?;
     Ok(StatusCode::OK)
 }
@@ -510,6 +645,20 @@ async fn totp_code(
     Json(b): Json<CredentialIdRequest>,
 ) -> Result<Json<Option<TotpCodeDto>>, ApiError> {
     Ok(Json(do_totp_code(&s.app_state, b.credential_id)?))
+}
+
+async fn list_credential_history(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<CredentialIdRequest>,
+) -> Result<Json<Vec<HistoryEntryDto>>, ApiError> {
+    Ok(Json(do_list_credential_history(&s.app_state, b.credential_id)?))
+}
+
+async fn list_credential_change_log(
+    Extension(s): Extension<Arc<UserSession>>,
+    Json(b): Json<CredentialIdRequest>,
+) -> Result<Json<Vec<ChangeLogEntryDto>>, ApiError> {
+    Ok(Json(do_list_credential_change_log(&s.app_state, b.credential_id)?))
 }
 
 async fn list_trash(
@@ -647,6 +796,15 @@ async fn analyze_strength(
     Json(do_analyze_strength(&b.password))
 }
 
+async fn change_master_password(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<ChangeMasterPasswordRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_change_master_password(&s.app_state, &ctx.paths, &b.current_password, &b.new_password)?;
+    Ok(StatusCode::OK)
+}
+
 // Deliberately does not accept a client-supplied destination, unlike the desktop `create_backup`
 // Tauri command. On desktop the path comes from a native save dialog the user personally drove;
 // in web mode it would be an arbitrary attacker-controlled string. SECURITY_CONCERNS.md H1 is the
@@ -771,6 +929,60 @@ async fn clear_upload(Extension(s): Extension<Arc<UserSession>>) -> StatusCode {
     StatusCode::OK
 }
 
+// Full-fidelity JSON vault export/import (Wave 4 follow-up) - mirrors export_csv/upload_csv/
+// import_csv_preview/import_csv_commit immediately above exactly, including the SEC-01/D-01 "no
+// client-supplied path, bytes only" rule and the SEC-01/D-04 clear-cache-on-success discipline.
+async fn export_json(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<ExportJsonRequest>,
+) -> Result<Response, ApiError> {
+    let _kdf_permit = match b.mode {
+        ExportMode::WithPassword { .. } => Some(ctx.kdf.try_acquire()?),
+        _ => None,
+    };
+    let (filename, bytes) = do_export_json_download(&s.app_state, &ctx.paths, &b.mode, b.confirmed)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\"")),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+async fn upload_json(Extension(s): Extension<Arc<UserSession>>, body: Bytes) -> StatusCode {
+    s.set_upload(UploadCache::Json(Zeroizing::new(body.to_vec())));
+    StatusCode::OK
+}
+
+async fn import_json_preview(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<ImportJsonRequest>,
+) -> Result<Json<pwmgr_core::jsonio::JsonImportPreview>, ApiError> {
+    let _kdf_permit = if b.password.is_some() { Some(ctx.kdf.try_acquire()?) } else { None };
+    let bytes = s
+        .json_upload()
+        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No export file uploaded yet."))?;
+    Ok(Json(do_import_json_preview(&s.app_state, &bytes, b.password.as_deref())?))
+}
+
+async fn import_json_commit(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<ImportJsonRequest>,
+) -> Result<Json<ImportSummaryDto>, ApiError> {
+    let _kdf_permit = if b.password.is_some() { Some(ctx.kdf.try_acquire()?) } else { None };
+    let bytes = s
+        .json_upload()
+        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No export file uploaded yet."))?;
+    let summary = do_import_json_commit(&s.app_state, &bytes, b.password.as_deref())?;
+    s.clear_upload();
+    Ok(Json(summary))
+}
+
 async fn health_report(
     Extension(s): Extension<Arc<UserSession>>,
 ) -> Result<Json<HealthReportDto>, ApiError> {
@@ -800,12 +1012,21 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/lock", post(lock))
         .route("/api/touch", post(touch))
         .route("/api/verify_master_password", post(verify_master_password))
+        .route("/api/change_master_password", post(change_master_password))
         .route("/api/set_pin", post(set_pin))
         .route("/api/clear_pin", post(clear_pin))
         .route("/api/list_sites", post(list_sites))
         .route("/api/add_site", post(add_site))
         .route("/api/update_site", post(update_site))
         .route("/api/soft_delete_site", post(soft_delete_site))
+        .route("/api/set_site_favorite", post(set_site_favorite))
+        .route("/api/set_site_item_type", post(set_site_item_type))
+        .route("/api/set_site_card_hint", post(set_site_card_hint))
+        .route("/api/set_site_folder", post(set_site_folder))
+        .route("/api/list_folders", post(list_folders))
+        .route("/api/add_folder", post(add_folder))
+        .route("/api/rename_folder", post(rename_folder))
+        .route("/api/delete_folder", post(delete_folder))
         .route("/api/add_credential", post(add_credential))
         .route("/api/update_credential", post(update_credential))
         .route("/api/list_credentials_for_site", post(list_credentials_for_site))
@@ -814,6 +1035,8 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/set_totp_secret", post(set_totp_secret))
         .route("/api/clear_totp_secret", post(clear_totp_secret))
         .route("/api/totp_code", post(totp_code))
+        .route("/api/list_credential_history", post(list_credential_history))
+        .route("/api/list_credential_change_log", post(list_credential_change_log))
         .route("/api/list_trash", post(list_trash))
         .route("/api/restore_credential", post(restore_credential))
         .route("/api/purge_trash", post(purge_trash))
@@ -835,6 +1058,13 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/create_backup_download", post(create_backup_download))
         .route("/api/restore_backup", post(restore_backup))
         .route("/api/export_csv", post(export_csv))
+        .route("/api/export_json", post(export_json))
+        .route(
+            "/api/upload_json",
+            post(upload_json).layer(axum::extract::DefaultBodyLimit::max(UPLOAD_BODY_LIMIT)),
+        )
+        .route("/api/import_json_preview", post(import_json_preview))
+        .route("/api/import_json_commit", post(import_json_commit))
         .route(
             "/api/upload_csv",
             post(upload_csv).layer(axum::extract::DefaultBodyLimit::max(UPLOAD_BODY_LIMIT)),
@@ -858,6 +1088,7 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/login", post(login))
         .route("/api/register_user", post(register))
         .route("/api/has_pin", post(has_pin))
+        .route("/api/vault_exists", post(vault_exists))
         .route("/api/unlock_with_pin", post(unlock_with_pin))
         .route("/api/logout", post(logout));
 

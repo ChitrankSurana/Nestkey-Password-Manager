@@ -1,5 +1,7 @@
 # How to Test — Web Portal
 
+> **Status note (2026-09-30):** Written for the Classic UI before the New/Make UIs and Phase 9. For current UAT use `docs/testing/UAT_MODERN_UI_OVERHAUL.md` and `docs/testing/UAT_USER_TESTING_GUIDE.md`.
+
 **Scope:** the localhost-bound HTTP server (`pwmgr-web`, crate `web-src-tauri`), which is **not a
 Tauri app at all** — it's a plain Axum binary that serves the same built React bundle as the Main
 App and exposes the full command set (identical to `src-tauri`'s) over `POST /api/*` routes, gated

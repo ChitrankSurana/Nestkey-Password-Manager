@@ -12,6 +12,8 @@ pub enum PortioError {
     MissingColumn(String),
     #[error("'{0}' is not a recognized import field")]
     UnknownField(String),
+    #[error("that file doesn't look like an exported vault file")]
+    NotSealed,
 }
 
 #[derive(Clone, PartialEq)]
@@ -103,10 +105,11 @@ const EXPORT_VERSION: u8 = 1;
 const MODE_THIS_DEVICE: u8 = 0;
 const MODE_WITH_PASSWORD: u8 = 1;
 
-/// Frames a sealed CSV export. `salt` is `Some` only for the with-password mode (the this-device
+/// Frames a sealed export. `salt` is `Some` only for the with-password mode (the this-device
 /// mode derives no new key, so there is no salt to embed). This is our own file format, not a
 /// standard container - the UI copy must say so plainly ("only this app can open this file").
-// ponytail: no decoder; add one only if a future milestone needs to re-import this format.
+/// Despite the name (kept for the CSV export call sites already using it), this is payload-
+/// agnostic - the JSON vault export (`do_export_json_bytes`) uses the exact same envelope.
 pub fn encode_sealed_csv(salt: Option<&[u8; 16]>, nonce: &[u8; 12], ciphertext: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     out.push(EXPORT_VERSION);
@@ -121,6 +124,43 @@ pub fn encode_sealed_csv(salt: Option<&[u8; 16]>, nonce: &[u8; 12], ciphertext: 
     out.extend_from_slice(&(ciphertext.len() as u32).to_le_bytes());
     out.extend_from_slice(ciphertext);
     out
+}
+
+/// The this-device mode's key is unique per vault, so any two files' worth of data still needs a
+/// case split at the caller (who has the vault key/session, not this module) - this only unframes
+/// the envelope, it never decrypts.
+pub enum SealedPayload {
+    ThisDevice { nonce: [u8; 12], ciphertext: Vec<u8> },
+    WithPassword { salt: [u8; 16], nonce: [u8; 12], ciphertext: Vec<u8> },
+}
+
+/// Decoder for `encode_sealed_csv`'s envelope - added for the JSON vault export/import feature,
+/// which (unlike the CSV export this envelope was first built for) needs a real round trip.
+pub fn decode_sealed_bytes(bytes: &[u8]) -> Result<SealedPayload, PortioError> {
+    let mut pos = 0usize;
+    let mut take = |n: usize| -> Result<&[u8], PortioError> {
+        let end = pos.checked_add(n).ok_or(PortioError::NotSealed)?;
+        let slice = bytes.get(pos..end).ok_or(PortioError::NotSealed)?;
+        pos = end;
+        Ok(slice)
+    };
+    let version = take(1)?[0];
+    if version != EXPORT_VERSION {
+        return Err(PortioError::NotSealed);
+    }
+    let mode = take(1)?[0];
+    let salt: Option<[u8; 16]> = match mode {
+        MODE_THIS_DEVICE => None,
+        MODE_WITH_PASSWORD => Some(take(16)?.try_into().map_err(|_| PortioError::NotSealed)?),
+        _ => return Err(PortioError::NotSealed),
+    };
+    let nonce: [u8; 12] = take(12)?.try_into().map_err(|_| PortioError::NotSealed)?;
+    let len = u32::from_le_bytes(take(4)?.try_into().map_err(|_| PortioError::NotSealed)?) as usize;
+    let ciphertext = take(len)?.to_vec();
+    Ok(match salt {
+        Some(salt) => SealedPayload::WithPassword { salt, nonce, ciphertext },
+        None => SealedPayload::ThisDevice { nonce, ciphertext },
+    })
 }
 
 const FIREFOX_HEADER: [&str; 9] = [
@@ -327,6 +367,48 @@ mod tests {
         assert_eq!(out[1], 1); // mode: with-password
         assert_eq!(&out[2..18], &salt);
         assert_eq!(&out[18..30], &nonce);
+    }
+
+    #[test]
+    fn decode_sealed_bytes_round_trips_this_device_mode() {
+        let nonce = [7u8; 12];
+        let ciphertext = vec![1, 2, 3, 4, 5];
+        let encoded = encode_sealed_csv(None, &nonce, &ciphertext);
+
+        match decode_sealed_bytes(&encoded).unwrap() {
+            SealedPayload::ThisDevice { nonce: n, ciphertext: c } => {
+                assert_eq!(n, nonce);
+                assert_eq!(c, ciphertext);
+            }
+            SealedPayload::WithPassword { .. } => panic!("expected ThisDevice"),
+        }
+    }
+
+    #[test]
+    fn decode_sealed_bytes_round_trips_with_password_mode() {
+        let salt = [9u8; 16];
+        let nonce = [7u8; 12];
+        let ciphertext = vec![10, 20, 30];
+        let encoded = encode_sealed_csv(Some(&salt), &nonce, &ciphertext);
+
+        match decode_sealed_bytes(&encoded).unwrap() {
+            SealedPayload::WithPassword { salt: s, nonce: n, ciphertext: c } => {
+                assert_eq!(s, salt);
+                assert_eq!(n, nonce);
+                assert_eq!(c, ciphertext);
+            }
+            SealedPayload::ThisDevice { .. } => panic!("expected WithPassword"),
+        }
+    }
+
+    #[test]
+    fn decode_sealed_bytes_rejects_truncated_or_garbage_input() {
+        assert!(matches!(decode_sealed_bytes(&[]), Err(PortioError::NotSealed)));
+        assert!(matches!(decode_sealed_bytes(b"{\"not\":\"sealed\"}"), Err(PortioError::NotSealed)));
+        // Valid header, but the declared ciphertext length overruns the actual buffer.
+        let mut truncated = encode_sealed_csv(None, &[0u8; 12], &[1, 2, 3]);
+        truncated.truncate(truncated.len() - 1);
+        assert!(matches!(decode_sealed_bytes(&truncated), Err(PortioError::NotSealed)));
     }
 
     #[test]
