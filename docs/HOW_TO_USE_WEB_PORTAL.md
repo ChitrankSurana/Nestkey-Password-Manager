@@ -1,5 +1,7 @@
 # How to Use — Web Portal
 
+> **Status note (2026-09-30):** Predates the New/Make UIs, folders, item types, PIN unlock and the reprompt gate. The web portal also changed in Phase 9: CSV export is now a browser download, CSV import and backup restore are browser uploads (no server-side file paths), and login/register attempts are throttled. Current feature reference: `docs/HOW_TO_USE_APP.md`.
+
 The Web Portal lets you use the full password manager from a **browser tab on this machine**,
 without opening the desktop app window — the same vault, the same full feature set, served over
 `http://127.0.0.1:7373`. It never listens on your network; it is reachable only from this machine,

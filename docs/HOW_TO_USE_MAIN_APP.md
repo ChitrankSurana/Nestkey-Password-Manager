@@ -1,5 +1,7 @@
 # How to Use — Main App
 
+> **Status note (2026-09-30):** Describes the Classic interface only. It predates the New/Make UIs, folders, item types, PIN/Windows Hello unlock, the SSH agent and the reprompt gate. Current reference: `docs/HOW_TO_USE_APP.md`.
+
 The Main App is the primary way to use this password manager day-to-day: a desktop window with full
 read/write access to your vault — add, edit, search, generate, back up, import/export, and monitor
 password health.

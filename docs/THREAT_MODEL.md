@@ -1,5 +1,7 @@
 # Threat Model
 
+> **Status note (2026-09-30):** A4 (web-mode attacker) mitigations are stronger than described: Phase 9 added a login/register/PIN throttle, bounded Argon2, strict CSP + security headers, and removed client-supplied filesystem paths. Biometric unlock, the SSH agent and the reprompt gate (master password required to reveal secrets by default) post-date this model and are not yet analyzed here.
+
 **Last updated:** 2026-07-19
 
 ## 1. Assets to Protect

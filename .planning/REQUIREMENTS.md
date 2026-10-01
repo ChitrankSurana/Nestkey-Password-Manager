@@ -88,6 +88,16 @@ Requirements for this project. Each maps to exactly one roadmap phase.
   `X-Content-Type-Options: nosniff` on every response, and the desktop Tauri shell no longer
   ships with `csp: null`.
 
+### Delivered ad hoc after Phase 9 (no REQ-IDs; on `feature/modern-ui-overhaul`)
+
+- [x] Full-fidelity JSON vault export/import (folders, favorites, item types, card hints, custom
+  fields, TOTP secrets, password history), covering the new item types CSV cannot carry.
+- [x] Per-credential change log, separate from the password-only history.
+- [x] Make UI as a third interface (`ui_variant: "make"`), plus a Viewer restyle onto it.
+- [x] Reprompt gate rework: always gated by default, per-credential `reprompt_exempt` override.
+- [ ] Open: Wave 0 live retests and the deferred web-mode pass (see
+  `docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md`).
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -108,7 +118,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | Cloud sync / hosted accounts | Breaks the zero-knowledge, local-only core value (PRD §4 Non-Goal) |
 | Browser extension / autofill | Not requested; may be reconsidered later (PRD §4 Non-Goal) |
 | Recovering a forgotten master password | Zero-knowledge means there is nothing to reset, by design (PRD §4 Non-Goal) |
-| CSV import/export for Secure Note/Payment Card/Identity items | New item types haven't settled yet; revisit after Phase 8 ships (FIGMA_UI_VS_CURRENT_FEATURES.md, deferred #2) |
+| CSV import/export for Secure Note/Payment Card/Identity items | Still not in CSV; the full-fidelity JSON export/import (2026-09-27) now covers these types instead |
 | Read-only Viewer support for the new item types | Separate future work (FIGMA_UI_VS_CURRENT_FEATURES.md, deferred #3) |
 | Standalone CLI binary | New attack surface, no user story (Bitwarden-comparison research, explicitly not recommended) |
 | Folders/collections/org-sharing beyond the single-folder-per-item model | Speculative scope beyond what Phase 8 schedules (Bitwarden-comparison research, explicitly not recommended) |
@@ -149,4 +159,4 @@ Which phases cover which requirements.
 
 ---
 *Requirements defined: 2026-09-13*
-*Last updated: 2026-09-13 after brownfield doc-ingest and initial roadmap creation*
+*Last updated: 2026-09-30 after Phases 8-9 and ad-hoc Make UI / UAT remediation work (originally 2026-09-13)*

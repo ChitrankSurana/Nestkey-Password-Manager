@@ -11,16 +11,19 @@ pipe) that shipped afterward on branch `feature/bitwarden-port-phase1`, ahead of
 Dates below are inferred from the dated execution-plan filenames in
 `docs/superpowers/plans/`, not exact ship timestamps.
 
-The remaining journey is two independent, not-yet-started phases: porting the vault UI to a new
-Figma design (adding item types, favorites, folders, and per-item health — Phase 8), and closing
-three gaps a security audit found in the already-shipped web mode (Phase 9). Neither depends on
-the other; both depend only on the shipped base (Phase 6/7).
+Phases 8 and 9 are now complete: Phase 8 ported the vault UI to the Figma design (item types,
+favorites, folders, per-item health), and Phase 9 closed the three gaps a security audit found in
+the shipped web mode (file paths, rate limiting, headers). Since 2026-09-22, further work has run
+outside the GSD phase system on branch `feature/modern-ui-overhaul`: the Make UI (a third UI
+variant) and a UAT remediation effort (Waves 0-4), tracked in
+`docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md` and `.planning/.continue-here.md`.
 
 ## Milestones
 
 - ✅ **v1.0 Core Password Manager** — Phases 1-6 (shipped 2026-07-01 to 2026-07-19)
 - ✅ **v1.1 Platform Integrations** — Phase 7 (shipped 2026-09, branch `feature/bitwarden-port-phase1`)
-- 📋 **v2.0 New Vault UI & Security Hardening** — Phases 8-9 (planned, not started)
+- ✅ **v2.0 New Vault UI & Security Hardening** — Phases 8-9 (completed 2026-09-19)
+- 🚧 **Modern UI overhaul (ad-hoc, no GSD phase)** — Make UI + UAT remediation on `feature/modern-ui-overhaul` (in progress as of 2026-09-30, not merged to `main`)
 
 ## Phases
 

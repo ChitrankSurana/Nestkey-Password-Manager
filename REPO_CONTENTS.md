@@ -5,6 +5,12 @@
 Two branches were pushed: `main` (M1 + M2, complete and merged) and `m3-backup-csv` (M3, complete,
 not yet merged to `main` — see `RESUME_HERE.md` / `.worktrees/m3-backup-csv/RESUME_HERE.md`).
 
+> **Status note (2026-09-30): this file is a historical snapshot and the file lists below are
+> out of date.** The repo has since gained `viewer-src-tauri/`, `web-src-tauri/`, `figma-make/`,
+> `src/newui/`, `src/makeui/`, many more `core/src/*.rs` modules (`totp`, `biometric`,
+> `ssh_agent`, `ssh_keys`, `jsonio`, `hibp`, ...), and the `.planning/` tree. M3 is merged, and
+> `m3-backup-csv` is no longer a pending branch. Run `git ls-files` for the real list.
+
 If a manual verification pass adds files later, this list won't auto-update — re-run
 `git ls-files` / `git status --ignored` to check it's still accurate.
 

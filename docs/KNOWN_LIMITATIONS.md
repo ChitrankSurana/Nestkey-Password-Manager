@@ -1,6 +1,6 @@
 # Known Limitations & Deferred Items
 
-**Last updated:** 2026-07-19
+**Last updated:** 2026-09-30
 
 This is a plain list of everything that has been consciously **skipped, deferred, or accepted as a
 known gap** so far — because none of it was a show-stopper for shipping the milestone it came up in.
@@ -13,23 +13,19 @@ certain way, check here first.
 
 ## 1. Testing gaps
 
-- **The Viewer App and Web Portal have never actually been launched and clicked through end-to-end
-  before this document set.** Every prior milestone (M5 read-only viewer, M6 web mode) explicitly
-  deferred "actually running `cargo tauri dev` against the viewer config" and "actually launching
-  `cargo run -p pwmgr-web` and browsing it" to "the manual walkthrough after M6" — and that walkthrough
-  still hasn't happened. `docs/testing/HOW_TO_TEST_VIEWER_APP.md` and
-  `docs/testing/HOW_TO_TEST_WEB_PORTAL.md` are the first real procedures for this; running them is
-  still an open action item, not something already confirmed working.
-- **No automated UI/visual test tooling exists anywhere in this repo** (no Playwright, no
-  `*.test.tsx`, no visual regression suite). Every screen, theme, tooltip, and resize behavior is
-  verified by a human following a manual checklist (`docs/testing/`). This was a deliberate,
+- **The web-mode pass of the UAT is still deferred.** A desktop UAT (Phases A and B) ran in
+  September 2026 and drove the remediation work, but the deferred web-mode pass (B2, J7, N11, N14
+  plus a full web re-run) is still open — see `docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md`.
+- **No automated browser/UI/visual test tooling exists anywhere in this repo** (no Playwright, no
+  visual regression suite). Frontend unit tests do exist (`vitest`, `src/**/*.test.ts`, covering
+  helpers such as card, clipboard, mask, totp and reprompt policy), but no component/screen tests.
+  Every screen, theme, tooltip, and resize behavior is verified by a human following a manual
+  checklist (`docs/testing/`). This was a deliberate,
   repeated decision (TRD §7 explicitly allows "lighter/manual acceptable" for this class of
   behavior), not an oversight — but it does mean UI regressions are only caught when someone
   actually runs the checklist.
-- **A two-browser-session HTTP integration test** (proving the web portal's session isolation holds
-  over two real concurrent cookie jars, not just two in-process `SessionStore` entries) hasn't been
-  written yet. Today's coverage is 3 integration tests: a register→list roundtrip, a CSRF-header
-  rejection check, and a missing-cookie 401 check — all single-session.
+- *(Resolved)* A two-browser-session HTTP integration test now exists
+  (`two_browser_sessions_over_real_connections_stay_isolated`).
 - **The tooltip-on-a-disabled-control behavior** (M1 Phase B, Task 27.5) is flagged as best-effort
   only — the timing window to observe it is narrow enough that it's "genuinely difficult to observe
   manually," so it has never been conclusively confirmed either way.
@@ -51,26 +47,20 @@ certain way, check here first.
 
 ## 3. Deferred code cleanup
 
-- **`AppState::open(paths)` production constructor doesn't exist yet.** The same boilerplate for
-  building a locked `AppState` is duplicated three times — `src-tauri/src/lib.rs`,
-  `web-src-tauri/src/handlers.rs` (`build_locked_state`), and `viewer-src-tauri/src/lib.rs`. Bundled
-  as a fast-follow once all of M6 (both halves) ships.
-- **`SessionStore::remove` (web portal) has zero production callers.** There's no logout route wired
-  up yet — a decision is still needed on whether to add one or drop the method.
+- *(Resolved)* The shared `AppState::open(paths)` constructor now exists in `core/src/state.rs`, and
+  web mode has a `POST /api/logout` route that removes the session (no visible "Log out" button
+  in the UI yet).
 
 ## 4. Not yet built
 
-- **M6's responsive/mobile layout is spec'd and planned but has zero implementation code.** The
-  design spec and 8-task plan are approved and committed
-  (`docs/superpowers/specs/2026-07-19-m6-responsive-layout-design.md`), but nothing has been
-  implemented — as of today the app is desktop-width-only in practice.
-- **Automated viewport/screenshot testing** (e.g. Playwright) was evaluated for the responsive-layout
-  work and explicitly deferred in favor of the same manual-QA convention used everywhere else in this
-  project — tracked as a cross-milestone deferred item, revisit trigger not yet reached.
-- **macOS/Linux builds.** Tauri supports this in principle with modest per-OS packaging work, but none
-  of it has been done — the app is Windows-only in practice today.
-- **Android companion + sync.** Design-only (PRD §9) — sync transport (Bluetooth vs. LAN-discovery vs.
-  manual QR/export-import) is an explicitly open decision, not started.
+- **Automated viewport/screenshot testing** (e.g. Playwright) remains deferred in favor of manual QA.
+  Rust (`cargo test --workspace`) and frontend Vitest suites exist and are run before each commit.
+- **Open UAT items:** Wave 0 live retests and the deferred web-mode pass (B2, J7, N11, N14) — see
+  `docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md`.
+- **CSV/Viewer support for new item types** (secure note, card, identity): CSV does not carry them
+  (use JSON export/import instead); Viewer support for them is deferred.
+- **macOS/Linux builds.** Windows-only in practice today.
+- **Android companion + sync.** Design-only (PRD §9).
 
 ## 5. Deliberate non-goals (not gaps — never in scope)
 

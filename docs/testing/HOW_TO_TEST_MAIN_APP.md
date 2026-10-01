@@ -1,5 +1,7 @@
 # How to Test — Main App
 
+> **Status note (2026-09-30):** Written for the Classic UI before the New/Make UIs and Phase 9. For current UAT use `docs/testing/UAT_MODERN_UI_OVERHAUL.md` and `docs/testing/UAT_USER_TESTING_GUIDE.md`.
+
 **Scope:** the full read/write desktop app (`pwmgr-app`, crate `src-tauri`, launched via
 `npm run tauri dev`). Covers every feature shipped through M1–M6 (web-mode half): auth, vault CRUD,
 search, trash, generator, health dashboard, settings/theming, backup/restore, CSV import/export.

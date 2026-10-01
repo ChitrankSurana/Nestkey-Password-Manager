@@ -45,6 +45,18 @@ and "no write commands exist in this binary" are actual compile-time facts, not 
 - **Theming** — light/dark, five accent colors.
 - **Keyboard-accessible tooltips** on every control.
 - **Auto-lock** on idle, with a manual Lock button, and full key zeroization on lock.
+- **Three interchangeable UIs** (Settings → Interface): **Classic**, **New**, and **Make** (the
+  current design, ported from the Figma prototype; the only one with the full item-type/folder set).
+- **Item types, folders, favorites** — logins, secure notes, payment cards, identities; custom
+  fields (incl. boolean); TOTP codes; per-credential **password history** and general **change log**.
+- **Master-password reprompt gate** — secrets are gated by default, with a per-credential exempt
+  override and a configurable grace window.
+- **Quick unlock** — PIN, Windows Hello biometric (desktop), plus an optional **SSH agent** over a
+  named pipe (desktop only).
+- **Full-fidelity JSON export/import** in addition to CSV (folders, favorites, card hints, custom
+  fields, TOTP, history).
+- **Hardened web portal** — loopback only, login/register throttle, bounded Argon2, strict CSP and
+  security headers, and no client-supplied filesystem paths (export = download, import/restore = upload).
 
 ## Quick start
 
@@ -54,7 +66,8 @@ npm install
 npm run tauri:dev        # Main App
 ```
 
-See [`docs/GETTING-STARTED`](docs/HOW_TO_USE_MAIN_APP.md) below for the other two apps, and
+See [`docs/HOW_TO_USE_APP.md`](docs/HOW_TO_USE_APP.md) for the full feature guide (the Viewer and
+Web Portal guides are linked in the table below), and
 [`docs/testing/`](docs/testing/) for step-by-step manual test walkthroughs of all three.
 
 ## Docs
@@ -65,7 +78,8 @@ See [`docs/GETTING-STARTED`](docs/HOW_TO_USE_MAIN_APP.md) below for the other tw
 | [`docs/TRD.md`](docs/TRD.md) | How it's built: stack, crypto design, data model, module breakdown |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture and key data flows |
 | [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) | Assets, adversaries, mitigations, accepted risks |
-| [`docs/HOW_TO_USE_MAIN_APP.md`](docs/HOW_TO_USE_MAIN_APP.md) | End-user guide — Main App |
+| [`docs/HOW_TO_USE_APP.md`](docs/HOW_TO_USE_APP.md) | **Current** end-user guide — all features, all three UIs |
+| [`docs/HOW_TO_USE_MAIN_APP.md`](docs/HOW_TO_USE_MAIN_APP.md) | Legacy guide — Classic interface only |
 | [`docs/HOW_TO_USE_VIEWER_APP.md`](docs/HOW_TO_USE_VIEWER_APP.md) | End-user guide — Viewer App |
 | [`docs/HOW_TO_USE_WEB_PORTAL.md`](docs/HOW_TO_USE_WEB_PORTAL.md) | End-user guide — Web Portal |
 | [`docs/testing/`](docs/testing/) | Step-by-step manual test walkthroughs, one per app |
@@ -73,8 +87,11 @@ See [`docs/GETTING-STARTED`](docs/HOW_TO_USE_MAIN_APP.md) below for the other tw
 
 ## Status
 
-**M1–M5 and M6's web-mode half are complete and merged.** M6's responsive-layout half is
-spec'd and planned but not yet implemented. See `RESUME_HERE.md` for the exact in-progress state.
+**M1–M6, Phases 7–9 (biometric/SSH, New vault UI, web-mode security hardening) are complete and
+merged or verified.** Active work is on branch `feature/modern-ui-overhaul`: the **Make UI**
+(third UI variant) plus a UAT-remediation pass (Waves 0–4) — JSON export/import, per-credential
+change log, MakeShell restructure and Viewer restyle are done; remaining items (live retests,
+deferred web-mode pass) are tracked in `docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md`.
 
 | Milestone | Delivers | Status |
 |---|---|---|
@@ -83,8 +100,11 @@ spec'd and planned but not yet implemented. See `RESUME_HERE.md` for the exact i
 | M3 | Encrypted backup/restore, CSV export/import | ✅ Done |
 | M4 | Health dashboard, navigation rail, full theming | ✅ Done |
 | M5 | Read-only Viewer app | ✅ Done |
-| M6 (web mode) | Localhost-bound web portal | ✅ Done |
-| M6 (responsive layout) | Mobile-width layout for Main App + Viewer | 🚧 Planned, not built |
+| M6 | Localhost web portal + responsive layout | ✅ Done |
+| Phase 7 | Windows Hello biometric unlock, SSH agent | ✅ Done |
+| Phase 8 | New vault UI: item types, favorites, folders, reprompt | ✅ Done |
+| Phase 9 | Web-mode security hardening (path closure, throttle, CSP) | ✅ Done |
+| Modern UI overhaul | Make UI variant + UAT remediation | 🚧 In progress (`feature/modern-ui-overhaul`) |
 | Later | Android companion + sync design, macOS/Linux builds | ⏳ Not started |
 
 ## Stack

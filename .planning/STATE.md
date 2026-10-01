@@ -1,14 +1,14 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.0
-milestone_name: New Vault UI & Security Hardening (Phases 8-9) — Planned
+milestone_name: New Vault UI & Security Hardening (Phases 8-9) — Complete; ad-hoc Make UI / UAT remediation in progress
 current_phase: 09
-current_phase_name: Web Mode Security Hardening
-status: planning
-stopped_at: Phase 8 complete, ready to plan Phase 09
-last_updated: "2026-09-19T17:06:40.613Z"
-last_activity: 2026-09-19
-last_activity_desc: Phase 8 complete, transitioned to Phase 09
+current_phase_name: Web Mode Security Hardening (complete, verified 2026-09-19)
+status: executing (ad-hoc, outside GSD phases)
+stopped_at: Wave 4 UAT remediation items 1-4 committed on feature/modern-ui-overhaul (HEAD 23f6fc3, 2026-09-30)
+last_updated: "2026-09-30T00:00:00.000Z"
+last_activity: 2026-09-30
+last_activity_desc: Make UI copy-button unify, single-instance guard, devtools no longer auto-open
 state_head: 03ed3e6adc70633b490582f2781f3f6cd84e9b2e
 progress:
   total_phases: 2
@@ -30,15 +30,19 @@ zero-knowledge and local-only by default, with no path to recover a forgotten ma
 
 ## Current Position
 
-Phase: 09 — Web Mode Security Hardening
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-19 — Phase 8 complete, transitioned to Phase 09
+Phases 1-9 complete (Phase 9 verified 2026-09-19; human UAT items from 09-VERIFICATION.md remain).
+Active work is NOT a GSD phase: branch `feature/modern-ui-overhaul` carries the Make UI (third
+UI variant) and a UAT remediation effort tracked in `docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md`.
+Done: Waves 1-3, Wave 4 (JSON export/import, per-credential change log, MakeShell restructure,
+Viewer restyle), single-instance guard, Make UI copy-button unification.
+Still queued: Wave 0 live retests (R1-R5, vault-data-loss, blank-window, N15), deferred web-mode
+pass (B2, J7, N11, N14 + W re-run), fresh UAT script. See `.planning/.continue-here.md`.
+Last activity: 2026-09-30 — devtools no longer auto-open on `tauri dev`
 PROJECT.md/REQUIREMENTS.md/ROADMAP.md/STATE.md. Phases 1-7 (PRD milestones M1-M6 plus biometric
 unlock/SSH agent) retroactively marked Complete based on shipped code, git history, and manual
 test checklists — none were executed through GSD plan-phase/execute-phase.
 
-Progress: [██████████] 100% (7/9 phases complete; plan-level tracking not applicable to
+Progress: [██████████] 100% (9/9 phases complete; plan-level tracking not applicable to
 pre-GSD phases)
 
 ## Performance Metrics
@@ -130,6 +134,10 @@ Recent decisions affecting current work:
   doc-vs-shipped-behavior mismatch, not blocking any phase)
 
 ### Blockers/Concerns
+
+- [Resolved 2026-09-19] H1 (web-mode arbitrary file read/write) and SECURITY_CONCERNS M1-M3 were
+  closed by Phase 9 (see `09-SECURITY.md`, `threats_open: 0`). Entries below naming them as open
+  are historical.
 
 - [Phase 9 candidate]: `SECURITY_CONCERNS.md` (audit dated 2026-07-19) flags H1 — web-mode
   arbitrary file read/write via client-supplied paths — as the highest-severity open item, and it
