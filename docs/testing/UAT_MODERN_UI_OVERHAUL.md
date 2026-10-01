@@ -350,5 +350,5 @@ which step number in Observation.
 ### D-only cases
 
 **D1 Windows Hello** — Settings → Security → enable biometric → setup → Lock → fingerprint/face button → **Check:** unlocks. No hardware → `N/A`. After M9.3 → **Check:** biometric cleared.
-**D2 SSH agent** — Enable SSH agent → key `uat` added (M9.0) → run `ssh-add -l` with `SSH_AUTH_SOCK` per `docs/HOW_TO_TEST_SSH_AGENT.md` → **Check:** key fingerprint listed. Delete key → **Check:** master-password prompt required first.
+**D2 SSH agent** — Enable SSH agent → key `uat` added (M9.0) → run `ssh-add -l` with `SSH_AUTH_SOCK` per `docs/testing/HOW_TO_TEST_SSH_AGENT.md` → **Check:** key fingerprint listed. Delete key → **Check:** master-password prompt required first.
 **D3 Window title** — **Check:** title bar text (currently `tauri-app`, `lib.rs:54`) — record, cosmetic.

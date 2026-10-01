@@ -109,8 +109,8 @@ another machine on the network.
 3. Log into the **Viewer App** and **Web Portal** with the same username/password — same account,
    same data, three surfaces.
 
-See `docs/HOW_TO_USE_APP.md` (current, all three UIs), `docs/HOW_TO_USE_VIEWER_APP.md` and
-`docs/HOW_TO_USE_WEB_PORTAL.md` for what each app can do, and `docs/testing/` for full manual test
+See `docs/guides/HOW_TO_USE_APP.md` (current, all three UIs), `docs/guides/HOW_TO_USE_VIEWER_APP.md` and
+`docs/guides/HOW_TO_USE_WEB_PORTAL.md` for what each app can do, and `docs/testing/` for full manual test
 walkthroughs. After first login, Settings → Interface switches between the Classic, New and Make UIs.
 
 ## Troubleshooting

@@ -234,7 +234,7 @@ instantly. The app also **auto-locks** after your configured idle period regardl
 
 ```
 %USERPROFILE%\.pwmgr\
-  registry.db            — usernames + KDF salts only, no secrets, unencrypted (by design — see docs/ARCHITECTURE.md)
+  registry.db            — usernames + KDF salts only, no secrets, unencrypted (by design — see docs/design/ARCHITECTURE.md)
   vaults\<user>.vault     — your actual encrypted data, SQLCipher + per-field AES-256-GCM
   backups\*.bak           — encrypted backups you've created
   config.json             — theme, auto-lock minutes, interface choice, and other preferences (global, not per-account)
@@ -245,5 +245,5 @@ instantly. The app also **auto-locks** after your configured idle period regardl
 - Classic interface specifically, in more granular detail → [`HOW_TO_USE_MAIN_APP.md`](HOW_TO_USE_MAIN_APP.md)
 - Read-only emergency access → [`HOW_TO_USE_VIEWER_APP.md`](HOW_TO_USE_VIEWER_APP.md)
 - Browser access on this machine → [`HOW_TO_USE_WEB_PORTAL.md`](HOW_TO_USE_WEB_PORTAL.md)
-- What's protected and what isn't → [`THREAT_MODEL.md`](THREAT_MODEL.md)
-- Known gaps and deferred items → [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md)
+- What's protected and what isn't → [`THREAT_MODEL.md`](../design/THREAT_MODEL.md)
+- Known gaps and deferred items → [`KNOWN_LIMITATIONS.md`](../KNOWN_LIMITATIONS.md)

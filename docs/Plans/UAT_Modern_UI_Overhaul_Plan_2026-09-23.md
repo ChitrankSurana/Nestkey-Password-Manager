@@ -402,7 +402,7 @@ which step number in Observation.
 ### D-only cases
 
 **D1 Windows Hello** — Settings → Security → enable biometric → setup → Lock → fingerprint/face button → **Check:** unlocks. No hardware → `N/A`. After M9.3 → **Check:** biometric cleared.
-**D2 SSH agent** — Enable SSH agent → key `uat` added (M9.0) → run `ssh-add -l` with `SSH_AUTH_SOCK` per `docs/HOW_TO_TEST_SSH_AGENT.md` → **Check:** key fingerprint listed. Delete key → **Check:** master-password prompt required first.
+**D2 SSH agent** — Enable SSH agent → key `uat` added (M9.0) → run `ssh-add -l` with `SSH_AUTH_SOCK` per `docs/testing/HOW_TO_TEST_SSH_AGENT.md` → **Check:** key fingerprint listed. Delete key → **Check:** master-password prompt required first.
 **D3 Window title** — **Check:** title bar text (currently `tauri-app`, `lib.rs:54`) — record, cosmetic.
 
 ---
@@ -418,7 +418,7 @@ which step number in Observation.
 ## Critical files referenced
 `src/makeui/MakeApp.tsx`, `src/makeui/components/{ItemDrawer,Sidebar,DetailPanel,CredentialBlock,Settings,TrashView,DataHub,HealthDashboard,Generator}.tsx`,
 `src/screens/{Login,Register,Settings,CsvExport}.tsx`, `core/src/vault.rs`, `core/src/auth.rs`,
-`src-tauri/src/{commands,lib}.rs`, `web-src-tauri/src/handlers.rs`, `docs/HOW_TO_USE_APP.md`.
+`src-tauri/src/{commands,lib}.rs`, `web-src-tauri/src/handlers.rs`, `docs/guides/HOW_TO_USE_APP.md`.
 
 ## Verification of this plan's output
 Both docs exist in `docs/testing/`; every case ID has Claude result for D and W (Pass/Fail/N/A/Blocked + note);

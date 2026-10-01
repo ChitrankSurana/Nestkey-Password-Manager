@@ -1,6 +1,6 @@
 # Bitwarden Security Model vs. Our Threat Model
 
-Sources: [Bitwarden Security Whitepaper](https://bitwarden.com/help/bitwarden-security-white-paper/), [ETH Zurich cryptography audit writeup](https://bitwarden.com/blog/security-through-transparency-eth-zurich-audits-bitwarden-cryptography/), [Compliance/Audits page](https://bitwarden.com/help/is-bitwarden-audited/). Our ground truth: `docs/THREAT_MODEL.md`.
+Sources: [Bitwarden Security Whitepaper](https://bitwarden.com/help/bitwarden-security-white-paper/), [ETH Zurich cryptography audit writeup](https://bitwarden.com/blog/security-through-transparency-eth-zurich-audits-bitwarden-cryptography/), [Compliance/Audits page](https://bitwarden.com/help/is-bitwarden-audited/). Our ground truth: `docs/design/THREAT_MODEL.md`.
 
 ## 1. What Bitwarden publicly documents
 

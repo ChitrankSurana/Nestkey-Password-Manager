@@ -1,6 +1,6 @@
 # How to Use — Viewer App
 
-> **Status note (2026-09-30):** The Viewer was restyled onto the Make UI's visual language after this guide was written (commit `f417284`), so screenshots/descriptions of the old Classic look no longer match. It remains read-only (master-password login; view, search, copy). Full feature reference for the main app: `docs/HOW_TO_USE_APP.md`.
+> **Status note (2026-09-30):** The Viewer was restyled onto the Make UI's visual language after this guide was written (commit `f417284`), so screenshots/descriptions of the old Classic look no longer match. It remains read-only (master-password login; view, search, copy). Full feature reference for the main app: `HOW_TO_USE_APP.md` (same folder).
 
 The Viewer App is a **second, smaller desktop app** for one specific situation: you need to look up
 a password, but the Main App is unavailable — broken, mid-update, or just not installed on the
@@ -62,4 +62,4 @@ The Viewer reflects whatever Theme and Accent color you last set in the Main App
 
 - Full read/write daily use → [`HOW_TO_USE_MAIN_APP.md`](HOW_TO_USE_MAIN_APP.md)
 - Browser access on this machine → [`HOW_TO_USE_WEB_PORTAL.md`](HOW_TO_USE_WEB_PORTAL.md)
-- Step-by-step verification of this app → [`testing/HOW_TO_TEST_VIEWER_APP.md`](testing/HOW_TO_TEST_VIEWER_APP.md)
+- Step-by-step verification of this app → [`testing/HOW_TO_TEST_VIEWER_APP.md`](../testing/HOW_TO_TEST_VIEWER_APP.md)
