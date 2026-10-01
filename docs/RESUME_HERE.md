@@ -29,4 +29,4 @@
 1. `docs/Plans/UAT_REMEDIATION_PLAN_2026-09-27.md` — triage, rulings, Wave 4 notes.
 2. `.planning/.continue-here.md` — blocking constraints (e.g. `reprompt_exempt`; never reuse the old
    `reprompt` column).
-3. `docs/HOW_TO_USE_APP.md` — current feature reference.
+3. `docs/guides/HOW_TO_USE_APP.md` — current feature reference.

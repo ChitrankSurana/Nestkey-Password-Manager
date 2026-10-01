@@ -1,6 +1,6 @@
 # How to Use — Main App
 
-> **Status note (2026-09-30):** Describes the Classic interface only. It predates the New/Make UIs, folders, item types, PIN/Windows Hello unlock, the SSH agent and the reprompt gate. Current reference: `docs/HOW_TO_USE_APP.md`.
+> **Status note (2026-09-30):** Describes the Classic interface only. It predates the New/Make UIs, folders, item types, PIN/Windows Hello unlock, the SSH agent and the reprompt gate. Current reference: `HOW_TO_USE_APP.md` (same folder).
 
 The Main App is the primary way to use this password manager day-to-day: a desktop window with full
 read/write access to your vault — add, edit, search, generate, back up, import/export, and monitor
@@ -157,7 +157,7 @@ are detected and skipped automatically, and the result tells you how many were i
 
 ```
 %USERPROFILE%\.pwmgr\
-  registry.db          — usernames + KDF salts only, no secrets, unencrypted (by design — see docs/ARCHITECTURE.md)
+  registry.db          — usernames + KDF salts only, no secrets, unencrypted (by design — see docs/design/ARCHITECTURE.md)
   vaults\<user>.vault   — your actual encrypted data, SQLCipher + per-field AES-256-GCM
   backups\*.bak         — encrypted backups you've created
   config.json           — theme, auto-lock minutes, and other preferences
@@ -167,4 +167,4 @@ are detected and skipped automatically, and the result tells you how many were i
 
 - Read-only emergency access → [`HOW_TO_USE_VIEWER_APP.md`](HOW_TO_USE_VIEWER_APP.md)
 - Browser access on this machine → [`HOW_TO_USE_WEB_PORTAL.md`](HOW_TO_USE_WEB_PORTAL.md)
-- What's protected and what isn't → [`THREAT_MODEL.md`](THREAT_MODEL.md)
+- What's protected and what isn't → [`THREAT_MODEL.md`](../design/THREAT_MODEL.md)

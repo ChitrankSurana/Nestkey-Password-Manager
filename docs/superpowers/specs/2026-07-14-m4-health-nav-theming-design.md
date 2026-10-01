@@ -6,7 +6,7 @@ questions), pending write-up as an implementation plan via `superpowers:writing-
 
 ## 1. Purpose
 
-Deliver M4 per `docs/PRD.md`'s milestone table: a health dashboard (weak/reused/old passwords +
+Deliver M4 per `docs/design/PRD.md`'s milestone table: a health dashboard (weak/reused/old passwords +
 opt-in HIBP breach check), a navigation rail, and full theming (light/dark × 5 accent colors). Also
 folds in a standalone Generator screen — explicitly deferred from M2 to M4 at the time, and a natural
 nav-rail destination once the rail exists.

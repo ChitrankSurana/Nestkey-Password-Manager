@@ -444,7 +444,7 @@ Run M9.1–M9.3 once in Make, then again in Classic Settings (M9.6) before movin
 - Steps:
   1. Settings → Security → set PIN `2468`.
   2. D only: Settings → SSH Agent — **skip actually enabling the toggle** (see Section 2.5's crash
-     warning); if you want to test it anyway, read `docs/HOW_TO_TEST_SSH_AGENT.md` first and have
+     warning); if you want to test it anyway, read `docs/testing/HOW_TO_TEST_SSH_AGENT.md` first and have
      the config.json recovery step ready.
   3. Delete one credential (e.g. `ShopA`'s) so Trash is non-empty going into M9.4.
 - Expected outcome: PIN set confirmation shown; Trash has at least one entry before continuing.
@@ -631,7 +631,7 @@ Run M9.1–M9.3 once in Make, then again in Classic Settings (M9.6) before movin
 
 **D2 — SSH agent**
 - Per Section 2.5: **recommended to skip actually enabling the toggle** given the confirmed crash.
-  If you do want to test it, read `docs/HOW_TO_TEST_SSH_AGENT.md` fully first, and have this ready
+  If you do want to test it, read `docs/testing/HOW_TO_TEST_SSH_AGENT.md` fully first, and have this ready
   in case of a crash-loop: edit `%USERPROFILE%\.pwmgr\config.json`, set `"ssh_agent_enabled":
   false`, save, relaunch. Root cause is documented in the D2 row of the findings doc — record
   whether your result matches (a panic at `ssh_agent_service.rs:138`, "there is no reactor

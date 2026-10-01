@@ -16,7 +16,7 @@ Sources: `bitwarden.com/help/cli`, `/help/managing-items`, `/help/generator`, `/
 - `bw export` — `.csv`, `.json`, `encrypted_json` (password- or account-key-encrypted), or `.zip` (json + attachments). Only `.json`/`encrypted_json` carry cards/identities/passkeys/SSH keys — `.csv` only covers logins+notes. Trash and Sends are never exported.
 - `bw import <format> <path>` — dozens of source formats (`bw import --formats` lists them), including their own encrypted export.
 
-**Autofill** (browser extension/mobile, high-level only): item type drives which web-form fields get matched — not architecturally relevant here since this project has no browser extension and it's an explicit PRD non-goal (`docs/PRD.md` §4).
+**Autofill** (browser extension/mobile, high-level only): item type drives which web-form fields get matched — not architecturally relevant here since this project has no browser extension and it's an explicit PRD non-goal (`docs/design/PRD.md` §4).
 
 ## 2. Our current approach
 
@@ -40,6 +40,6 @@ Sources: `bitwarden.com/help/cli`, `/help/managing-items`, `/help/generator`, `/
 ## 4. Where we're already doing as well or better
 
 - **Compile-time write-restriction (Viewer app has no add/edit/delete code paths at all)** is a stronger guarantee than any RBAC/permission check Bitwarden's collections model provides — theirs is enforced at runtime/server, ours is enforced by the binary literally not containing the code.
-- **CSV plaintext-export confirmation gate** (`docs/PRD.md` §8: "cannot happen without an explicit, unambiguous confirmation step") is more deliberate friction than Bitwarden's plain `.csv` export, which has no such gate.
+- **CSV plaintext-export confirmation gate** (`docs/design/PRD.md` §8: "cannot happen without an explicit, unambiguous confirmation step") is more deliberate friction than Bitwarden's plain `.csv` export, which has no such gate.
 - **Per-field AES-256-GCM on top of SQLCipher** is defense-in-depth beyond what a single-layer full-disk-encrypted export needs, appropriate for our "trust nothing, not even a stolen disk image" threat model.
 - **No server/account/org attack surface at all** — the entire class of Bitwarden CVEs and incidents tied to server-side sync, account takeover, or org-permission bugs simply doesn't exist in our design space.

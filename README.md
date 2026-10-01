@@ -66,7 +66,7 @@ npm install
 npm run tauri:dev        # Main App
 ```
 
-See [`docs/HOW_TO_USE_APP.md`](docs/HOW_TO_USE_APP.md) for the full feature guide (the Viewer and
+See [`docs/guides/HOW_TO_USE_APP.md`](docs/guides/HOW_TO_USE_APP.md) for the full feature guide (the Viewer and
 Web Portal guides are linked in the table below), and
 [`docs/testing/`](docs/testing/) for step-by-step manual test walkthroughs of all three.
 
@@ -74,14 +74,15 @@ Web Portal guides are linked in the table below), and
 
 | Doc | What's in it |
 |---|---|
-| [`docs/PRD.md`](docs/PRD.md) | What we're building and why |
-| [`docs/TRD.md`](docs/TRD.md) | How it's built: stack, crypto design, data model, module breakdown |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture and key data flows |
-| [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) | Assets, adversaries, mitigations, accepted risks |
-| [`docs/HOW_TO_USE_APP.md`](docs/HOW_TO_USE_APP.md) | **Current** end-user guide — all features, all three UIs |
-| [`docs/HOW_TO_USE_MAIN_APP.md`](docs/HOW_TO_USE_MAIN_APP.md) | Legacy guide — Classic interface only |
-| [`docs/HOW_TO_USE_VIEWER_APP.md`](docs/HOW_TO_USE_VIEWER_APP.md) | End-user guide — Viewer App |
-| [`docs/HOW_TO_USE_WEB_PORTAL.md`](docs/HOW_TO_USE_WEB_PORTAL.md) | End-user guide — Web Portal |
+| [`docs/README.md`](docs/README.md) | **Index of every doc**, grouped by purpose |
+| [`docs/design/PRD.md`](docs/design/PRD.md) | What we're building and why |
+| [`docs/design/TRD.md`](docs/design/TRD.md) | How it's built: stack, crypto design, data model, module breakdown |
+| [`docs/design/ARCHITECTURE.md`](docs/design/ARCHITECTURE.md) | System architecture and key data flows |
+| [`docs/design/THREAT_MODEL.md`](docs/design/THREAT_MODEL.md) | Assets, adversaries, mitigations, accepted risks |
+| [`docs/guides/HOW_TO_USE_APP.md`](docs/guides/HOW_TO_USE_APP.md) | **Current** end-user guide — all features, all three UIs |
+| [`docs/guides/HOW_TO_USE_MAIN_APP.md`](docs/guides/HOW_TO_USE_MAIN_APP.md) | Legacy guide — Classic interface only |
+| [`docs/guides/HOW_TO_USE_VIEWER_APP.md`](docs/guides/HOW_TO_USE_VIEWER_APP.md) | End-user guide — Viewer App |
+| [`docs/guides/HOW_TO_USE_WEB_PORTAL.md`](docs/guides/HOW_TO_USE_WEB_PORTAL.md) | End-user guide — Web Portal |
 | [`docs/testing/`](docs/testing/) | Step-by-step manual test walkthroughs, one per app |
 | [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) | Deferred items and accepted non-goals |
 
@@ -112,8 +113,28 @@ deferred web-mode pass) are tracked in `docs/Plans/UAT_REMEDIATION_PLAN_2026-09-
 Tauri 2 (Rust core) + React 19 / TypeScript / Tailwind 4. SQLCipher-encrypted SQLite, AES-256-GCM,
 Argon2id, Axum (web portal), zxcvbn (optional strength scoring).
 
+## Project layout
+
+| Path | What it is |
+|---|---|
+| `core/` | `pwmgr-core` — shared Rust crate (crypto, vault, auth, backup, generator, ...) |
+| `src-tauri/` | Main desktop app (`pwmgr-app`) |
+| `viewer-src-tauri/` | Read-only Viewer app (`pwmgr-viewer`) |
+| `web-src-tauri/` | Localhost web portal (`pwmgr-web`, Axum) |
+| `src/` | React frontend for all apps: Classic UI in `src/`, plus `src/newui/`, `src/makeui/` and `ViewerApp.tsx` |
+| `index.html`, `newui.html`, `makeui.html`, `viewer.html` | Vite entry points, one per UI variant (Classic / New / Make / Viewer) |
+| `docs/` | Documentation — start at [`docs/README.md`](docs/README.md) |
+| `.planning/` | GSD project state, roadmap and phase artifacts |
+| `figma-make/` | Figma Make prototype source the Make UI was ported from |
+| `.github/workflows/` | CI (`cargo test --workspace`, `npm test`, `npm run build`) |
+
+The four HTML entry points deliberately stay at the repo root: their file names are runtime URLs
+(`/makeui.html`, `viewer.html`, ...) that the Rust asset guard (`src-tauri/src/lib.rs`), both
+`tauri.conf.json` files, the web server fallback and the `*-main.tsx` redirects all depend on.
+Moving them would change those URLs.
+
 ## Security
 
 This is a real password manager holding real credentials — see
-[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for exactly what is and isn't defended against. If
+[`docs/design/THREAT_MODEL.md`](docs/design/THREAT_MODEL.md) for exactly what is and isn't defended against. If
 you find a security issue, please open an issue describing it rather than a public exploit writeup.

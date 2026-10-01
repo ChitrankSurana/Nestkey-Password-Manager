@@ -1,6 +1,6 @@
 # Technical Requirements Document (TRD)
 
-> **Status note (2026-09-30):** Original v1.0 design doc. Newer modules (`totp`, `biometric`, `ssh_agent`, `ssh_keys`, `jsonio`, `hibp`) and the Make UI are described in `docs/ARCHITECTURE.md`.
+> **Status note (2026-09-30):** Original v1.0 design doc. Newer modules (`totp`, `biometric`, `ssh_agent`, `ssh_keys`, `jsonio`, `hibp`) and the Make UI are described in `ARCHITECTURE.md` (same folder).
 
 **Product:** Local-First Zero-Knowledge Password Manager
 **Status:** Draft v1.0 — approved design, pre-implementation

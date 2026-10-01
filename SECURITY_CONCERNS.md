@@ -6,7 +6,7 @@ Audit date: 2026-07-19. Scope: `pwmgr-core`, `src-tauri` (desktop), `viewer-src-
 `web-src-tauri` (localhost web mode), and the React frontend. Findings are ranked by severity.
 
 Each item lists **where**, **what**, **impact**, and a **fix**. Items already documented as accepted
-risks in `docs/THREAT_MODEL.md` are marked *(accepted)* and included for completeness.
+risks in `docs/design/THREAT_MODEL.md` are marked *(accepted)* and included for completeness.
 
 The crypto core is well built (Argon2id + AES-256-GCM, constant-time verifier compare, decoy KDF to
 kill the username-timing oracle, authenticated encryption, zeroize on the key type). Most of the real

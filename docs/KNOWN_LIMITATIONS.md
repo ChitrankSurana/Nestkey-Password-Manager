@@ -72,6 +72,6 @@ mistaken for missing features:
 - **Recovering a forgotten master password.** Zero-knowledge means this is impossible by design —
   there is nothing server-side to reset, and the vault cannot be decrypted without it.
 - Defense against malware/keyloggers running as your own logged-in OS user, physical coercion or
-  shoulder-surfing, a compromised OS/firmware, or a full supply-chain/SBOM program (`THREAT_MODEL.md`
+  shoulder-surfing, a compromised OS/firmware, or a full supply-chain/SBOM program (`design/THREAT_MODEL.md`
   §3, adversaries O1–O4 — accepted risks of running software on a general-purpose OS at all, not
   something a password manager can fix from inside).

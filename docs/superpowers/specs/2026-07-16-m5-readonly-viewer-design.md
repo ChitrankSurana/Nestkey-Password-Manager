@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-Deliver M5 per `docs/PRD.md`'s milestone table and user story 9: "if my main app is ever broken or
+Deliver M5 per `docs/design/PRD.md`'s milestone table and user story 9: "if my main app is ever broken or
 unavailable, I can open a separate read-only viewer, enter my master password, and see my data." A
 second, standalone Tauri application that can log in, search, view, and copy existing credentials —
 and cannot create, edit, delete, or otherwise mutate the vault, the registry, or config, even in

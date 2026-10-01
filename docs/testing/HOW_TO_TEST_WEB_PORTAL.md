@@ -117,7 +117,7 @@ while logged in (so the session cookie is attached automatically) or a tool like
    across the two sessions.
 2. **Action:** In one window, click **Lock**. Check the other window.
    **Expected:** Only the locked window's session is affected; the other stays logged in and
-   functional (each session is independent server-side state, per `THREAT_MODEL.md` §5).
+   functional (each session is independent server-side state, per `docs/design/THREAT_MODEL.md` §5).
 
 > Note: an automated version of this exact scenario (two real cookie jars over HTTP) is not yet
 > covered by `cargo test -p pwmgr-web` — see `docs/KNOWN_LIMITATIONS.md` §1. This manual check is
@@ -153,7 +153,7 @@ while logged in (so the session cookie is attached automatically) or a tool like
 1. **Action:** With an active logged-in session, stop the server (Ctrl+C) and start it again
    (`cargo run -p pwmgr-web`).
    **Expected:** Your browser tab's next request gets a `401` — the in-memory session store doesn't
-   survive a restart by design (see `THREAT_MODEL.md` §5). Log in again to continue; your vault data
+   survive a restart by design (see `docs/design/THREAT_MODEL.md` §5). Log in again to continue; your vault data
    itself is untouched (it's durable on disk, only the "who's logged in" state was lost).
 
 ---
