@@ -23,9 +23,7 @@ you want to understand it, and `testing/` if you want to verify it.
 | [`TRD.md`](design/TRD.md) | Technical requirements: stack, crypto design, data model |
 | [`ARCHITECTURE.md`](design/ARCHITECTURE.md) | System architecture and key data flows |
 | [`THREAT_MODEL.md`](design/THREAT_MODEL.md) | Assets, adversaries, mitigations, accepted risks |
-
-Related, at the repo root: [`SECURITY_CONCERNS.md`](../SECURITY_CONCERNS.md) (2026-07-19 audit; H1 and
-M1–M3 since closed in Phase 9).
+| [`SECURITY_CONCERNS.md`](design/SECURITY_CONCERNS.md) | 2026-07-19 security audit; H1 and M1–M3 since closed in Phase 9 |
 
 ## Testing — verifying it (`testing/`)
 
