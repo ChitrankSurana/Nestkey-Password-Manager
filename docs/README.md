@@ -51,15 +51,15 @@ M1–M3 since closed in Phase 9).
 | [`DEFERRED.md`](DEFERRED.md) | Cross-milestone follow-ups deliberately postponed |
 | [`RESUME_HERE.md`](RESUME_HERE.md) | Current session handoff: branch state and what's open |
 
-## Design inputs and research
+## Design inputs and research (`research/`)
 
-- [`FIGMA_DESIGN_BRIEF.md`](FIGMA_DESIGN_BRIEF.md), [`FIGMA_UI_VS_CURRENT_FEATURES.md`](FIGMA_UI_VS_CURRENT_FEATURES.md),
-  [`UI_REDESIGN_CAPABILITY_CHECKLIST.md`](UI_REDESIGN_CAPABILITY_CHECKLIST.md) — Figma brief and gap analysis.
-- [`bitwarden_compare_ideas/`](bitwarden_compare_ideas/) — Bitwarden comparison research.
-- [`make-ui-capture/`](make-ui-capture/) — Make UI screenshots (dark, light, mobile).
-- [`REPO_VS_LOCAL_COMPARISON_2026-07-19.md`](REPO_VS_LOCAL_COMPARISON_2026-07-19.md) — dated snapshot.
+- [`FIGMA_DESIGN_BRIEF.md`](research/FIGMA_DESIGN_BRIEF.md), [`FIGMA_UI_VS_CURRENT_FEATURES.md`](research/FIGMA_UI_VS_CURRENT_FEATURES.md),
+  [`UI_REDESIGN_CAPABILITY_CHECKLIST.md`](research/UI_REDESIGN_CAPABILITY_CHECKLIST.md) — Figma brief and gap analysis.
+- [`research/bitwarden/compare-ideas/`](research/bitwarden/compare-ideas/) — Bitwarden comparison research.
+- [`research/bitwarden/gui-survey/`](research/bitwarden/gui-survey/) — Bitwarden GUI feature survey and port plans.
+- [`make-ui-capture/`](research/make-ui-capture/) — Make UI screenshots (dark, light, mobile).
+- [`REPO_VS_LOCAL_COMPARISON_2026-07-19.md`](research/REPO_VS_LOCAL_COMPARISON_2026-07-19.md) — dated snapshot.
 
 ## Elsewhere
 
 - `.planning/` — GSD project state, roadmap, requirements, per-phase artifacts.
-- `Bitwarden_Feature_copy/` — Bitwarden GUI feature survey and port plans.

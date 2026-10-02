@@ -254,4 +254,4 @@ Steps 1-3 are this branch's immediate work. Steps 4-9 are large enough to run as
 
 - `.planning/phases/08-new-vault-ui-figma-port/8-UI-SPEC.md` — Phase 8 design contract
 - `.planning/phases/08-new-vault-ui-figma-port/8-CONTEXT.md` — the D-01..D-18 decisions
-- `docs/FIGMA_UI_VS_CURRENT_FEATURES.md`, `docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md` — also the two files used to seed the Make prompt (`figma-make/src/imports/`)
+- `docs/research/FIGMA_UI_VS_CURRENT_FEATURES.md`, `docs/research/UI_REDESIGN_CAPABILITY_CHECKLIST.md` — also the two files used to seed the Make prompt (`figma-make/src/imports/`)
