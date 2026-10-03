@@ -45,6 +45,7 @@ you want to understand it, and `testing/` if you want to verify it.
 
 | Doc | What's in it |
 |---|---|
+| [`RELEASE_NOTES_2.9.0.md`](RELEASE_NOTES_2.9.0.md) | What shipped in 2.9.0 and what is still open before 3.0.0 |
 | [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) | Deferred items, quirks and accepted gaps |
 | [`DEFERRED.md`](DEFERRED.md) | Cross-milestone follow-ups deliberately postponed |
 | [`RESUME_HERE.md`](RESUME_HERE.md) | Current session handoff: branch state and what's open |
