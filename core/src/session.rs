@@ -1,5 +1,4 @@
 use crate::crypto::VaultKey;
-use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
 pub trait Clock {

@@ -44,7 +44,7 @@ against the encrypted vault — not mocked, not disabled stubs.
 | `src/App.tsx` | 1140 | The entire design — every component, all mock data, all 23 icons |
 | `src/index.css` | 48 | Google-Fonts imports, a Tailwind v4 `@theme inline` block, scrollbar styling |
 | `src/main.tsx` | 10 | Mount |
-| `src/imports/*.md` | — | Copies of this repo's `docs/FIGMA_UI_VS_CURRENT_FEATURES.md` and `docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md`, used to seed the Make prompt |
+| `src/imports/*.md` | — | Copies of this repo's `docs/research/FIGMA_UI_VS_CURRENT_FEATURES.md` and `docs/research/UI_REDESIGN_CAPABILITY_CHECKLIST.md`, used to seed the Make prompt |
 
 ### A1. The three open questions are now answered
 
@@ -277,5 +277,5 @@ contains realistic-looking sample passwords (fake, but noisy in a password-manag
 
 - `.planning/phases/08-new-vault-ui-figma-port/8-UI-SPEC.md` — Phase 8 design contract
 - `.planning/phases/08-new-vault-ui-figma-port/8-CONTEXT.md` — the D-01..D-18 decisions
-- `docs/FIGMA_UI_VS_CURRENT_FEATURES.md`, `docs/UI_REDESIGN_CAPABILITY_CHECKLIST.md` — also the two
+- `docs/research/FIGMA_UI_VS_CURRENT_FEATURES.md`, `docs/research/UI_REDESIGN_CAPABILITY_CHECKLIST.md` — also the two
   files used to seed the Make prompt (`figma-make/src/imports/`)

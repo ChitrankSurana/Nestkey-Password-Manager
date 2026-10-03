@@ -357,7 +357,7 @@ which step number in Observation.
 1. Open in dark theme. → **Check:** Make palette (not Classic navy/plain list); headings match (e.g. "Health Dashboard / Security analysis of your vault", "Settings / Preferences and security configuration") 📷.
 2. Sidebar bottom sun/moon icon → light theme. → **Check:** readable contrast, no dark-only leftovers 📷.
 3. Settings → Appearance → cycle accents `Indigo`,`Sky`,`Teal`,`Purple`,`Pink`. → **Check:** active nav pill + buttons change color each time.
-4. Compare with `docs/make-ui-capture/dark|light/*.png` and `figma-make/screenshots/` → record visible diffs.
+4. Compare with `docs/research/make-ui-capture/dark|light/*.png` and `figma-make/screenshots/` → record visible diffs.
 
 **M11.2 Health content**
 1. Health Dashboard. → **Check:** `Weak Passwords` includes `OldForum` (`password`); `Reused Passwords` groups ShopA/ShopB if both still have same pw (recreate if deleted); `Unsecured Site (http://)` lists `OldForum`; `Old Passwords` 0.
