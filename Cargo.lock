@@ -3637,7 +3637,7 @@ dependencies = [
 
 [[package]]
 name = "pwmgr-app"
-version = "0.1.0"
+version = "2.9.0"
 dependencies = [
  "dirs 5.0.1",
  "pwmgr-core",
@@ -3658,7 +3658,7 @@ dependencies = [
 
 [[package]]
 name = "pwmgr-core"
-version = "0.1.0"
+version = "2.9.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -3682,7 +3682,7 @@ dependencies = [
 
 [[package]]
 name = "pwmgr-viewer"
-version = "0.1.0"
+version = "2.9.0"
 dependencies = [
  "dirs 5.0.1",
  "pwmgr-core",
@@ -3695,7 +3695,7 @@ dependencies = [
 
 [[package]]
 name = "pwmgr-web"
-version = "0.1.0"
+version = "2.9.0"
 dependencies = [
  "axum",
  "dirs 5.0.1",
