@@ -1,4 +1,4 @@
-use pwmgr_core::biometric::{BiometricError, BiometricProvider};
+use nestkey_core::biometric::{BiometricError, BiometricProvider};
 
 /// Windows Hello (`UserConsentVerifier`) as the "prove it's really you" gate, DPAPI
 /// (`CryptProtectData`/`CryptUnprotectData`, tied to the current Windows user account) as the key

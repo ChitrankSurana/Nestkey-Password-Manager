@@ -2852,6 +2852,82 @@ dependencies = [
 ]
 
 [[package]]
+name = "nestkey-app"
+version = "2.9.0"
+dependencies = [
+ "dirs 5.0.1",
+ "nestkey-core",
+ "serde",
+ "serde_json",
+ "ssh-agent-lib",
+ "ssh-key",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
+ "tokio",
+ "windows 0.58.0",
+ "zeroize",
+]
+
+[[package]]
+name = "nestkey-core"
+version = "2.9.0"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "csv",
+ "data-encoding",
+ "hmac",
+ "rand 0.8.6",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha1",
+ "signature",
+ "ssh-key",
+ "subtle",
+ "tempfile",
+ "thiserror 1.0.69",
+ "zeroize",
+ "zxcvbn",
+]
+
+[[package]]
+name = "nestkey-viewer"
+version = "2.9.0"
+dependencies = [
+ "dirs 5.0.1",
+ "nestkey-core",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
+name = "nestkey-web"
+version = "2.9.0"
+dependencies = [
+ "axum",
+ "dirs 5.0.1",
+ "nestkey-core",
+ "rand 0.8.6",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tower-http",
+ "zeroize",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3633,82 +3709,6 @@ checksum = "6f42ea446cab60335f76979ec15e12619a2165b5ae2c12166bef27d283a9fadf"
 dependencies = [
  "idna",
  "psl-types",
-]
-
-[[package]]
-name = "pwmgr-app"
-version = "2.9.0"
-dependencies = [
- "dirs 5.0.1",
- "pwmgr-core",
- "serde",
- "serde_json",
- "ssh-agent-lib",
- "ssh-key",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tokio",
- "windows 0.58.0",
- "zeroize",
-]
-
-[[package]]
-name = "pwmgr-core"
-version = "2.9.0"
-dependencies = [
- "aes-gcm",
- "argon2",
- "csv",
- "data-encoding",
- "hmac",
- "rand 0.8.6",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "sha1",
- "signature",
- "ssh-key",
- "subtle",
- "tempfile",
- "thiserror 1.0.69",
- "zeroize",
- "zxcvbn",
-]
-
-[[package]]
-name = "pwmgr-viewer"
-version = "2.9.0"
-dependencies = [
- "dirs 5.0.1",
- "pwmgr-core",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tokio",
- "zeroize",
-]
-
-[[package]]
-name = "pwmgr-web"
-version = "2.9.0"
-dependencies = [
- "axum",
- "dirs 5.0.1",
- "pwmgr-core",
- "rand 0.8.6",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tower",
- "tower-http",
- "zeroize",
 ]
 
 [[package]]

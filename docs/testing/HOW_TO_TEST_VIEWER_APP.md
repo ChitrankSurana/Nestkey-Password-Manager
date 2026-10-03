@@ -1,7 +1,7 @@
 # How to Test — Viewer App
 
-**Scope:** the read-only desktop app (`pwmgr-viewer`, crate `viewer-src-tauri`, entry point
-`viewer.html` / `ViewerApp.tsx`). It reuses `pwmgr-core` (crypto/vault/registry) as a library but
+**Scope:** the read-only desktop app (`nestkey-viewer`, crate `viewer-src-tauri`, entry point
+`viewer.html` / `ViewerApp.tsx`). It reuses `nestkey-core` (crypto/vault/registry) as a library but
 registers only 8 commands — `unlock_status`, `login`, `lock`, `touch`, `list_sites`,
 `list_credentials_for_site`, `search`, `get_config`, `copy_to_clipboard`. There is no
 `register_user`, `add_site`, `add_credential`, `update_credential`, `soft_delete_credential`, or any
@@ -22,8 +22,8 @@ $env:PATH = "$env:USERPROFILE\.cargo\bin;C:\Strawberry\perl\bin;C:\Strawberry\c\
 cargo test --workspace
 ```
 
-**Expected:** all workspace crates compile and pass, including `pwmgr-viewer` (its own test count is
-small/none beyond what it inherits from `pwmgr-core`, which is exercised heavily). There is no
+**Expected:** all workspace crates compile and pass, including `nestkey-viewer` (its own test count is
+small/none beyond what it inherits from `nestkey-core`, which is exercised heavily). There is no
 separate `npm test` suite specific to the viewer — the frontend automated tests
 (`src/lib/clipboard.test.ts`) exercise shared code used by both entry points.
 
@@ -49,7 +49,7 @@ $env:PATH = "$env:USERPROFILE\.cargo\bin;C:\Strawberry\perl\bin;C:\Strawberry\c\
 npm run viewer:dev
 ```
 
-**Expected:** a Tauri window opens titled "Password Manager — Viewer", showing the Login screen.
+**Expected:** a Tauri window opens titled "Nestkey Password Manager — Viewer", showing the Login screen.
 
 The equivalent manual form (if you want to `cd` there yourself, or pass extra CLI flags):
 ```powershell

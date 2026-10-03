@@ -243,7 +243,7 @@ export function Sidebar({
           <IconShield size={15} className="text-white" />
         </div>
         <div>
-          <div className="text-sm font-semibold leading-tight text-mk-fg">LocalVault</div>
+          <div className="text-sm font-semibold leading-tight text-mk-fg">Nestkey Password Manager</div>
           <div className="text-[10px] leading-tight text-mk-faint">Personal</div>
         </div>
       </div>

@@ -1,8 +1,8 @@
-use pwmgr_core::commands::{do_get_config, do_lock, do_list_credentials_for_site, do_list_sites, do_login, do_search, do_touch, do_unlock_status};
-use pwmgr_core::dto::{AuthSuccess, ConfigDto, CredentialDto, SearchResultDto, SiteDto};
-use pwmgr_core::error::CommandError;
-use pwmgr_core::paths::AppPaths;
-use pwmgr_core::state::AppState;
+use nestkey_core::commands::{do_get_config, do_lock, do_list_credentials_for_site, do_list_sites, do_login, do_search, do_touch, do_unlock_status};
+use nestkey_core::dto::{AuthSuccess, ConfigDto, CredentialDto, SearchResultDto, SiteDto};
+use nestkey_core::error::CommandError;
+use nestkey_core::paths::AppPaths;
+use nestkey_core::state::AppState;
 use std::time::Duration;
 use tauri::{Emitter, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -71,7 +71,7 @@ const CLIPBOARD_CLEAR_SECS: u64 = 30; // hardcoded constant, NOT a user setting 
 #[tauri::command]
 pub fn copy_to_clipboard(app: tauri::AppHandle, text: String, auto_clear: bool) -> Result<(), CommandError> {
     let secret = Zeroizing::new(text);
-    app.clipboard().write_text(secret.as_str()).map_err(|_| pwmgr_core::error::internal_error())?;
+    app.clipboard().write_text(secret.as_str()).map_err(|_| nestkey_core::error::internal_error())?;
     if !auto_clear {
         return Ok(());
     }

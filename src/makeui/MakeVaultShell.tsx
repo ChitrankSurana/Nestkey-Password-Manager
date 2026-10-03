@@ -95,7 +95,7 @@ export function MakeVaultShell({
         <div className="w-6 h-6 rounded-lg bg-mk-accent flex items-center justify-center flex-shrink-0">
           <IconShield size={12} className="text-white" />
         </div>
-        <span className="text-sm font-semibold text-mk-fg">LocalVault</span>
+        <span className="text-sm font-semibold text-mk-fg">Nestkey Password Manager</span>
       </div>
 
       <div className="hidden md:flex">

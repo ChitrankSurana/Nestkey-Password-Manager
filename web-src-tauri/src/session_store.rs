@@ -1,6 +1,6 @@
-use pwmgr_core::autolock;
-use pwmgr_core::session::Clock;
-use pwmgr_core::state::AppState;
+use nestkey_core::autolock;
+use nestkey_core::session::Clock;
+use nestkey_core::state::AppState;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -133,13 +133,13 @@ impl SessionStore {
     pub fn lock_all(&self) {
         let map = self.inner.read().unwrap();
         for session in map.values() {
-            pwmgr_core::commands::do_lock(&session.app_state);
+            nestkey_core::commands::do_lock(&session.app_state);
         }
     }
 }
 
 /// 256-bit token from the OS CSPRNG (`rand::rngs::OsRng`), hex-encoded — same secure-randomness
-/// source pwmgr-core already uses for salts/nonces (`core/src/crypto.rs`).
+/// source nestkey-core already uses for salts/nonces (`core/src/crypto.rs`).
 fn new_token() -> Token {
     use rand::RngCore;
     let mut bytes = [0u8; 32];
@@ -150,9 +150,9 @@ fn new_token() -> Token {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pwmgr_core::config::Config;
-    use pwmgr_core::paths::AppPaths;
-    use pwmgr_core::session::{Clock, Session};
+    use nestkey_core::config::Config;
+    use nestkey_core::paths::AppPaths;
+    use nestkey_core::session::{Clock, Session};
     use std::cell::RefCell;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
@@ -176,7 +176,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = AppPaths::new(dir.path().to_path_buf());
         paths.ensure_app_dirs().unwrap();
-        let registry = pwmgr_core::registry::open_registry(&paths.registry_db_path()).unwrap();
+        let registry = nestkey_core::registry::open_registry(&paths.registry_db_path()).unwrap();
         let app_state = AppState {
             registry: Mutex::new(registry),
             vault: Mutex::new(None),
@@ -235,7 +235,7 @@ mod tests {
         let clock = FakeClock::new();
         let store = SessionStore::new();
         let (us, _d) = test_session(&clock, Duration::from_secs(300));
-        let key = pwmgr_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
+        let key = nestkey_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
         us.app_state.session.lock().unwrap().unlock(key, "alice", &clock);
         let token = store.insert(us);
         assert!(!store.get(&token).unwrap().app_state.session.lock().unwrap().is_locked());
@@ -253,7 +253,7 @@ mod tests {
         let store = SessionStore::new();
         let (a, _da) = test_session(&clock, Duration::from_secs(300));
         let (b, _db) = test_session(&clock, Duration::from_secs(300));
-        let key = pwmgr_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
+        let key = nestkey_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
         a.app_state.session.lock().unwrap().unlock(key, "alice", &clock);
         let ta = store.insert(a);
         let tb = store.insert(b);
@@ -283,7 +283,7 @@ mod tests {
         let store = SessionStore::new();
         let (a, _da) = test_session(&clock, Duration::from_secs(300));
         let (b, _db) = test_session(&clock, Duration::from_secs(300));
-        let key = pwmgr_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
+        let key = nestkey_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
         a.app_state.session.lock().unwrap().unlock(key, "alice", &clock);
         let ta = store.insert(a);
         let tb = store.insert(b);

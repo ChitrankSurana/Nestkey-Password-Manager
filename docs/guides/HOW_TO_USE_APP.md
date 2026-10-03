@@ -1,4 +1,4 @@
-# How to Use — LocalVault (Current Build)
+# How to Use — Nestkey Password Manager (Current Build)
 
 This is the full, current-state guide to the Main App: everything it can do as of this build,
 across all three interfaces (Classic, New, Make). It supersedes

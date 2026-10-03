@@ -66,7 +66,7 @@
   hardened it: no client-supplied filesystem paths (export is a download body; CSV import and backup
   restore are raw-body uploads cached per session), a login/register/PIN throttle with doubling
   lockout, a bounded Argon2 semaphore, and a strict CSP plus security headers.
-- **Four crates, one core.** `pwmgr-core` (`core/`) is shared by `src-tauri` (desktop app),
+- **Four crates, one core.** `nestkey-core` (`core/`) is shared by `src-tauri` (desktop app),
   `viewer-src-tauri` (read-only), and `web-src-tauri` (web portal). Each feature lands in the order
   core → desktop wrapper → web wrapper/route → frontend API client + UI.
 - **Reprompt gate.** Secrets are gated by the master password by default; the per-credential

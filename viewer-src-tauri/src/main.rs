@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    pwmgr_viewer_lib::run();
+    nestkey_viewer_lib::run();
 }

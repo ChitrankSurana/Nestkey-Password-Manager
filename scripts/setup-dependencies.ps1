@@ -11,7 +11,7 @@
 
     Why each dependency is needed:
       - Rust (rustup, stable-x86_64-pc-windows-msvc): builds the whole Cargo workspace
-        (pwmgr-core, src-tauri, viewer-src-tauri, web-src-tauri).
+        (nestkey-core, src-tauri, viewer-src-tauri, web-src-tauri).
       - MSVC Build Tools (C++ workload): linker (link.exe) + C compiler for the msvc target,
         and to compile vendored OpenSSL/SQLCipher (see rusqlite feature below).
       - Strawberry Perl: `core`'s rusqlite dependency uses the

@@ -70,7 +70,7 @@ impl AppPaths {
 
     /// Creates root/vaults/backups if missing and restricts each to the current user only.
     /// THREAT_MODEL A2 (shared machine) lists OS-level file permissions as a mitigation that
-    /// nothing in pwmgr-core sets — this is the layer that owns app-directory scaffolding, so it
+    /// nothing in nestkey-core sets — this is the layer that owns app-directory scaffolding, so it
     /// owns closing that gap too.
     pub fn ensure_app_dirs(&self) -> std::io::Result<()> {
         for dir in [self.root(), &self.vaults_dir(), &self.backups_dir()] {
@@ -105,7 +105,7 @@ impl AppPaths {
         // the current user, mirroring Unix's 0o700 (owner rwx, nobody else). Best-effort: if
         // icacls itself is unavailable (non-standard Windows install), don't fail app startup over
         // it - log and continue, since this is defense-in-depth, not the primary security boundary
-        // (that's the SQLCipher/Argon2id encryption pwmgr-core already provides).
+        // (that's the SQLCipher/Argon2id encryption nestkey-core already provides).
         let username = std::env::var("USERNAME").unwrap_or_default();
         let output = std::process::Command::new("icacls")
             .arg(dir)

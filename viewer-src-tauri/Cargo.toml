@@ -1,12 +1,12 @@
 [package]
-name = "pwmgr-viewer"
+name = "nestkey-viewer"
 version = "2.9.0"
-description = "Password Manager - Read-only Viewer"
+description = "Nestkey Password Manager - Read-only Viewer"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "pwmgr_viewer_lib"
+name = "nestkey_viewer_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -14,7 +14,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-pwmgr-core = { path = "../core" }
+nestkey-core = { path = "../core" }
 dirs = "5"
 tokio = { version = "1", features = ["time"] }
 zeroize = { version = "1.7", features = ["serde"] }

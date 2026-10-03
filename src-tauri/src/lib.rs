@@ -2,8 +2,8 @@ mod biometric_provider;
 mod commands;
 mod ssh_agent_service;
 
-use pwmgr_core::paths::AppPaths;
-use pwmgr_core::state::AppState;
+use nestkey_core::paths::AppPaths;
+use nestkey_core::state::AppState;
 use tauri::{Emitter, Manager};
 
 pub fn run() {
@@ -19,7 +19,7 @@ pub fn run() {
         // Wave 0 (2026-09-29): must be the first plugin registered - it intercepts a second
         // launch attempt before anything else initializes. Without this, launching the app while
         // an instance is already running silently spawned a second, fully independent process
-        // (confirmed live: Get-Process pwmgr-app going 1 -> 2 -> 3 across relaunches), which is
+        // (confirmed live: Get-Process nestkey-app going 1 -> 2 -> 3 across relaunches), which is
         // also the most likely explanation for the original "vault data loss" report - a stale
         // orphaned window surviving a terminal close, with the user then looking at a different
         // process than they think. Focuses the existing "main" window instead of building a new one.
@@ -76,7 +76,7 @@ pub fn run() {
             let window = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App(entry.into()))
                 // N17/D3: was the literal generic string "tauri-app" (Tauri's own scaffold
                 // default), not a branded name - cosmetic but confusing in the taskbar/title bar.
-                .title("LocalVault")
+                .title("Nestkey Password Manager")
                 .inner_size(800.0, 600.0)
                 .build()?;
 
@@ -120,11 +120,11 @@ pub fn run() {
                     let was_unlocked_before_suspend_check =
                         !state.session.lock().unwrap().is_locked();
                     let suspended = was_unlocked_before_suspend_check
-                        && pwmgr_core::autolock::suspend_gap_exceeds(elapsed, tick_interval);
+                        && nestkey_core::autolock::suspend_gap_exceeds(elapsed, tick_interval);
                     if suspended {
-                        pwmgr_core::commands::do_lock(&state);
+                        nestkey_core::commands::do_lock(&state);
                     }
-                    if suspended || pwmgr_core::autolock::tick(&state, &pwmgr_core::session::SystemClock) {
+                    if suspended || nestkey_core::autolock::tick(&state, &nestkey_core::session::SystemClock) {
                         if let Err(e) = handle.emit("vault-locked", ()) {
                             eprintln!("warning: failed to emit vault-locked event ({e})");
                         }

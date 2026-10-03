@@ -1,5 +1,5 @@
-use pwmgr_core::paths::AppPaths;
-use pwmgr_web::{build_router, AppContext, KdfGuard, SessionStore, ThrottleStore};
+use nestkey_core::paths::AppPaths;
+use nestkey_web::{build_router, AppContext, KdfGuard, SessionStore, ThrottleStore};
 use std::sync::Arc;
 
 /// Starts the real router on an ephemeral 127.0.0.1 port; returns its base URL and the tempdir whose
@@ -963,7 +963,7 @@ async fn an_oversized_upload_is_rejected() {
         .await
         .unwrap();
 
-    let oversized_body = vec![b'a'; pwmgr_web::handlers::UPLOAD_BODY_LIMIT + 1];
+    let oversized_body = vec![b'a'; nestkey_web::handlers::UPLOAD_BODY_LIMIT + 1];
     let res = client
         .post(format!("{base}/api/upload_csv"))
         .header("x-pwmgr-csrf", "1")
@@ -1258,7 +1258,7 @@ async fn security_headers_are_present_on_every_response_shape() {
         let h = res.headers();
         assert_eq!(
             h.get("content-security-policy").map(|v| v.to_str().unwrap()),
-            Some(pwmgr_web::middleware::CSP_POLICY),
+            Some(nestkey_web::middleware::CSP_POLICY),
             "{shape}: CSP missing or different"
         );
         assert_eq!(h.get("x-content-type-options").map(|v| v.as_bytes()), Some(&b"nosniff"[..]), "{shape}: nosniff");
@@ -1276,7 +1276,7 @@ async fn a_saturated_kdf_semaphore_returns_429_rate_limited() {
     post_auth(&client, &base, "register_user", "alice", "correct horse battery").await;
     client.post(format!("{base}/api/logout")).header(CSRF.0, CSRF.1).send().await.unwrap();
 
-    let n = pwmgr_web::kdf_guard::KDF_PERMITS + 3;
+    let n = nestkey_web::kdf_guard::KDF_PERMITS + 3;
     let mut tasks = Vec::new();
     for _ in 0..n {
         let (c, b) = (reqwest::Client::new(), base.clone());
@@ -1317,7 +1317,7 @@ async fn create_backup_download_returns_the_bundle_and_writes_no_server_file() {
     let disposition = res.headers()["content-disposition"].to_str().unwrap().to_string();
     assert!(disposition.starts_with("attachment; filename=\"alice-") && disposition.ends_with(".bak\""), "{disposition}");
     let bytes = res.bytes().await.unwrap();
-    let (user, _vault) = pwmgr_core::backup::decode_bundle(&bytes).expect("body must be a valid bundle");
+    let (user, _vault) = nestkey_core::backup::decode_bundle(&bytes).expect("body must be a valid bundle");
     assert_eq!(user.username, "alice");
     assert_eq!(std::fs::read_dir(&backups).map(|d| d.count()).unwrap_or(0), before, "nothing written server-side");
 }
@@ -1341,9 +1341,9 @@ async fn restore_backup_rejects_a_path_traversal_username() {
     let client = reqwest::Client::builder().cookie_store(true).build().unwrap();
     register_as(&client, &base, "alice").await;
     let genuine = backup_bytes(&client, &base).await;
-    let (mut user, vault) = pwmgr_core::backup::decode_bundle(&genuine).unwrap();
+    let (mut user, vault) = nestkey_core::backup::decode_bundle(&genuine).unwrap();
     user.username = "../evil".to_string();
-    let crafted = pwmgr_core::backup::encode_bundle(&user, &vault);
+    let crafted = nestkey_core::backup::encode_bundle(&user, &vault);
 
     assert_eq!(upload_backup(&client, &base, crafted).await.status(), 200);
     let res = restore(&client, &base, true).await;

@@ -70,6 +70,7 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
     use crate::crypto::derive_key;
 
     struct FakeClock(RefCell<Instant>);

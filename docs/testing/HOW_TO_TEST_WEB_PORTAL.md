@@ -2,7 +2,7 @@
 
 > **Status note (2026-09-30):** Written for the Classic UI before the New/Make UIs and Phase 9. For current UAT use `docs/testing/UAT_MODERN_UI_OVERHAUL.md` and `docs/testing/UAT_USER_TESTING_GUIDE.md`.
 
-**Scope:** the localhost-bound HTTP server (`pwmgr-web`, crate `web-src-tauri`), which is **not a
+**Scope:** the localhost-bound HTTP server (`nestkey-web`, crate `web-src-tauri`), which is **not a
 Tauri app at all** — it's a plain Axum binary that serves the same built React bundle as the Main
 App and exposes the full command set (identical to `src-tauri`'s) over `POST /api/*` routes, gated
 by a session cookie + CSRF header instead of Tauri IPC.
@@ -17,7 +17,7 @@ by a session cookie + CSRF header instead of Tauri IPC.
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;C:\Strawberry\perl\bin;C:\Strawberry\c\bin;" + $env:PATH
-cargo test -p pwmgr-web
+cargo test -p nestkey-web
 ```
 
 **Expected:** all pass. This includes unit tests for `session_store`, `error_map`, and `middleware`
@@ -38,12 +38,12 @@ the frontend first, and launch from the **repo root**, not from `web-src-tauri/`
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;C:\Strawberry\perl\bin;C:\Strawberry\c\bin;" + $env:PATH
 npm run build              # produces ./dist (index.html, viewer.html, assets)
-cargo run -p pwmgr-web      # from the repo root
+cargo run -p nestkey-web      # from the repo root
 ```
 
 **Expected console output:**
 ```
-pwmgr-web listening on http://127.0.0.1:7373 (serving ./dist)
+nestkey-web listening on http://127.0.0.1:7373 (serving ./dist)
 ```
 
 Open **http://127.0.0.1:7373** in your browser (Chrome/Edge/Firefox — any modern browser). You
@@ -120,7 +120,7 @@ while logged in (so the session cookie is attached automatically) or a tool like
    functional (each session is independent server-side state, per `docs/design/THREAT_MODEL.md` §5).
 
 > Note: an automated version of this exact scenario (two real cookie jars over HTTP) is not yet
-> covered by `cargo test -p pwmgr-web` — see `docs/KNOWN_LIMITATIONS.md` §1. This manual check is
+> covered by `cargo test -p nestkey-web` — see `docs/KNOWN_LIMITATIONS.md` §1. This manual check is
 > currently the only verification of it.
 
 ### 4. Idle sweep and auto-lock over HTTP
@@ -151,7 +151,7 @@ while logged in (so the session cookie is attached automatically) or a tool like
 ### 6. Server crash / restart behavior
 
 1. **Action:** With an active logged-in session, stop the server (Ctrl+C) and start it again
-   (`cargo run -p pwmgr-web`).
+   (`cargo run -p nestkey-web`).
    **Expected:** Your browser tab's next request gets a `401` — the in-memory session store doesn't
    survive a restart by design (see `docs/design/THREAT_MODEL.md` §5). Log in again to continue; your vault data
    itself is untouched (it's durable on disk, only the "who's logged in" state was lost).

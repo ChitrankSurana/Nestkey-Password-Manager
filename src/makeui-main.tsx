@@ -30,7 +30,7 @@ function showClassicFallback(message: string) {
     "font-family:system-ui,sans-serif;";
 
   const heading = document.createElement("h1");
-  heading.textContent = "Something went wrong loading the LocalVault interface.";
+  heading.textContent = "Something went wrong loading the Nestkey Password Manager interface.";
   heading.style.cssText = "font-size:1.25rem;font-weight:600;margin:0;";
 
   const body = document.createElement("p");

@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-/// Safe error DTO serialized across the Tauri IPC boundary. `pwmgr-core`'s error types carry
+/// Safe error DTO serialized across the Tauri IPC boundary. `nestkey-core`'s error types carry
 /// internal detail (e.g. raw SQLite error text) that must never reach the frontend verbatim -
 /// per THREAT_MODEL, that would leak implementation details and risks creating an information
 /// oracle (e.g. distinguishing "wrong password" from "unknown username" from "database
@@ -129,7 +129,7 @@ impl From<crate::jsonio::JsonExportError> for CommandError {
     }
 }
 
-/// Not backed by an unlocked session - distinct from any pwmgr-core error because pwmgr-core has
+/// Not backed by an unlocked session - distinct from any nestkey-core error because nestkey-core has
 /// no concept of "session"; that state lives entirely in this Tauri layer's AppState.
 pub fn locked_error() -> CommandError {
     CommandError::new("locked", "Vault is locked. Please log in again.")
@@ -154,7 +154,7 @@ pub fn confirm_required_error(message: &str) -> CommandError {
 }
 
 /// Not backed by an auth/session failure - a well-formed, authenticated request rejected purely
-/// on a request-shape ground (e.g. pwmgr-web's CSRF header check). Distinct from `locked_error`
+/// on a request-shape ground (e.g. nestkey-web's CSRF header check). Distinct from `locked_error`
 /// so the frontend/caller can tell "please log in again" apart from "this specific request was
 /// malformed."
 pub fn forbidden_error(message: &str) -> CommandError {
@@ -181,7 +181,7 @@ impl CommandError {
     // be used to build an instance) while allowing that.
     //
     // Unconditional `pub fn`, not `#[cfg(test)] pub(crate)`: `#[cfg(test)]` only compiles in when
-    // this defining crate (pwmgr-core) is itself under `cargo test`, not when a dependent crate
+    // this defining crate (nestkey-core) is itself under `cargo test`, not when a dependent crate
     // (src-tauri, viewer-src-tauri) runs its own tests against this now-external type. Both
     // binaries' test suites need `.code()` on errors returned from their promoted do_* functions.
     // Not a new information exposure: `code`/`message` are already Serialize'd across IPC to the

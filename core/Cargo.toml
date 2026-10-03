@@ -1,5 +1,5 @@
 [package]
-name = "pwmgr-core"
+name = "nestkey-core"
 version = "2.9.0"
 edition = "2021"
 
