@@ -3,6 +3,12 @@
 Step-by-step guide to changing the app's name everywhere it appears. Written against the repo as of
 `main` @ 2026-10-04.
 
+> **Automated:** `scripts/rename-app.ps1` performs layers A, B and C below in one run, refuses to touch
+> layers D and E, then runs `cargo test --workspace`, `npm test` and `npm run build`. Use it instead of
+> editing by hand. See [section 9](#9-the-rename-script). This guide stays as the reference for what it
+> changes and why. The old names quoted below (`pwmgr-*`, `LocalVault`) are the pre-Nestkey state;
+> after the Nestkey rename the crates are `nestkey-*` and the display name is `Nestkey Password Manager`.
+
 ## 0. Read this first
 
 The app has **no single "app name" setting**. The name lives in five different layers, and the layers
@@ -317,3 +323,33 @@ accepts both old and new values on unlock.
 | Icons and favicon | `src-tauri/icons/*`, `public/*`, favicon `<link>` in 3 HTML files |
 | Docs | `README.md`, `docs/README.md`, `docs/guides`, `docs/design`, `docs/testing`, `docs/*.md` |
 | **Leave alone** | `core/src/auth.rs` (sentinel), the three `.pwmgr` entry points, `ssh_agent_service.rs` pipe, CSRF header, localStorage keys |
+
+---
+
+## 9. The rename script
+
+```
+.\scriptsename-app.ps1                       # prompts for name and slug
+.\scriptsename-app.ps1 -Name "Acme Vault" -Slug acme-vault
+.\scriptsename-app.ps1 -Name "Acme Vault" -Slug acme-vault -DryRun   # list changes, write nothing
+```
+
+Parameters: `-Name` (display name), `-Slug` (kebab-case, used for crates, binaries, npm),
+`-IdPrefix` (default `com.<slug>`), `-DryRun`, `-SkipChecks`.
+
+What it does:
+1. Detects the current display name (from `src-tauri/src/lib.rs`) and slug (from `core/Cargo.toml`),
+   so it can be run again later with another name.
+2. Sets titles, `productName`, bundle identifiers, descriptions and the npm name. Replaces the old
+   display name in the Make UI brand text, `README.md` and live docs. Renames crates, lib names and
+   binary names, including every `<slug>_core::` path.
+3. Skips frozen history: `.planning/`, `docs/Plans/`, `docs/superpowers/`, `docs/research/`,
+   `figma-make/`, this guide, release notes and the UAT findings ledger.
+4. Verifies, and exits non-zero on any failure:
+   - the layer E and D strings are still present (`pwmgr-sentinel-v1`, `.pwmgr`, SSH pipe, CSRF header),
+   - no old crate or binary names are left in live files,
+   - `cargo update -w`, `cargo test --workspace`, `npm test`, `npm run build`.
+
+What it does not do: product-name prose that does not use the exact old display name (for example a
+title that says only "Password Manager"), icons, the favicon, or a manual smoke test. Check those by
+hand. Uninstall the old build before installing the renamed one.
