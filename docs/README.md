@@ -36,7 +36,7 @@ you want to understand it, and `testing/` if you want to verify it.
 ## Plans and specs
 
 - [`Plans/`](Plans/) — current work: Modern UI overhaul plan and progress, UAT plan, UAT remediation
-  plan, Wave 0 fix plan, npm vulnerability fix plan.
+  plan, Wave 0 fix plan. Finished or superseded plans live in [`Plans/archive/`](Plans/archive/).
 - [`superpowers/plans/`](superpowers/plans/) and [`superpowers/specs/`](superpowers/specs/) —
   per-milestone implementation plans (M1–M6, npm audit fix) and design specs (M4–M6). Frozen
   records of shipped work.

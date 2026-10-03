@@ -115,7 +115,7 @@
 
 # Modern UI Overhaul — Figma Make port as a third UI variant (`ui_variant: "make"`)
 
-**Supersedes:** `docs/Plans/Modern_UI_Overhaul_Plan.md` (drafted 2026-09-20 against a 1140-line export).
+**Supersedes:** `docs/Plans/archive/Modern_UI_Overhaul_Plan.md` (drafted 2026-09-20 against a 1140-line export).
 **Re-analysed:** 2026-09-22 against the current `figma-make/` export (2282 lines) and the 16 screenshots in `figma-make/screenshots/`.
 
 ---
@@ -323,7 +323,7 @@ Reference screenshots already exist: `figma-make/screenshots/` — 11 surfaces (
 ## Immediate actions on approval (before Sequencing step 1)
 
 1. `git checkout feature/modern-ui-overhaul` — branch **already exists locally** (verified), so no new branch is created. Working-tree changes (`.gitignore`, `.gsd/`, `docs/`, `figma-make/`) are untracked/unstaged and carry over. No commit.
-2. Write the plan into the repo as a real doc: `docs/Plans/Modern_UI_Overhaul_Plan_<YYYY-MM-DD>_<HHMM>.md` (timestamp from `date` at write time, per your `name_date_time.md` convention). Replaces the stale `docs/Plans/Modern_UI_Overhaul_Plan.md` — I will **keep the old file untouched** and mark it superseded in its header line only if you say so.
+2. Write the plan into the repo as a real doc: `docs/Plans/Modern_UI_Overhaul_Plan_<YYYY-MM-DD>_<HHMM>.md` (timestamp from `date` at write time, per your `name_date_time.md` convention). Replaces the stale `docs/Plans/archive/Modern_UI_Overhaul_Plan.md` — I will **keep the old file untouched** and mark it superseded in its header line only if you say so.
 3. Future plan files follow `name_date_time.md`.
 
 ---
