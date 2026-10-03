@@ -329,9 +329,9 @@ accepts both old and new values on unlock.
 ## 9. The rename script
 
 ```
-.\scriptsename-app.ps1                       # prompts for name and slug
-.\scriptsename-app.ps1 -Name "Acme Vault" -Slug acme-vault
-.\scriptsename-app.ps1 -Name "Acme Vault" -Slug acme-vault -DryRun   # list changes, write nothing
+.\scripts\rename-app.ps1                       # prompts for name and slug
+.\scripts\rename-app.ps1 -Name "Acme Vault" -Slug acme-vault
+.\scripts\rename-app.ps1 -Name "Acme Vault" -Slug acme-vault -DryRun   # list changes, write nothing
 ```
 
 Parameters: `-Name` (display name), `-Slug` (kebab-case, used for crates, binaries, npm),
