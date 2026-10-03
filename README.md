@@ -123,6 +123,7 @@ Argon2id, Axum (web portal), zxcvbn (optional strength scoring).
 | `web-src-tauri/` | Localhost web portal (`pwmgr-web`, Axum) |
 | `src/` | React frontend for all apps: Classic UI in `src/`, plus `src/newui/`, `src/makeui/` and `ViewerApp.tsx` |
 | `index.html`, `newui.html`, `makeui.html`, `viewer.html` | Vite entry points, one per UI variant (Classic / New / Make / Viewer) |
+| `scripts/` | Windows dev-machine setup (`setup-dependencies.ps1`) |
 | `docs/` | Documentation — start at [`docs/README.md`](docs/README.md) |
 | `.planning/` | GSD project state, roadmap and phase artifacts |
 | `figma-make/` | Figma Make prototype source the Make UI was ported from |
