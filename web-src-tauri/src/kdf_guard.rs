@@ -1,4 +1,4 @@
-use pwmgr_core::error::{rate_limited_error, CommandError};
+use nestkey_core::error::{rate_limited_error, CommandError};
 use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 

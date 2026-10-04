@@ -25,7 +25,7 @@ cd viewer-src-tauri
 npx tauri dev
 ```
 
-A window titled **"Password Manager — Viewer"** opens.
+A window titled **"Nestkey Password Manager — Viewer"** opens.
 
 ## Logging in
 

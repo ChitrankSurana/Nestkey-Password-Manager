@@ -6,18 +6,18 @@ use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Extension, Json, Router};
-use pwmgr_core::commands::*;
-use pwmgr_core::dto::{
+use nestkey_core::commands::*;
+use nestkey_core::dto::{
     AuthSuccess, BreachReportDto, ChangeLogEntryDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
     FolderDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
 use crate::kdf_guard::KdfGuard;
 use crate::throttle_store::ThrottleStore;
-use pwmgr_core::paths::AppPaths;
-use pwmgr_core::session::SystemClock;
-use pwmgr_core::state::AppState;
-use pwmgr_core::vault::CustomField;
+use nestkey_core::paths::AppPaths;
+use nestkey_core::session::SystemClock;
+use nestkey_core::state::AppState;
+use nestkey_core::vault::CustomField;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -309,7 +309,7 @@ struct ImportCsvCommitRequest {
 /// loaded from disk) — the per-session state each login/register unlocks. Thin wrapper over the
 /// shared `AppState::open` constructor, just mapping its error onto this crate's `ApiError`.
 fn build_locked_state(paths: &AppPaths) -> Result<AppState, ApiError> {
-    AppState::open(paths).map_err(|_| pwmgr_core::error::internal_error().into())
+    AppState::open(paths).map_err(|_| nestkey_core::error::internal_error().into())
 }
 
 fn issue_session(ctx: &AppContext, body: &AuthRequest, register: bool) -> Result<Response, ApiError> {
@@ -348,14 +348,14 @@ fn begin_credential_attempt(ctx: &AppContext, username: &str, peer: SocketAddr) 
     let ip = ctx.throttle.begin_attempt(&ip_key, &clock);
     if let Err(remaining) = user {
         let secs = remaining.as_secs().max(1);
-        return Err(pwmgr_core::error::throttled_error(&format!(
+        return Err(nestkey_core::error::throttled_error(&format!(
             "Too many failed attempts. Try again in {secs} seconds."
         ))
         .into());
     }
     if let Err(remaining) = ip {
         let secs = remaining.as_secs().max(1);
-        return Err(pwmgr_core::error::throttled_error(&format!(
+        return Err(nestkey_core::error::throttled_error(&format!(
             "Too many failed attempts from this machine. Try again in {secs} seconds."
         ))
         .into());
@@ -842,7 +842,7 @@ async fn restore_backup(
     // survives `confirm_required` so the confirmed retry needs no re-upload.
     let bytes = s
         .backup_upload()
-        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No backup file uploaded yet."))?;
+        .ok_or_else(|| nestkey_core::error::invalid_input_error("No backup file uploaded yet."))?;
     do_restore_backup_from_bytes(&s.app_state, &ctx.paths, &bytes, b.confirmed)?;
     s.clear_upload();
     Ok(StatusCode::OK)
@@ -892,9 +892,9 @@ async fn upload_csv(Extension(s): Extension<Arc<UserSession>>, body: Bytes) -> S
 async fn read_csv_headers(Extension(s): Extension<Arc<UserSession>>) -> Result<Json<Vec<String>>, ApiError> {
     let bytes = s
         .csv_upload()
-        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No CSV file uploaded yet."))?;
+        .ok_or_else(|| nestkey_core::error::invalid_input_error("No CSV file uploaded yet."))?;
     let text = String::from_utf8(bytes)
-        .map_err(|_| pwmgr_core::error::invalid_input_error("That file doesn't look like a CSV."))?;
+        .map_err(|_| nestkey_core::error::invalid_input_error("That file doesn't look like a CSV."))?;
     Ok(Json(do_read_csv_headers_from_str(&text)?))
 }
 
@@ -904,9 +904,9 @@ async fn import_csv_preview(
 ) -> Result<Json<Vec<ImportRecordDto>>, ApiError> {
     let bytes = s
         .csv_upload()
-        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No CSV file uploaded yet."))?;
+        .ok_or_else(|| nestkey_core::error::invalid_input_error("No CSV file uploaded yet."))?;
     let text = String::from_utf8(bytes)
-        .map_err(|_| pwmgr_core::error::invalid_input_error("That file doesn't look like a CSV."))?;
+        .map_err(|_| nestkey_core::error::invalid_input_error("That file doesn't look like a CSV."))?;
     Ok(Json(do_import_csv_preview_from_str(&text, &b.format)?))
 }
 
@@ -961,11 +961,11 @@ async fn import_json_preview(
     Extension(s): Extension<Arc<UserSession>>,
     State(ctx): State<AppContext>,
     Json(b): Json<ImportJsonRequest>,
-) -> Result<Json<pwmgr_core::jsonio::JsonImportPreview>, ApiError> {
+) -> Result<Json<nestkey_core::jsonio::JsonImportPreview>, ApiError> {
     let _kdf_permit = if b.password.is_some() { Some(ctx.kdf.try_acquire()?) } else { None };
     let bytes = s
         .json_upload()
-        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No export file uploaded yet."))?;
+        .ok_or_else(|| nestkey_core::error::invalid_input_error("No export file uploaded yet."))?;
     Ok(Json(do_import_json_preview(&s.app_state, &bytes, b.password.as_deref())?))
 }
 
@@ -977,7 +977,7 @@ async fn import_json_commit(
     let _kdf_permit = if b.password.is_some() { Some(ctx.kdf.try_acquire()?) } else { None };
     let bytes = s
         .json_upload()
-        .ok_or_else(|| pwmgr_core::error::invalid_input_error("No export file uploaded yet."))?;
+        .ok_or_else(|| nestkey_core::error::invalid_input_error("No export file uploaded yet."))?;
     let summary = do_import_json_commit(&s.app_state, &bytes, b.password.as_deref())?;
     s.clear_upload();
     Ok(Json(summary))
@@ -995,10 +995,10 @@ async fn check_breach(
     Extension(s): Extension<Arc<UserSession>>,
 ) -> Result<Json<BreachReportDto>, ApiError> {
     let report = tokio::task::spawn_blocking(move || {
-        do_check_breach(&s.app_state, pwmgr_core::hibp::HIBP_BASE_URL)
+        do_check_breach(&s.app_state, nestkey_core::hibp::HIBP_BASE_URL)
     })
     .await
-    .map_err(|_| ApiError(pwmgr_core::error::internal_error()))??;
+    .map_err(|_| ApiError(nestkey_core::error::internal_error()))??;
     Ok(Json(report))
 }
 

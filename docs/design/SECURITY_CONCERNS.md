@@ -2,7 +2,7 @@
 
 > **Status note (2026-09-30):** H1 (file read/write via client paths), M1 (login throttle), M2 (Argon2 flood) and M3 (CSP/headers) were closed in Phase 9 — see `.planning/phases/09-web-mode-security-hardening/09-SECURITY.md` (`threats_open: 0`). The audit below is the original 2026-07-19 snapshot; L-items were not re-audited.
 
-Audit date: 2026-07-19. Scope: `pwmgr-core`, `src-tauri` (desktop), `viewer-src-tauri`,
+Audit date: 2026-07-19. Scope: `nestkey-core`, `src-tauri` (desktop), `viewer-src-tauri`,
 `web-src-tauri` (localhost web mode), and the React frontend. Findings are ranked by severity.
 
 Each item lists **where**, **what**, **impact**, and a **fix**. Items already documented as accepted

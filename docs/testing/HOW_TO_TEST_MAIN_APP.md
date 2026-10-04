@@ -2,7 +2,7 @@
 
 > **Status note (2026-09-30):** Written for the Classic UI before the New/Make UIs and Phase 9. For current UAT use `docs/testing/UAT_MODERN_UI_OVERHAUL.md` and `docs/testing/UAT_USER_TESTING_GUIDE.md`.
 
-**Scope:** the full read/write desktop app (`pwmgr-app`, crate `src-tauri`, launched via
+**Scope:** the full read/write desktop app (`nestkey-app`, crate `src-tauri`, launched via
 `npm run tauri dev`). Covers every feature shipped through M1–M6 (web-mode half): auth, vault CRUD,
 search, trash, generator, health dashboard, settings/theming, backup/restore, CSV import/export.
 
@@ -22,7 +22,7 @@ this repo can drive a live Tauri window — there's no Playwright, no `*.test.ts
    ```powershell
    cargo test --workspace
    ```
-   **Expected:** every crate compiles and every test passes (0 failures). This covers `pwmgr-core`
+   **Expected:** every crate compiles and every test passes (0 failures). This covers `nestkey-core`
    (crypto, vault, auth, session, generator, health, backup, portio/CSV), the `src-tauri` command
    layer, and the shared end-to-end test in `core/tests/end_to_end.rs`.
 3. Run the frontend test suite:

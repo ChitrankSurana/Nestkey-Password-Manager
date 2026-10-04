@@ -5,7 +5,7 @@ use axum::extract::State;
 use axum::http::{header, HeaderValue, Method, Request};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use pwmgr_core::session::SystemClock;
+use nestkey_core::session::SystemClock;
 
 /// Custom header a cross-site `<form>`/`<img>` cannot set. Its presence (any value) is required on
 /// every mutating (non-GET) request — a second line of defense behind the SameSite=Strict cookie.
@@ -41,7 +41,7 @@ pub async fn auth_middleware(
 /// cross-origin GET's response is unreadable without CORS, which this server never sends).
 pub async fn csrf_middleware(req: Request<Body>, next: Next) -> Response {
     if req.method() != Method::GET && req.headers().get(CSRF_HEADER).is_none() {
-        return ApiError::from(pwmgr_core::error::forbidden_error("Missing CSRF header."))
+        return ApiError::from(nestkey_core::error::forbidden_error("Missing CSRF header."))
             .into_response();
     }
     next.run(req).await
@@ -73,10 +73,10 @@ pub(crate) fn parse_session_cookie(cookie_header: &str) -> Option<Token> {
 }
 
 fn unauthorized() -> Response {
-    // Reuse pwmgr-core's sanitized "locked" error as the body - the same {code,message} the frontend
+    // Reuse nestkey-core's sanitized "locked" error as the body - the same {code,message} the frontend
     // already branches on, and consistent with a genuine idle auto-lock 401. Routed through ApiError
     // (Task 13) so the status derives from status_for("locked") rather than a second hardcoded 401.
-    ApiError::from(pwmgr_core::error::locked_error()).into_response()
+    ApiError::from(nestkey_core::error::locked_error()).into_response()
 }
 
 #[cfg(test)]
@@ -87,10 +87,10 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use axum::routing::{get, post};
     use axum::Router;
-    use pwmgr_core::config::Config;
-    use pwmgr_core::paths::AppPaths;
-    use pwmgr_core::session::{Session, SystemClock};
-    use pwmgr_core::state::AppState;
+    use nestkey_core::config::Config;
+    use nestkey_core::paths::AppPaths;
+    use nestkey_core::session::{Session, SystemClock};
+    use nestkey_core::state::AppState;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
     use tower::ServiceExt;
@@ -100,7 +100,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = AppPaths::new(dir.path().to_path_buf());
         paths.ensure_app_dirs().unwrap();
-        let registry = pwmgr_core::registry::open_registry(&paths.registry_db_path()).unwrap();
+        let registry = nestkey_core::registry::open_registry(&paths.registry_db_path()).unwrap();
         let app_state = AppState {
             registry: Mutex::new(registry),
             vault: Mutex::new(None),
@@ -108,7 +108,7 @@ mod tests {
             config: Mutex::new(Config::default()),
         };
         if unlocked {
-            let key = pwmgr_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
+            let key = nestkey_core::crypto::derive_key("pw", &[1u8; 16]).unwrap();
             app_state.session.lock().unwrap().unlock(key, "alice", &SystemClock);
         }
         let token = store.insert(UserSession {

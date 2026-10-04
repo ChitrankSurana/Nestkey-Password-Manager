@@ -8,7 +8,7 @@ Verbatim copy of Part 0–3 from `docs/Plans/UAT_Modern_UI_Overhaul_Plan_2026-09
 0.2 Run `$env:PATH = "$env:USERPROFILE\.cargo\bin;C:\Strawberry\perl\bin;C:\Strawberry\c\bin;" + $env:PATH`.
 0.3 Run `git branch --show-current` → **Check:** prints `feature/modern-ui-overhaul`.
 0.4 Run `git status --short` → **Check:** empty (clean tree; UAT tests committed code only).
-0.5 Close any running app / `pwmgr-web` instance.
+0.5 Close any running app / `nestkey-web` instance.
 0.6 Delete test data: `Remove-Item -Recurse -Force "$env:USERPROFILE\.pwmgr"` → **Check:** folder gone.
 0.7 Create fixtures in `%TEMP%\uat\`:
    - SSH key: `ssh-keygen -t ed25519 -N '""' -f "$env:TEMP\uat\uat_key" -C uat` (D only).
@@ -45,8 +45,8 @@ Verbatim copy of Part 0–3 from `docs/Plans/UAT_Modern_UI_Overhaul_Plan_2026-09
 ## Part 2 — Launch procedures
 
 **Launch-D (desktop):** `npm run tauri:dev` → wait for window. **Check:** window title shows, no blank white window after 30s.
-**Launch-W (web):** `npm run build` then `cargo run -p pwmgr-web` → **Check:** console prints
-`pwmgr-web listening on http://127.0.0.1:7373`. Open `http://127.0.0.1:7373/makeui.html` in Brave (user: any Chromium browser; Claude: Playwright-launched Brave).
+**Launch-W (web):** `npm run build` then `cargo run -p nestkey-web` → **Check:** console prints
+`nestkey-web listening on http://127.0.0.1:7373`. Open `http://127.0.0.1:7373/makeui.html` in Brave (user: any Chromium browser; Claude: Playwright-launched Brave).
 DevTools open (F12) on Console tab — **any red error during a case = record it**.
 
 Mode switch between D and W runs: stop one before starting other (shared `~/.pwmgr` files).
@@ -67,7 +67,7 @@ which step number in Observation.
 2. Register `uatuser` / pw v1 (see M2.1 for field details). Open Settings → Interface.
 3. → **Check:** three options: `Classic`, `New`, `Make`.
 4. Select `Make`. → **Check:** D: message says change applies on next launch. W: message names `/makeui.html`.
-5. D: close window, relaunch. W: open `/makeui.html`. → **Check:** Make UI loads (sidebar header `LocalVault` / `Personal`) 📷.
+5. D: close window, relaunch. W: open `/makeui.html`. → **Check:** Make UI loads (sidebar header `Nestkey Password Manager` / `Personal`) 📷.
 
 **M1.2 Switch back and forth**
 1. In Make: Settings → Interface → `New`. D relaunch / W open `/newui.html`. → **Check:** New UI loads.
@@ -326,7 +326,7 @@ which step number in Observation.
 ### M12 — Responsive (W: DevTools device toolbar; D: resize window)
 
 **M12.1 Narrow (<768px, e.g. 390px)**
-1. → **Check:** top bar with `LocalVault` + `Open menu` icon; sidebar hidden; list full width 📷.
+1. → **Check:** top bar with `Nestkey Password Manager` + `Open menu` icon; sidebar hidden; list full width 📷.
 2. `Open menu` → **Check:** sidebar slides over; `Close menu` closes it; selecting a section closes it.
 3. Select item → **Check:** detail replaces list; back chevron ("Back to your vault") returns to list.
 4. Open Add item drawer → **Check:** usable, no horizontal scroll.

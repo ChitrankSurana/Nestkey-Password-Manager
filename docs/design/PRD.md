@@ -2,7 +2,7 @@
 
 > **Status note (2026-09-30):** Original v1.0 design doc. Shipped scope now also includes item types/folders, biometric + PIN unlock, SSH agent, JSON export/import, per-credential history/change log, and three UI variants (Classic/New/Make). See `docs/guides/HOW_TO_USE_APP.md` for current behavior.
 
-**Product:** Local-First Zero-Knowledge Password Manager
+**Product:** Nestkey Password Manager — local-first, zero-knowledge
 **Status:** Draft v1.0 — approved design, pre-implementation
 **Owner:** tpass0960@gmail.com
 **Last updated:** 2026-07-01

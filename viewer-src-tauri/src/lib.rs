@@ -1,7 +1,7 @@
 mod commands;
 
-use pwmgr_core::paths::AppPaths;
-use pwmgr_core::state::AppState;
+use nestkey_core::paths::AppPaths;
+use nestkey_core::state::AppState;
 use tauri::{Emitter, Manager};
 
 pub fn run() {
@@ -21,7 +21,7 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     let state = handle.state::<AppState>();
-                    if pwmgr_core::autolock::tick(&state, &pwmgr_core::session::SystemClock) {
+                    if nestkey_core::autolock::tick(&state, &nestkey_core::session::SystemClock) {
                         if let Err(e) = handle.emit("vault-locked", ()) {
                             eprintln!("warning: failed to emit vault-locked event ({e})");
                         }

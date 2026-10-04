@@ -65,7 +65,7 @@ impl From<SearchResult> for SearchResultDto {
     }
 }
 
-// No #[derive(Debug)] here on purpose - mirrors pwmgr_core::vault::Credential's manual redacting
+// No #[derive(Debug)] here on purpose - mirrors nestkey_core::vault::Credential's manual redacting
 // Debug impl (core/src/vault.rs) so this DTO can never leak the plaintext secret through a
 // stray `{:?}` or `dbg!()` on the consuming side either. This matters more than it looks: Zeroizing<Z>
 // itself derives Debug and prints the plaintext value unredacted, so this manual impl is the only
@@ -74,10 +74,10 @@ impl From<SearchResult> for SearchResultDto {
 // `secret` is wrapped in `zeroize::Zeroizing<String>` since this DTO is the last consumer before
 // the plaintext crosses the IPC boundary to the UI - the last real chance to zeroize on Drop.
 // Residual gaps (neither closable at this layer):
-// 1. `pwmgr_core::vault::Credential.secret` (upstream of this DTO) is still a plain `String`, so
+// 1. `nestkey_core::vault::Credential.secret` (upstream of this DTO) is still a plain `String`, so
 //    the plaintext exists un-zeroized for the brief window between `list_credentials_for_site`
 //    returning it and this `From` conversion wrapping it. Closing that fully would mean changing
-//    `Credential`'s field type in `pwmgr-core` itself, which is out of scope for this DTO-only
+//    `Credential`'s field type in `nestkey-core` itself, which is out of scope for this DTO-only
 //    task; tracked as a further-tightening opportunity.
 // 2. Serializing this DTO (serde_json, on the way over IPC) copies the plaintext into the
 //    serializer's own non-zeroizing output buffer, and the resulting JS string in the WebView is

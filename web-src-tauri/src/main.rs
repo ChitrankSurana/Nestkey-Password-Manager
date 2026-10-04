@@ -1,6 +1,6 @@
-use pwmgr_core::paths::AppPaths;
-use pwmgr_core::session::SystemClock;
-use pwmgr_web::{build_router, AppContext, KdfGuard, SessionStore, ThrottleStore, PORT};
+use nestkey_core::paths::AppPaths;
+use nestkey_core::session::SystemClock;
+use nestkey_web::{build_router, AppContext, KdfGuard, SessionStore, ThrottleStore, PORT};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -34,7 +34,7 @@ async fn main() {
                 // The host machine (not just one session) appears to have been suspended - force
                 // every live session locked immediately rather than waiting on each one's own
                 // idle timeout to eventually catch up.
-                if pwmgr_core::autolock::suspend_gap_exceeds(elapsed, tick_interval) {
+                if nestkey_core::autolock::suspend_gap_exceeds(elapsed, tick_interval) {
                     store.lock_all();
                 }
                 store.sweep(&clock);
@@ -48,7 +48,7 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", PORT))
         .await
         .expect("failed to bind 127.0.0.1");
-    println!("pwmgr-web listening on http://127.0.0.1:{PORT} (serving ./dist)");
+    println!("nestkey-web listening on http://127.0.0.1:{PORT} (serving ./dist)");
     // Connection info feeds the IP throttle key (SEC-02/D-09).
     axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await

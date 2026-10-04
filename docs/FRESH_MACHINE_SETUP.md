@@ -96,7 +96,7 @@ npm run viewer:dev
 **Web Portal** (localhost browser access — plain Axum server, not Tauri):
 ```powershell
 npm run build              # if you haven't already (step 6)
-cargo run -p pwmgr-web      # must be run from the repo root — serves ./dist relative to cwd
+cargo run -p nestkey-web      # must be run from the repo root — serves ./dist relative to cwd
 ```
 Then open `http://127.0.0.1:7373` in a browser. Binds to `127.0.0.1` only, never reachable from
 another machine on the network.

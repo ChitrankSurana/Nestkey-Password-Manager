@@ -1,4 +1,4 @@
-# 🔐 Password Manager
+# 🔐 Nestkey Password Manager
 
 A **local-first, zero-knowledge password manager**. Every credential lives only on your machine,
 inside an encrypted vault file, unlockable only with a master password that the software itself
@@ -16,13 +16,13 @@ network you don't control.
 
 ## The three apps
 
-This repo builds **three separate binaries** from one shared Rust core (`pwmgr-core`), so "read-only"
+This repo builds **three separate binaries** from one shared Rust core (`nestkey-core`), so "read-only"
 and "no write commands exist in this binary" are actual compile-time facts, not just UI restrictions.
 
 | | Main App | Viewer App | Web Portal |
 |---|---|---|---|
 | **What it's for** | Everyday full read/write use | Emergency read-only access if the main app is unavailable | Browser access on your own machine, no desktop window |
-| **Binary / crate** | `pwmgr-app` (`src-tauri`) | `pwmgr-viewer` (`viewer-src-tauri`) | `pwmgr-web` (`web-src-tauri`) |
+| **Binary / crate** | `nestkey-app` (`src-tauri`) | `nestkey-viewer` (`viewer-src-tauri`) | `nestkey-web` (`web-src-tauri`) |
 | **Interface** | Tauri desktop window | Tauri desktop window (`viewer.html`) | `http://127.0.0.1:7373` in your browser |
 | **Can write?** | Yes — full CRUD, generator, backup/CSV, health dashboard | No — view, search, copy only. No add/edit/delete commands are even registered | Yes — full command set, over HTTP |
 | **Network exposure** | None (IPC only) | None (IPC only) | Bound to `127.0.0.1` only, never `0.0.0.0` |
@@ -117,10 +117,10 @@ Argon2id, Axum (web portal), zxcvbn (optional strength scoring).
 
 | Path | What it is |
 |---|---|
-| `core/` | `pwmgr-core` — shared Rust crate (crypto, vault, auth, backup, generator, ...) |
-| `src-tauri/` | Main desktop app (`pwmgr-app`) |
-| `viewer-src-tauri/` | Read-only Viewer app (`pwmgr-viewer`) |
-| `web-src-tauri/` | Localhost web portal (`pwmgr-web`, Axum) |
+| `core/` | `nestkey-core` — shared Rust crate (crypto, vault, auth, backup, generator, ...) |
+| `src-tauri/` | Main desktop app (`nestkey-app`) |
+| `viewer-src-tauri/` | Read-only Viewer app (`nestkey-viewer`) |
+| `web-src-tauri/` | Localhost web portal (`nestkey-web`, Axum) |
 | `src/` | React frontend for all apps: Classic UI in `src/`, plus `src/newui/`, `src/makeui/` and `ViewerApp.tsx` |
 | `index.html`, `newui.html`, `makeui.html`, `viewer.html` | Vite entry points, one per UI variant (Classic / New / Make / Viewer) |
 | `scripts/` | Windows dev-machine setup (`setup-dependencies.ps1`) |

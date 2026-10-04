@@ -23,12 +23,12 @@ practical difference is *how* you reach it.
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;C:\Strawberry\perl\bin;C:\Strawberry\c\bin;" + $env:PATH
 npm run build          # only needed once, or after an update — builds the web assets
-cargo run -p pwmgr-web
+cargo run -p nestkey-web
 ```
 Run this from the **repo root** (it serves files from `./dist`, relative to where you launch it).
 You'll see:
 ```
-pwmgr-web listening on http://127.0.0.1:7373 (serving ./dist)
+nestkey-web listening on http://127.0.0.1:7373 (serving ./dist)
 ```
 Leave that terminal window running for as long as you want the portal available, then open
 **http://127.0.0.1:7373** in your browser. To stop it, press Ctrl+C in that terminal.
@@ -56,7 +56,7 @@ breach check), Settings, Trash, Backup/Restore, and CSV export/import. One small
   separate profiles/incognito windows), each is its own fully separate session with its own vault
   connection — locking one doesn't affect the other, and one user's session never sees another's
   data.
-- **Sessions live in memory only.** If the `pwmgr-web` process is stopped or crashes, everyone gets
+- **Sessions live in memory only.** If the `nestkey-web` process is stopped or crashes, everyone gets
   logged out — nothing about who was logged in survives a restart. Your actual vault data is
   untouched (it's durable on disk); you just need to log back in.
 - **Idle auto-lock still applies**, using the same Settings value as the Main App — but because

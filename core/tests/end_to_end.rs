@@ -1,4 +1,4 @@
-use pwmgr_core::{auth, registry, session, vault};
+use nestkey_core::{auth, registry, session, vault};
 use std::time::Duration;
 use tempfile::tempdir;
 

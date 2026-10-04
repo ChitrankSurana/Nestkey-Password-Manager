@@ -2,7 +2,7 @@
 
 > **Status note (2026-09-30):** Original v1.0 design doc. Newer modules (`totp`, `biometric`, `ssh_agent`, `ssh_keys`, `jsonio`, `hibp`) and the Make UI are described in `ARCHITECTURE.md` (same folder).
 
-**Product:** Local-First Zero-Knowledge Password Manager
+**Product:** Nestkey Password Manager — local-first, zero-knowledge
 **Status:** Draft v1.0 — approved design, pre-implementation
 **Last updated:** 2026-07-01
 

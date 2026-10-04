@@ -68,7 +68,7 @@ pub fn stop(app: &AppHandle) {
 
 #[cfg(target_os = "windows")]
 mod imp {
-    use pwmgr_core::state::AppState;
+    use nestkey_core::state::AppState;
     use ssh_agent_lib::agent::{listen, NamedPipeListener, Session};
     use ssh_agent_lib::error::AgentError;
     use ssh_agent_lib::proto::{Identity, PublicCredential, SignRequest};
@@ -85,7 +85,7 @@ mod imp {
 
     // Decrypts every stored key - only possible while the vault is unlocked; returns an empty list
     // otherwise (the agent simply has nothing to offer, rather than erroring the whole request).
-    fn decrypted_keys(handle: &AppHandle) -> Vec<pwmgr_core::ssh_keys::SshKeyEntry> {
+    fn decrypted_keys(handle: &AppHandle) -> Vec<nestkey_core::ssh_keys::SshKeyEntry> {
         let state = handle.state::<AppState>();
         let vault_guard = state.vault.lock().unwrap();
         let Some((conn, _)) = vault_guard.as_ref() else {
@@ -95,7 +95,7 @@ mod imp {
         let Some(key) = session.key() else {
             return Vec::new();
         };
-        pwmgr_core::ssh_keys::list_ssh_keys(conn, key).unwrap_or_default()
+        nestkey_core::ssh_keys::list_ssh_keys(conn, key).unwrap_or_default()
     }
 
     #[ssh_agent_lib::async_trait]
@@ -149,7 +149,7 @@ mod imp {
                 return Err(AgentError::Failure);
             }
 
-            pwmgr_core::ssh_agent::sign(&entry.private_key_openssh, &request.data).map_err(AgentError::other)
+            nestkey_core::ssh_agent::sign(&entry.private_key_openssh, &request.data).map_err(AgentError::other)
         }
     }
 

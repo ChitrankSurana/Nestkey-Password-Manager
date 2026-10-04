@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "Nestkey Password Manager",
   "version": "2.9.0",
-  "identifier": "com.pwmgr.app",
+  "identifier": "com.nestkey.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",

@@ -11,6 +11,7 @@ you want to understand it, and `testing/` if you want to verify it.
 | [`HOW_TO_USE_MAIN_APP.md`](guides/HOW_TO_USE_MAIN_APP.md) | Legacy guide — Classic interface only |
 | [`HOW_TO_USE_VIEWER_APP.md`](guides/HOW_TO_USE_VIEWER_APP.md) | Read-only emergency-access Viewer app |
 | [`HOW_TO_USE_WEB_PORTAL.md`](guides/HOW_TO_USE_WEB_PORTAL.md) | Browser access on `127.0.0.1` |
+| [`RENAME_APP.md`](guides/RENAME_APP.md) | Step-by-step: rename the app everywhere, and what must never change |
 | [`USAGE_GUIDE.md`](USAGE_GUIDE.md) | Short pointer page to the guides above |
 | [`FRESH_MACHINE_SETUP.md`](FRESH_MACHINE_SETUP.md) | New Windows PC to all three apps running |
 | [`PATH_AUDIT.md`](PATH_AUDIT.md) | PATH entries the toolchain needs, and why |

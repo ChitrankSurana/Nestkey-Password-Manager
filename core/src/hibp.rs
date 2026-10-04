@@ -30,9 +30,9 @@ fn parse_range_response(body: &str) -> Vec<(String, u32)> {
 /// injectable so tests point this at a local mock; only a truncated 5-char hash prefix ever leaves
 /// this function in the URL, never the password itself.
 ///
-/// Synchronous (`reqwest::blocking`): pwmgr-core stays framework-free, so it cannot use Tauri's
+/// Synchronous (`reqwest::blocking`): nestkey-core stays framework-free, so it cannot use Tauri's
 /// `async_runtime::block_on` the way the pre-M6 src-tauri copy did. Callers that run inside a tokio
-/// runtime (pwmgr-web) must invoke `do_check_breach` via `spawn_blocking`, since `reqwest::blocking`
+/// runtime (nestkey-web) must invoke `do_check_breach` via `spawn_blocking`, since `reqwest::blocking`
 /// panics if dropped inside an async context.
 pub fn check_password(
     client: &reqwest::blocking::Client,

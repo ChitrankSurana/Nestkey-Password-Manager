@@ -1,5 +1,5 @@
 use crate::biometric_provider::WindowsHelloProvider;
-use pwmgr_core::commands::{
+use nestkey_core::commands::{
     do_add_credential, do_add_folder, do_add_site, do_delete_folder, do_list_folders, do_rename_folder,
     do_set_site_card_hint, do_set_site_favorite, do_set_site_folder, do_set_site_item_type, do_add_ssh_key, do_analyze_strength, do_check_breach,
     do_clear_biometric, do_clear_pin, do_clear_totp_secret, do_create_backup, do_delete_ssh_key,
@@ -17,15 +17,15 @@ use pwmgr_core::commands::{
     do_update_ssh_agent_enabled, do_update_strength_algorithm, do_update_theme,
     do_update_ui_variant, do_vault_exists, do_verify_master_password,
 };
-use pwmgr_core::dto::{
+use nestkey_core::dto::{
     AuthSuccess, BreachReportDto, ChangeLogEntryDto, ConfigDto, CredentialDto, ExportMode, GenerateRequest,
     FolderDto, HealthReportDto, HistoryEntryDto, ImportFormat, ImportRecordDto, ImportSummaryDto, SearchResultDto, SiteDto,
     SshKeyDto, StrengthDto, TotpCodeDto, TrashedCredentialDto,
 };
-use pwmgr_core::error::CommandError;
-use pwmgr_core::paths::AppPaths;
-use pwmgr_core::state::AppState;
-use pwmgr_core::vault::CustomField;
+use nestkey_core::error::CommandError;
+use nestkey_core::paths::AppPaths;
+use nestkey_core::state::AppState;
+use nestkey_core::vault::CustomField;
 use std::time::Duration;
 use tauri::{Emitter, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -149,7 +149,7 @@ pub fn update_ssh_agent_enabled(
         // failure degrades to "SSH agent off, toggle reports an error" instead of an unbootable app.
         if let Err(msg) = crate::ssh_agent_service::start(&app) {
             do_update_ssh_agent_enabled(&state, &paths, false)?;
-            return Err(pwmgr_core::error::invalid_input_error(&format!(
+            return Err(nestkey_core::error::invalid_input_error(&format!(
                 "Could not start the SSH agent: {msg}"
             )));
         }
@@ -422,7 +422,7 @@ pub fn analyze_strength(password: String) -> StrengthDto {
 const CLIPBOARD_CLEAR_SECS: u64 = 30; // hardcoded constant, NOT a user setting
 
 // Thin wrapper only - the effect is an OS clipboard side effect requiring a real `AppHandle`, so it
-// stays a per-Tauri-binary command (promoting it would force pwmgr-core to depend on tauri).
+// stays a per-Tauri-binary command (promoting it would force nestkey-core to depend on tauri).
 #[tauri::command]
 // N9: `auto_clear` lets a non-secret copy (username, URL, a Text-type custom field) skip the 30s
 // wipe entirely - that behavior should only apply to actual secrets. Every existing frontend call
@@ -431,7 +431,7 @@ const CLIPBOARD_CLEAR_SECS: u64 = 30; // hardcoded constant, NOT a user setting
 // does.
 pub fn copy_to_clipboard(app: tauri::AppHandle, text: String, auto_clear: bool) -> Result<(), CommandError> {
     let secret = Zeroizing::new(text);
-    app.clipboard().write_text(secret.as_str()).map_err(|_| pwmgr_core::error::internal_error())?;
+    app.clipboard().write_text(secret.as_str()).map_err(|_| nestkey_core::error::internal_error())?;
     if !auto_clear {
         return Ok(());
     }
@@ -530,7 +530,7 @@ pub fn export_json(
 }
 
 fn read_import_file(path: &str) -> Result<Vec<u8>, CommandError> {
-    std::fs::read(path).map_err(|_| pwmgr_core::error::invalid_input_error("Could not read that file."))
+    std::fs::read(path).map_err(|_| nestkey_core::error::invalid_input_error("Could not read that file."))
 }
 
 #[tauri::command]
@@ -538,7 +538,7 @@ pub fn import_json_preview(
     state: State<AppState>,
     path: String,
     password: Option<String>,
-) -> Result<pwmgr_core::jsonio::JsonImportPreview, CommandError> {
+) -> Result<nestkey_core::jsonio::JsonImportPreview, CommandError> {
     let bytes = read_import_file(&path)?;
     do_import_json_preview(&state, &bytes, password.as_deref())
 }
@@ -560,5 +560,5 @@ pub fn health_report(state: State<AppState>) -> Result<HealthReportDto, CommandE
 
 #[tauri::command]
 pub fn check_breach(state: State<AppState>) -> Result<BreachReportDto, CommandError> {
-    do_check_breach(&state, pwmgr_core::hibp::HIBP_BASE_URL)
+    do_check_breach(&state, nestkey_core::hibp::HIBP_BASE_URL)
 }

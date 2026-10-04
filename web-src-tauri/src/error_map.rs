@@ -1,9 +1,9 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use pwmgr_core::error::CommandError;
+use nestkey_core::error::CommandError;
 
-/// Wraps a `pwmgr_core::error::CommandError` so it can be returned from an axum handler with `?`.
+/// Wraps a `nestkey_core::error::CommandError` so it can be returned from an axum handler with `?`.
 pub struct ApiError(pub CommandError);
 
 impl From<CommandError> for ApiError {

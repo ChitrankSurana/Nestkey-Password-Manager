@@ -1,4 +1,4 @@
-# Resume Notes — Password Manager — Make UI + UAT remediation in progress
+# Resume Notes — Nestkey Password Manager — Make UI + UAT remediation in progress
 
 **Updated:** 2026-09-30. **Branch:** `feature/modern-ui-overhaul` (HEAD `23f6fc3`). Always
 `git fetch` and compare against `origin/main` before trusting this snapshot.

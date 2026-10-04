@@ -34,7 +34,7 @@ accept, per finding.
 | **D3** | Window title (cosmetic, Desktop only) |
 
 Run **all of it twice** — once as D (desktop app, `npm run tauri:dev`), once as W (web mode,
-`pwmgr-web` + browser). D-only cases (D1–D3) obviously skip on W. Wipe `~/.pwmgr` between the two
+`nestkey-web` + browser). D-only cases (D1–D3) obviously skip on W. Wipe `~/.pwmgr` between the two
 runs (Section 2, step 0.6) so each starts from a clean vault.
 
 ---
@@ -51,7 +51,7 @@ runs (Section 2, step 0.6) so each starts from a clean vault.
 4. Run `git status --short` — must be empty (clean tree).
 
 ### 2.2 Before every run (D and W each get this)
-1. Close any running `pwmgr-app.exe` or `pwmgr-web` process.
+1. Close any running `nestkey-app.exe` or `nestkey-web` process.
 2. Wipe test data:
    ```powershell
    Remove-Item -Recurse -Force "$env:USERPROFILE\.pwmgr"
@@ -99,9 +99,9 @@ Wait for the window. It must show a title bar and render content within ~30s (no
 **Web (W):**
 ```powershell
 npm run build
-cargo run -p pwmgr-web
+cargo run -p nestkey-web
 ```
-Wait for console output `pwmgr-web listening on http://127.0.0.1:7373`, then open
+Wait for console output `nestkey-web listening on http://127.0.0.1:7373`, then open
 `http://127.0.0.1:7373/makeui.html` in any Chromium browser. Open DevTools (F12) → Console tab and
 leave it open — **any red error during a case is a finding, write it down even if the case
 otherwise passes.**
@@ -154,7 +154,7 @@ any one point fails, the whole case is a Fail; write down exactly which point fa
   - Fresh launch shows the Classic Register screen (default variant).
   - Interface setting shows exactly three options: `Classic`, `New`, `Make`.
   - Selecting Make shows a message: D says it applies on next launch; W names `/makeui.html` directly.
-  - After relaunch/reopen, Make UI loads: sidebar header reads `LocalVault` / `Personal`.
+  - After relaunch/reopen, Make UI loads: sidebar header reads `Nestkey Password Manager` / `Personal`.
 
 **M1.2 — Switch back and forth**
 - Steps:
