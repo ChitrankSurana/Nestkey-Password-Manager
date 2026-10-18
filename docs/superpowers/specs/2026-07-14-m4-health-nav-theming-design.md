@@ -51,9 +51,10 @@ nav-rail destination once the rail exists.
 
 ## 3. Health Dashboard — design decisions
 
-- **Weak:** reuses the strength scoring already built in M2 (`do_analyze_strength`, respecting the
-  user's `strength_algorithm` setting). A credential is "weak" if its score is 0 or 1 ("Very weak" /
-  "Weak"). No new scoring code.
+- **Weak:** reuses the strength scoring already built in M2 (`do_analyze_strength`), but always
+  with zxcvbn, regardless of the user's `strength_algorithm` setting (no Rust port of the "simple"
+  algorithm exists; see `docs/KNOWN_LIMITATIONS.md` §2). A credential is "weak" if its score is 0 or
+  1 ("Very weak" / "Weak"). No new scoring code.
 - **Reused:** computed **on demand**, not via a stored fingerprint. The health report decrypts every
   credential's secret in memory (same trust boundary as `search`, already-unlocked territory),
   groups by exact plaintext match, and any group of 2+ is a reused group. Rejected the alternative
