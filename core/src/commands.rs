@@ -314,6 +314,10 @@ pub fn do_get_config(state: &AppState) -> ConfigDto {
         ui_variant: config.ui_variant.clone(),
         reprompt_mode: config.reprompt_mode.clone(),
         reprompt_grace_seconds: config.reprompt_grace_seconds,
+        delete_reprompt_trash_item: config.delete_reprompt_trash_item,
+        delete_reprompt_credential: config.delete_reprompt_credential,
+        delete_reprompt_empty_trash: config.delete_reprompt_empty_trash,
+        delete_reprompt_folder: config.delete_reprompt_folder,
     }
 }
 
@@ -704,6 +708,21 @@ pub fn do_update_reprompt_grace_seconds(state: &AppState, paths: &AppPaths, seco
     let mut config = state.config.lock().unwrap();
     let mut updated = config.clone();
     updated.reprompt_grace_seconds = seconds;
+    updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
+    *config = updated;
+    Ok(())
+}
+
+pub fn do_update_delete_reprompt(state: &AppState, paths: &AppPaths, action: &str, enabled: bool) -> Result<(), CommandError> {
+    let mut config = state.config.lock().unwrap();
+    let mut updated = config.clone();
+    match action {
+        "trashItem" => updated.delete_reprompt_trash_item = enabled,
+        "deleteCredential" => updated.delete_reprompt_credential = enabled,
+        "emptyTrash" => updated.delete_reprompt_empty_trash = enabled,
+        "deleteFolder" => updated.delete_reprompt_folder = enabled,
+        _ => return Err(crate::error::invalid_input_error("Unknown delete action.")),
+    }
     updated.save(&paths.config_path()).map_err(|_| crate::error::internal_error())?;
     *config = updated;
     Ok(())
@@ -2793,6 +2812,17 @@ mod tests {
         let result = do_update_ui_variant(&state, &bad_paths, "new");
         assert!(result.is_err());
         assert_eq!(do_get_config(&state).ui_variant, before, "state.config must not change when the save fails");
+    }
+
+    #[test]
+    fn update_delete_reprompt_persists_and_rejects_unknown_action() {
+        let (state, paths, _dir) = test_state_and_paths();
+        assert!(do_get_config(&state).delete_reprompt_folder);
+        do_update_delete_reprompt(&state, &paths, "deleteFolder", false).unwrap();
+        assert!(!do_get_config(&state).delete_reprompt_folder);
+        assert!(do_get_config(&state).delete_reprompt_empty_trash);
+        assert!(!crate::config::Config::load(&paths.config_path()).unwrap().delete_reprompt_folder);
+        assert_eq!(do_update_delete_reprompt(&state, &paths, "bogus", true).unwrap_err().code(), "invalid_input");
     }
 
     #[test]

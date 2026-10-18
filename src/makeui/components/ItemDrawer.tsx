@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { api, isCommandError, type CredentialDto, type CustomField, type CustomFieldType, type FolderDto, type SiteDto } from "../../lib/api";
-import { confirmDialog, siteDeleteMessage } from "../../lib/confirm";
+import { siteDeleteMessage } from "../../lib/confirm";
+import { confirmDelete } from "../../lib/deleteGuard";
 import { isPlausibleTotpSecret } from "../../lib/totp";
 import { deriveCardBrand, formatCardExpiry, isValidCardNumber, lastFourDigits } from "../../lib/card";
 import { PasswordGeneratorPanel } from "../../components/PasswordGeneratorPanel";
-import { RESERVED_LABEL } from "../lib/vaultSelectors";
+import { RequiredLegend, RequiredMark } from "../../components/Required";
+import { RESERVED_LABEL, type ItemType } from "../lib/vaultSelectors";
 
-type ItemType = "login" | "note" | "card" | "identity";
 const TYPE_TABS: { value: ItemType; label: string }[] = [
   { value: "login", label: "Login" },
   { value: "note", label: "Secure Note" },
@@ -28,6 +29,8 @@ export function ItemDrawer({
   existingSite,
   existingCredentials,
   folders,
+  addDefaults,
+  onFoldersChanged,
   onClose,
   onSaved,
   onDeleted,
@@ -36,19 +39,24 @@ export function ItemDrawer({
   existingSite: SiteDto | null;
   existingCredentials: CredentialDto[] | null;
   folders: FolderDto[];
+  addDefaults?: { itemType: ItemType; folderId: number | null; favorite: boolean };
+  onFoldersChanged: () => void;
   onClose: () => void;
   onSaved: () => void;
   onDeleted?: () => void;
 }) {
   const primaryCredential = existingCredentials?.[0] ?? null;
-  const itemType: ItemType = (existingSite?.itemType as ItemType) ?? "login";
+  const itemType: ItemType = (existingSite?.itemType as ItemType) ?? addDefaults?.itemType ?? "login";
 
   const [type, setType] = useState<ItemType>(itemType);
   const [name, setName] = useState(existingSite?.name ?? "");
   const [url, setUrl] = useState(existingSite?.url ?? "");
   const [notes, setNotes] = useState(existingSite?.notes ?? "");
-  const [folderId, setFolderId] = useState<number | null>(existingSite?.folderId ?? null);
-  const [favorite, setFavorite] = useState(existingSite?.favorite ?? false);
+  const [folderId, setFolderId] = useState<number | null>(existingSite ? existingSite.folderId : (addDefaults?.folderId ?? null));
+  const [favorite, setFavorite] = useState(existingSite?.favorite ?? addDefaults?.favorite ?? false);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderError, setNewFolderError] = useState<string | null>(null);
 
   // Login fields - only collected on create (editing an existing login's credential happens via
   // CredentialBlock's own Edit button, so this drawer never touches credentials for an edit of an
@@ -56,7 +64,7 @@ export function ItemDrawer({
   const [username, setUsername] = useState("");
   const [secret, setSecret] = useState("");
   const [remarks, setRemarks] = useState("");
-  const [repromptExempt, setRepromptExempt] = useState(false);
+  const [repromptExempt, setRepromptExempt] = useState(primaryCredential?.repromptExempt ?? false);
   const [fields, setFields] = useState<EditableField[]>([]);
   const [totpSecretInput, setTotpSecretInput] = useState("");
 
@@ -71,6 +79,25 @@ export function ItemDrawer({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function createFolder() {
+    const trimmed = newFolderName.trim();
+    if (trimmed === "") return;
+    if (folders.some((f) => f.name.toLowerCase() === trimmed.toLowerCase())) {
+      setNewFolderError("A folder with this name already exists.");
+      return;
+    }
+    try {
+      setNewFolderError(null);
+      const id = await api.addFolder(trimmed);
+      setFolderId(id);
+      setNewFolderName("");
+      setNewFolderOpen(false);
+      onFoldersChanged();
+    } catch (err) {
+      setNewFolderError(isCommandError(err) ? err.message : "Couldn't create folder.");
+    }
+  }
 
   function addField() {
     setFields((fs) => [...fs, { key: nextFieldKey++, label: "", value: "", fieldType: "text" }]);
@@ -138,11 +165,7 @@ export function ItemDrawer({
             const credentialId = await api.addCredential(siteId, username.trim() || null, secret, remarks.trim() || null, customFields, repromptExempt);
             if (totpSecretInput.trim() !== "") await api.setTotpSecret(credentialId, totpSecretInput.trim());
           } else {
-            // B7: this last `false` is repromptExempt, not the old "require reprompt" flag - it
-            // means "not exempt", i.e. gated by default like every other credential. Notes and
-            // cards have no UI to set this per-item (their own secrets aren't optional to
-            // protect), so they always get the safe default.
-            await api.addCredential(siteId, null, "", null, sealedFieldsFor(type), false);
+            await api.addCredential(siteId, null, "", null, sealedFieldsFor(type), repromptExempt);
           }
         } catch (err) {
           await api.softDeleteSite(siteId).catch(() => {});
@@ -158,10 +181,9 @@ export function ItemDrawer({
         if (type !== "login") {
           const sealed = sealedFieldsFor(type);
           if (primaryCredential) {
-            // B7: `false` here is repromptExempt - not exempt, gated by the safe default.
-            await api.updateCredential(primaryCredential.id, null, "", null, sealed, false);
+            await api.updateCredential(primaryCredential.id, null, "", null, sealed, repromptExempt);
           } else if (sealed.length > 0) {
-            await api.addCredential(existingSite.id, null, "", null, sealed, false);
+            await api.addCredential(existingSite.id, null, "", null, sealed, repromptExempt);
           }
         }
       }
@@ -175,7 +197,7 @@ export function ItemDrawer({
 
   async function handleDelete() {
     if (!existingSite) return;
-    if (!(await confirmDialog(siteDeleteMessage(existingSite.name, existingCredentials?.length ?? null)))) return;
+    if (!(await confirmDelete("trashItem", siteDeleteMessage(existingSite.name, existingCredentials?.length ?? null)))) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -212,8 +234,9 @@ export function ItemDrawer({
         {mode === "edit" && <p className="text-xs text-mk-faint">Type: {TYPE_TABS.find((t) => t.value === type)?.label} (fixed after creation)</p>}
 
         <label className="block">
-          <span className="text-sm text-mk-fg2">Name</span>
+          <span className="text-sm text-mk-fg2">Name<RequiredMark /></span>
           <input
+            required
             className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -243,6 +266,44 @@ export function ItemDrawer({
             <span className="text-sm text-mk-fg2">Favorite</span>
           </label>
         </div>
+        {newFolderOpen ? (
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <input
+                className="flex-1 rounded-lg border px-2 py-1.5 text-sm bg-mk-input border-mk-border text-mk-fg"
+                placeholder="New folder name"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void createFolder();
+                  }
+                }}
+                autoFocus
+              />
+              <button type="button" onClick={() => void createFolder()} disabled={newFolderName.trim() === ""} className="rounded-lg bg-mk-accent px-3 py-1 text-xs font-medium text-white disabled:opacity-50">
+                Create
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewFolderOpen(false);
+                  setNewFolderName("");
+                  setNewFolderError(null);
+                }}
+                className="px-2 text-xs text-mk-muted"
+              >
+                Cancel
+              </button>
+            </div>
+            {newFolderError && <p className="text-xs text-mk-red">{newFolderError}</p>}
+          </div>
+        ) : (
+          <button type="button" onClick={() => setNewFolderOpen(true)} className="text-xs text-mk-accent hover:underline">
+            + New folder
+          </button>
+        )}
 
         {type === "login" && (
           <>
@@ -253,14 +314,19 @@ export function ItemDrawer({
             {mode === "add" && (
               <>
                 <label className="block">
-                  <span className="text-sm text-mk-fg2">Username (optional)</span>
-                  <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg" value={username} onChange={(e) => setUsername(e.target.value)} />
+                  <span className="text-sm text-mk-fg2">Username<RequiredMark /></span>
+                  <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg" value={username} onChange={(e) => setUsername(e.target.value)} required />
                 </label>
                 <label className="block">
-                  <span className="text-sm text-mk-fg2">Password</span>
-                  <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg font-mono" value={secret} onChange={(e) => setSecret(e.target.value)} />
+                  <span className="text-sm text-mk-fg2">Password<RequiredMark /></span>
+                  <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg font-mono" value={secret} onChange={(e) => setSecret(e.target.value)} required />
                 </label>
-                <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm="simple" disabled={submitting} variant="make" />
+                <details className="rounded-lg border border-mk-border p-2">
+                  <summary className="cursor-pointer text-sm font-medium text-mk-fg2">Generate Random Password</summary>
+                  <div className="mt-2">
+                    <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm="simple" disabled={submitting} variant="make" />
+                  </div>
+                </details>
                 <label className="block">
                   <span className="text-sm text-mk-fg2">Remarks (optional)</span>
                   <input className="mt-1 w-full rounded-lg border px-2 py-1.5 bg-mk-input border-mk-border text-mk-fg" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
@@ -307,7 +373,7 @@ export function ItemDrawer({
                         onChange={(e) => updateField(f.key, { fieldType: e.target.value as CustomFieldType })}
                       >
                         <option value="text">Text</option>
-                        <option value="hidden">Hidden</option>
+                        <option value="hidden">Hidden Text</option>
                         <option value="boolean">Boolean</option>
                       </select>
                       <button type="button" onClick={() => removeField(f.key)} className="px-1 text-mk-faint">
@@ -433,8 +499,16 @@ export function ItemDrawer({
           </label>
         )}
 
+        {type !== "login" && (
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={repromptExempt} onChange={(e) => setRepromptExempt(e.target.checked)} />
+            <span className="text-sm text-mk-fg2">Don't require master password to view (not recommended)</span>
+          </label>
+        )}
+
         {error && <p className="text-sm text-mk-red">{error}</p>}
 
+        <RequiredLegend />
         <div className="flex items-center justify-between pt-2">
           {mode === "edit" ? (
             <button type="button" onClick={handleDelete} disabled={submitting} className="rounded-lg bg-mk-red hover:bg-mk-red-hover px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
@@ -449,7 +523,7 @@ export function ItemDrawer({
             </button>
             <button
               type="submit"
-              disabled={submitting || name.trim() === ""}
+              disabled={submitting || name.trim() === "" || (mode === "add" && type === "login" && (username.trim() === "" || secret.trim() === ""))}
               className="rounded-lg bg-mk-accent px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
             >
               {mode === "edit" ? "Save Changes" : "Add Item"}

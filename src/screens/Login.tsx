@@ -2,6 +2,7 @@ import { useState, useEffect, FormEvent } from "react";
 import { api, isCommandError, isTauri } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
 import { Spinner } from "../components/Spinner";
+import { RequiredLegend, RequiredMark } from "../components/Required";
 import { getLastUsername, getRememberLastUsername, recordLastUsername } from "../lib/lastUsername";
 
 export function Login({
@@ -101,11 +102,12 @@ export function Login({
       <form onSubmit={handleSubmit} className="w-80 space-y-4">
         <h1 className="text-xl font-semibold">Log in</h1>
         <label className="block">
-          <span className="text-sm">Username</span>
+          <span className="text-sm">Username<RequiredMark /></span>
           <input
             className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            required
             autoFocus
             autoComplete="username"
             title="Your registered username"
@@ -113,24 +115,26 @@ export function Login({
         </label>
         {usePin ? (
           <label className="block">
-            <span className="text-sm">PIN</span>
+            <span className="text-sm">PIN<RequiredMark /></span>
             <input
               type="password"
               inputMode="numeric"
               className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
+              required
               title="The PIN you set up for quick unlock"
             />
           </label>
         ) : (
           <label className="block">
-            <span className="text-sm">Master password</span>
+            <span className="text-sm">Master password<RequiredMark /></span>
             <input
               type="password"
               className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              required
               autoComplete="current-password"
               title="The master password you registered with"
             />
@@ -165,6 +169,7 @@ export function Login({
           </Tooltip>
         )}
         {error && <p className="text-red-400 text-sm">{error}</p>}
+        <RequiredLegend />
         <Tooltip text="Log in to your vault" className="w-full">
           <button
             type="submit"

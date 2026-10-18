@@ -54,6 +54,19 @@ export function sitesForSection(sites: SiteDto[], section: Section): SiteDto[] {
   return sites.filter((s) => s.folderId === id);
 }
 
+export type ItemType = "login" | "note" | "card" | "identity";
+
+/** Starting state of the Add drawer when opened from a given sidebar section. */
+export function addDefaultsForSection(section: Section): { itemType: ItemType; folderId: number | null; favorite: boolean } {
+  const base = { itemType: "login" as ItemType, folderId: null as number | null, favorite: false };
+  if (section === "notes") return { ...base, itemType: "note" };
+  if (section === "cards") return { ...base, itemType: "card" };
+  if (section === "identities") return { ...base, itemType: "identity" };
+  if (section === "favorites") return { ...base, favorite: true };
+  if (section.startsWith("folder:")) return { ...base, folderId: Number(section.slice("folder:".length)) };
+  return base;
+}
+
 /** "0 items" / "1 item" / "7 items" - same rule as newui's itemCountLabel. */
 export function itemCountLabel(n: number): string {
   return `${n} item${n === 1 ? "" : "s"}`;

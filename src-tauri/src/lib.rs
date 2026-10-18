@@ -192,6 +192,7 @@ pub fn run() {
             commands::update_ui_variant,
             commands::update_reprompt_mode,
             commands::update_reprompt_grace_seconds,
+            commands::update_delete_reprompt,
             commands::generate_password,
             commands::analyze_strength,
             commands::copy_to_clipboard,

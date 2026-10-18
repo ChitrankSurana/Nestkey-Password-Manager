@@ -76,6 +76,10 @@ fn default_reprompt_grace_seconds() -> u32 {
     30
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default = "default_theme")]
@@ -121,6 +125,16 @@ pub struct Config {
     pub reprompt_mode: String,
     #[serde(default = "default_reprompt_grace_seconds")]
     pub reprompt_grace_seconds: u32,
+    // Deletes always ask for the master password when on, ignoring the grace window and any
+    // per-item exemption.
+    #[serde(default = "default_true")]
+    pub delete_reprompt_trash_item: bool,
+    #[serde(default = "default_true")]
+    pub delete_reprompt_credential: bool,
+    #[serde(default = "default_true")]
+    pub delete_reprompt_empty_trash: bool,
+    #[serde(default = "default_true")]
+    pub delete_reprompt_folder: bool,
 }
 
 impl Default for Config {
@@ -139,6 +153,10 @@ impl Default for Config {
             ui_variant: default_ui_variant(),
             reprompt_mode: default_reprompt_mode(),
             reprompt_grace_seconds: default_reprompt_grace_seconds(),
+            delete_reprompt_trash_item: true,
+            delete_reprompt_credential: true,
+            delete_reprompt_empty_trash: true,
+            delete_reprompt_folder: true,
         }
     }
 }
@@ -260,6 +278,7 @@ mod tests {
             ui_variant: default_ui_variant(),
             reprompt_mode: default_reprompt_mode(),
             reprompt_grace_seconds: default_reprompt_grace_seconds(),
+            ..Config::default()
         };
 
         config.save(&path).unwrap();
@@ -352,6 +371,7 @@ mod tests {
             ui_variant: default_ui_variant(),
             reprompt_mode: default_reprompt_mode(),
             reprompt_grace_seconds: default_reprompt_grace_seconds(),
+            ..Config::default()
         };
 
         config.save(&path).unwrap();
@@ -549,5 +569,17 @@ mod tests {
         let path = dir.path().join("config.json");
         std::fs::write(&path, r#"{"reprompt_grace_seconds":7}"#).unwrap();
         assert_eq!(Config::load(&path).unwrap().reprompt_grace_seconds, 30);
+    }
+
+    #[test]
+    fn load_defaults_delete_reprompt_toggles_on_for_older_config() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"theme":"light"}"#).unwrap();
+        let config = Config::load(&path).unwrap();
+        assert!(config.delete_reprompt_trash_item);
+        assert!(config.delete_reprompt_credential);
+        assert!(config.delete_reprompt_empty_trash);
+        assert!(config.delete_reprompt_folder);
     }
 }

@@ -13,7 +13,7 @@ use nestkey_core::commands::{
     do_unlock_with_pin, do_update_accent_color, do_update_auto_lock_minutes,
     do_update_biometric_enabled, do_update_credential, do_update_hibp_opt_in,
     do_update_mobile_nav_style, do_update_nav_collapsed, do_update_old_password_days,
-    do_update_reprompt_grace_seconds, do_update_reprompt_mode, do_update_site,
+    do_update_delete_reprompt, do_update_reprompt_grace_seconds, do_update_reprompt_mode, do_update_site,
     do_update_ssh_agent_enabled, do_update_strength_algorithm, do_update_theme,
     do_update_ui_variant, do_vault_exists, do_verify_master_password,
 };
@@ -407,6 +407,11 @@ pub fn update_reprompt_mode(state: State<AppState>, paths: State<AppPaths>, mode
 #[tauri::command]
 pub fn update_reprompt_grace_seconds(state: State<AppState>, paths: State<AppPaths>, seconds: u32) -> Result<(), CommandError> {
     do_update_reprompt_grace_seconds(&state, &paths, seconds)
+}
+
+#[tauri::command]
+pub fn update_delete_reprompt(state: State<AppState>, paths: State<AppPaths>, action: String, enabled: bool) -> Result<(), CommandError> {
+    do_update_delete_reprompt(&state, &paths, &action, enabled)
 }
 
 #[tauri::command]

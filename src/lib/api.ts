@@ -128,7 +128,13 @@ export interface ConfigDto {
   uiVariant: string;
   repromptMode: RepromptMode;
   repromptGraceSeconds: number;
+  deleteRepromptTrashItem: boolean;
+  deleteRepromptCredential: boolean;
+  deleteRepromptEmptyTrash: boolean;
+  deleteRepromptFolder: boolean;
 }
+
+export type DeleteRepromptAction = "trashItem" | "deleteCredential" | "emptyTrash" | "deleteFolder";
 
 export interface SshKeyDto {
   id: number;
@@ -396,6 +402,8 @@ export const api = {
   updateRepromptMode: (mode: RepromptMode) => call<void>("update_reprompt_mode", { mode }),
   updateRepromptGraceSeconds: (seconds: number) =>
     call<void>("update_reprompt_grace_seconds", { seconds }),
+  updateDeleteReprompt: (action: DeleteRepromptAction, enabled: boolean) =>
+    call<void>("update_delete_reprompt", { action, enabled }),
   updateTheme: (theme: string) => call<void>("update_theme", { theme }),
   updateAccentColor: (color: string) => call<void>("update_accent_color", { color }),
   generatePassword: (request: GenerateRequest) => call<string>("generate_password", { request }),

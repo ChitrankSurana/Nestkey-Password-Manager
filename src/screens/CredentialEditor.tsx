@@ -3,6 +3,7 @@ import { api, isCommandError, CredentialDto, CustomField, CustomFieldType } from
 import { Tooltip } from "../components/Tooltip";
 import { Icon } from "../components/Icon";
 import { PasswordGeneratorPanel } from "../components/PasswordGeneratorPanel";
+import { RequiredLegend, RequiredMark } from "../components/Required";
 import { MasterPasswordPrompt } from "../components/MasterPasswordPrompt";
 import { isRepromptRequired, markRepromptSuccess } from "../lib/reprompt";
 import { isPlausibleTotpSecret } from "../lib/totp";
@@ -38,10 +39,6 @@ export function CredentialEditor({
   // goes through the same reprompt gate as SecretField.
   const [passwordRevealed, setPasswordRevealed] = useState(existing === null);
   const [showReauth, setShowReauth] = useState(false);
-  // B3: the generator panel is one of the biggest contributors to the modal's overflow height:
-  // collapsed by default when editing (the password is presumably already fine), open by default
-  // when adding (about to pick one).
-  const [generatorOpen, setGeneratorOpen] = useState(existing === null);
 
   function addField() {
     setFields((fs) => [...fs, { key: nextFieldKey++, label: "", value: "", fieldType: "text" }]);
@@ -139,8 +136,9 @@ export function CredentialEditor({
       >
         <h2 className="text-lg font-semibold">{existing ? "Edit credential" : "Add credential"}</h2>
         <label className="block">
-          <span className="text-sm">Username (optional)</span>
+          <span className="text-sm">Username<RequiredMark /></span>
           <input
+            required
             className="mt-1 w-full rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -149,13 +147,14 @@ export function CredentialEditor({
           />
         </label>
         <label className="block">
-          <span className="text-sm">Password</span>
+          <span className="text-sm">Password<RequiredMark /></span>
           <div className="mt-1 flex items-center gap-1">
             <input
               className="flex-1 rounded border px-2 py-1 bg-[var(--bg)] border-[var(--border)]"
               type={passwordRevealed ? "text" : "password"}
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
+              required
               title="The password to store, encrypted"
             />
             <button
@@ -169,18 +168,12 @@ export function CredentialEditor({
           </div>
         </label>
 
-        <div>
-          <button
-            type="button"
-            onClick={() => setGeneratorOpen((v) => !v)}
-            className="text-xs opacity-70 hover:opacity-100"
-          >
-            {generatorOpen ? "▾ Hide generator" : "▸ Generate a password"}
-          </button>
-          {generatorOpen && (
+        <details className="rounded border border-[var(--border)] p-2">
+          <summary className="cursor-pointer text-sm font-medium">Generate Random Password</summary>
+          <div className="mt-2">
             <PasswordGeneratorPanel value={secret} onChange={setSecret} algorithm={algorithm} disabled={submitting} />
-          )}
-        </div>
+          </div>
+        </details>
 
         <label className="block">
           <span className="text-sm">Remarks (optional)</span>
@@ -231,7 +224,7 @@ export function CredentialEditor({
                 onChange={(e) => updateField(f.key, { fieldType: e.target.value as CustomFieldType })}
               >
                 <option value="text">Text</option>
-                <option value="hidden">Hidden</option>
+                <option value="hidden">Hidden Text</option>
                 <option value="boolean">Boolean</option>
               </select>
               <button type="button" title="Remove field" onClick={() => removeField(f.key)} className="px-1">
@@ -280,6 +273,7 @@ export function CredentialEditor({
         </label>
 
         {error && <p className="text-sm text-red-400">{error}</p>}
+        <RequiredLegend />
         <div className="flex justify-end space-x-2">
           <Tooltip text="Cancel">
             <button type="button" onClick={onClose} className="px-3 py-1">
@@ -289,7 +283,7 @@ export function CredentialEditor({
           <Tooltip text="Save this credential">
             <button
               type="submit"
-              disabled={submitting || secret.trim() === ""}
+              disabled={submitting || secret.trim() === "" || username.trim() === ""}
               className="rounded bg-[var(--accent)] px-3 py-1 disabled:opacity-50"
             >
               <Icon name="check-lg" /> Save
