@@ -34,6 +34,12 @@ pub fn register_user(
     username: &str,
     master_password: &str,
 ) -> Result<crypto::VaultKey, AuthError> {
+    // Windows filenames ignore case, so "Alice" would open alice's existing vault file.
+    let lowered = username.to_lowercase();
+    if registry::list_usernames(registry_conn)?.iter().any(|u| u.to_lowercase() == lowered) {
+        return Err(AuthError::UsernameTaken);
+    }
+
     let kdf_salt = crypto::random_salt();
     let verifier_salt = crypto::random_salt();
 
@@ -295,6 +301,17 @@ mod tests {
 
         register_user(&registry_conn, &dir.path().join("alice1.vault"), "alice", "password one").unwrap();
         let result = register_user(&registry_conn, &dir.path().join("alice2.vault"), "alice", "password two");
+
+        assert!(matches!(result, Err(AuthError::UsernameTaken)));
+    }
+
+    #[test]
+    fn register_user_rejects_username_differing_only_by_case() {
+        let dir = tempdir().unwrap();
+        let registry_conn = registry::open_registry(&dir.path().join("registry.db")).unwrap();
+
+        register_user(&registry_conn, &dir.path().join("alice.vault"), "alice", "password one").unwrap();
+        let result = register_user(&registry_conn, &dir.path().join("Alice2.vault"), "Alice", "password two");
 
         assert!(matches!(result, Err(AuthError::UsernameTaken)));
     }

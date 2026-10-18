@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, isCommandError, type CredentialDto, type FolderDto, type SiteDto } from "../../lib/api";
-import { confirmDialog, siteDeleteMessage } from "../../lib/confirm";
+import { siteDeleteMessage } from "../../lib/confirm";
+import { confirmDelete } from "../../lib/deleteGuard";
 import { splitCredentials, otherLoginsLabel } from "../../newui/lib/credentialLayout";
 import { CredentialBlock } from "./CredentialBlock";
 import { DetailField } from "./DetailField";
@@ -81,7 +82,7 @@ export function DetailPanel({
   async function handleDeleteSite() {
     if (!site) return;
     const message = siteDeleteMessage(site.name, credentials?.length ?? null);
-    if (!(await confirmDialog(message))) return;
+    if (!(await confirmDelete("trashItem", message))) return;
     try {
       setActionError(null);
       await api.softDeleteSite(site.id);

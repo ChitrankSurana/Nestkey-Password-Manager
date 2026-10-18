@@ -155,6 +155,10 @@ pub struct ConfigDto {
     pub ui_variant: String,
     pub reprompt_mode: String,
     pub reprompt_grace_seconds: u32,
+    pub delete_reprompt_trash_item: bool,
+    pub delete_reprompt_credential: bool,
+    pub delete_reprompt_empty_trash: bool,
+    pub delete_reprompt_folder: bool,
 }
 
 // #[derive(Debug)] is safe here - the private key never leaves the backend at all (unlike

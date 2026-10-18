@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, isCommandError, type ChangeLogEntryDto, type CredentialDto, type HistoryEntryDto, type StrengthDto } from "../../lib/api";
-import { confirmDialog } from "../../lib/confirm";
+import { confirmDelete } from "../../lib/deleteGuard";
+import { formatUtcLocal } from "../../lib/time";
 import { SecretField } from "../../components/SecretField";
 import { TotpDisplay } from "../../components/TotpDisplay";
 import { DetailField } from "./DetailField";
@@ -116,7 +117,7 @@ export function CredentialBlock({
     // and Empty Trash all route through this same seam) - a stray click on a multi-credential site
     // silently removed one with no way to notice before it happened.
     const label = credential.username || "this credential";
-    if (!(await confirmDialog(`Delete "${label}"? It will move to Trash.`))) return;
+    if (!(await confirmDelete("deleteCredential", `Delete "${label}"? It will move to Trash.`))) return;
     try {
       setError(null);
       await api.softDeleteCredential(credential.id);
@@ -242,7 +243,7 @@ export function CredentialBlock({
               {history !== null && history.length === 0 && <p className="text-xs text-mk-faint">No previous passwords recorded.</p>}
               {history?.map((h, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <span className="w-28 shrink-0 text-[10px] text-mk-faint">{h.changedAt}</span>
+                  <span className="w-32 shrink-0 text-[10px] text-mk-fg2">{formatUtcLocal(h.changedAt)}</span>
                   <SecretField secret={h.secret} exempt={credential.repromptExempt} variant="make" />
                 </div>
               ))}
@@ -256,7 +257,7 @@ export function CredentialBlock({
                 <div key={i} className="border-t border-mk-border pt-2 first:border-t-0 first:pt-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-medium text-mk-fg2">{CHANGE_LOG_FIELD_LABEL[c.field] ?? c.field}</span>
-                    <span className="text-[10px] text-mk-faint">{c.changedAt}</span>
+                    <span className="text-[10px] text-mk-fg2">{formatUtcLocal(c.changedAt)}</span>
                   </div>
                   <p className="text-xs text-mk-muted mt-0.5">
                     {changeLogValueDisplay(c.oldValue)} <span className="text-mk-faint">→</span> {changeLogValueDisplay(c.newValue)}

@@ -1,6 +1,8 @@
 import { useState, FormEvent } from "react";
 import { api, isCommandError } from "../lib/api";
 import { Tooltip } from "../components/Tooltip";
+import { Icon } from "../components/Icon";
+import { RequiredLegend, RequiredMark } from "../components/Required";
 import { Spinner } from "../components/Spinner";
 
 export function Register({
@@ -35,23 +37,32 @@ export function Register({
       <form onSubmit={handleSubmit} className="w-80 space-y-4">
         <h1 className="text-xl font-semibold">Register</h1>
         <label className="block">
-          <span className="text-sm">Choose a username</span>
+          <span className="flex items-center gap-1 text-sm">
+            <span>Choose a username<RequiredMark /></span>
+            <Tooltip text="Username is case-sensitive">
+              <button type="button" aria-label="Username is case-sensitive" className="opacity-70 hover:opacity-100">
+                <Icon name="info-circle" />
+              </button>
+            </Tooltip>
+          </span>
           <input
             className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            required
             autoFocus
             autoComplete="username"
             title="A unique username for this vault"
           />
         </label>
         <label className="block">
-          <span className="text-sm">Choose a master password</span>
+          <span className="text-sm">Choose a master password<RequiredMark /></span>
           <input
             type="password"
             className="mt-1 w-full rounded border px-2 py-1 bg-[var(--surface)] border-[var(--border)]"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            required
             autoComplete="new-password"
             title="This encrypts your vault - there is no recovery if you forget it"
           />
@@ -63,6 +74,7 @@ export function Register({
           decrypted by anyone, including you.
         </p>
         {error && <p className="text-red-400 text-sm">{error}</p>}
+        <RequiredLegend />
         <Tooltip text="Create your account and vault" className="w-full">
           <button
             type="submit"

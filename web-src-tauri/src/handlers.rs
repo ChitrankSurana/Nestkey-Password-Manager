@@ -254,6 +254,13 @@ struct RepromptGraceSecondsRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteRepromptRequest {
+    action: String,
+    enabled: bool,
+}
+
+#[derive(Deserialize)]
 struct GeneratePasswordRequest {
     request: GenerateRequest,
 }
@@ -782,6 +789,15 @@ async fn update_reprompt_grace_seconds(
     Ok(StatusCode::OK)
 }
 
+async fn update_delete_reprompt(
+    Extension(s): Extension<Arc<UserSession>>,
+    State(ctx): State<AppContext>,
+    Json(b): Json<DeleteRepromptRequest>,
+) -> Result<StatusCode, ApiError> {
+    do_update_delete_reprompt(&s.app_state, &ctx.paths, &b.action, b.enabled)?;
+    Ok(StatusCode::OK)
+}
+
 async fn generate_password(
     Extension(_s): Extension<Arc<UserSession>>,
     Json(b): Json<GeneratePasswordRequest>,
@@ -1052,6 +1068,7 @@ pub fn build_router(ctx: AppContext) -> Router {
         .route("/api/update_ui_variant", post(update_ui_variant))
         .route("/api/update_reprompt_mode", post(update_reprompt_mode))
         .route("/api/update_reprompt_grace_seconds", post(update_reprompt_grace_seconds))
+        .route("/api/update_delete_reprompt", post(update_delete_reprompt))
         .route("/api/generate_password", post(generate_password))
         .route("/api/analyze_strength", post(analyze_strength))
         .route("/api/create_backup", post(create_backup))

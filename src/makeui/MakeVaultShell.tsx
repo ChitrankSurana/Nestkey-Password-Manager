@@ -13,7 +13,7 @@ import { Generator } from "./components/Generator";
 import { DataHub } from "./components/DataHub";
 import { Settings } from "./components/Settings";
 import { IconMenu, IconShield, IconX } from "./icons";
-import type { Section } from "./lib/vaultSelectors";
+import { addDefaultsForSection, type Section } from "./lib/vaultSelectors";
 
 // B1 Option B: the actual vault UI (list/detail/nav, and the useMakeVault() hook driving it) now
 // mounts only once MakeApp has flipped to screen === "vault" (MakeApp renders this component then,
@@ -196,6 +196,8 @@ export function MakeVaultShell({
           existingSite={null}
           existingCredentials={null}
           folders={vault.folders}
+          addDefaults={addDefaultsForSection(nav as Section)}
+          onFoldersChanged={vault.refreshFolders}
           onClose={() => setAddingSite(false)}
           onSaved={() => {
             setAddingSite(false);
@@ -210,6 +212,7 @@ export function MakeVaultShell({
           existingSite={vault.selectedSite}
           existingCredentials={vault.credentials}
           folders={vault.folders}
+          onFoldersChanged={vault.refreshFolders}
           onClose={() => setEditingSite(false)}
           onSaved={() => {
             setEditingSite(false);

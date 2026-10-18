@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
-import { api, isCommandError, isTauri, type RepromptMode, type SshKeyDto } from "../../lib/api";
+import { api, isCommandError, isTauri, type DeleteRepromptAction, type RepromptMode, type SshKeyDto } from "../../lib/api";
 import { refreshRepromptConfig } from "../../lib/reprompt";
 import { getRememberLastUsername, setRememberLastUsername as setRememberLastUsernameStored } from "../../lib/lastUsername";
 import { MasterPasswordPrompt } from "../../components/MasterPasswordPrompt";
@@ -83,6 +83,13 @@ function Field({ label, desc, children }: { label: string; desc?: string; childr
   );
 }
 
+const DELETE_REPROMPT_OPTIONS: { action: DeleteRepromptAction; label: string }[] = [
+  { action: "trashItem", label: "Master password to move item to Trash" },
+  { action: "deleteCredential", label: "Master password to delete a credential" },
+  { action: "emptyTrash", label: "Master password to empty Trash" },
+  { action: "deleteFolder", label: "Master password to delete a folder" },
+];
+
 function Divider() {
   return <div className="border-t border-mk-border" />;
 }
@@ -119,6 +126,7 @@ export function Settings({ username }: { username: string }) {
   const bootUiVariantRef = useRef<string | null>(null);
   const [repromptMode, setRepromptMode] = useState<RepromptMode | null>(null);
   const [repromptGraceSeconds, setRepromptGraceSeconds] = useState<number | null>(null);
+  const [deleteReprompt, setDeleteReprompt] = useState<Record<DeleteRepromptAction, boolean> | null>(null);
   const [pinSet, setPinSet] = useState<boolean | null>(null);
   const [pinInput, setPinInput] = useState("");
   const [pwPrompt, setPwPrompt] = useState<{ title: string; resolve: (ok: boolean) => void } | null>(null);
@@ -162,6 +170,12 @@ export function Settings({ username }: { username: string }) {
           setUiVariant(c.uiVariant);
           setRepromptMode(c.repromptMode);
           setRepromptGraceSeconds(c.repromptGraceSeconds);
+          setDeleteReprompt({
+            trashItem: c.deleteRepromptTrashItem,
+            deleteCredential: c.deleteRepromptCredential,
+            emptyTrash: c.deleteRepromptEmptyTrash,
+            deleteFolder: c.deleteRepromptFolder,
+          });
         }
         if (bootUiVariantRef.current === null) {
           bootUiVariantRef.current = c.uiVariant;
@@ -484,6 +498,22 @@ export function Settings({ username }: { username: string }) {
     }
   }
 
+  async function handleDeleteRepromptChange(action: DeleteRepromptAction, enabled: boolean) {
+    // Turning protection off is itself sensitive - an unattended session must not be able to drop it.
+    if (!enabled && !(await requireMasterPassword("Turn off delete protection"))) return;
+    editedRef.current = true;
+    setSubmitting(true);
+    try {
+      setError(null);
+      await api.updateDeleteReprompt(action, enabled);
+      setDeleteReprompt((d) => (d ? { ...d, [action]: enabled } : d));
+    } catch (err) {
+      setError(isCommandError(err) ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-mk-base">
       <div className="h-14 px-6 flex items-center gap-4 flex-shrink-0 border-b border-mk-border">
@@ -764,6 +794,18 @@ export function Settings({ username }: { username: string }) {
                 ))}
               </select>
             </Field>
+            {DELETE_REPROMPT_OPTIONS.map((o) => (
+              <div key={o.action}>
+                <Divider />
+                <Field label={o.label} desc="Always asks for the master password, even inside the grace window.">
+                  <Toggle
+                    checked={deleteReprompt?.[o.action] ?? true}
+                    onChange={(v) => handleDeleteRepromptChange(o.action, v)}
+                    disabled={submitting || deleteReprompt === null}
+                  />
+                </Field>
+              </div>
+            ))}
           </Section>
         </div>
       </div>

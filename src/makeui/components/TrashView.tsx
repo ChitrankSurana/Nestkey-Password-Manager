@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, isCommandError, type TrashedCredentialDto } from "../../lib/api";
-import { confirmDialog } from "../../lib/confirm";
+import { confirmDelete } from "../../lib/deleteGuard";
 import { itemTypeConfig } from "../lib/vaultSelectors";
 import { IconShield, IconTrash } from "../icons";
 
@@ -55,7 +55,7 @@ export function TrashView({ onRestored }: { onRestored?: () => void }) {
 
   async function handleEmptyTrash() {
     if (!items || items.length === 0) return;
-    if (!(await confirmDialog(`Permanently delete ${items.length} item(s)? This cannot be undone.`))) return;
+    if (!(await confirmDelete("emptyTrash", `Permanently delete ${items.length} item(s)? This cannot be undone.`))) return;
     setBusy(true);
     try {
       setError(null);

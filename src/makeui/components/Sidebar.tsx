@@ -1,6 +1,6 @@
 import { useState, type ComponentType } from "react";
 import { api, isCommandError, type SiteDto, type FolderDto } from "../../lib/api";
-import { confirmDialog } from "../../lib/confirm";
+import { confirmDelete } from "../../lib/deleteGuard";
 import { getFoldersSectionOpen, getVaultSectionOpen, setFoldersSectionOpen, setVaultSectionOpen } from "../../lib/sidebarPrefs";
 import {
   IconActivity,
@@ -80,7 +80,7 @@ function FolderRow({
   }
 
   async function handleDelete() {
-    if (!(await confirmDialog(`Delete folder "${folder.name}"? Its items will be unfiled, not deleted.`))) return;
+    if (!(await confirmDelete("deleteFolder", `Delete folder "${folder.name}"? Its items will be unfiled, not deleted.`))) return;
     setBusy(true);
     try {
       setError(null);
