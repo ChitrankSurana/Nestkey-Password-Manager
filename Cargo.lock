@@ -2857,6 +2857,7 @@ version = "2.9.0"
 dependencies = [
  "dirs 5.0.1",
  "nestkey-core",
+ "openssl-sys",
  "serde",
  "serde_json",
  "ssh-agent-lib",
@@ -2881,6 +2882,7 @@ dependencies = [
  "csv",
  "data-encoding",
  "hmac",
+ "openssl-sys",
  "rand 0.8.6",
  "reqwest 0.12.28",
  "rusqlite",
@@ -2902,6 +2904,7 @@ version = "2.9.0"
 dependencies = [
  "dirs 5.0.1",
  "nestkey-core",
+ "openssl-sys",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -2916,6 +2919,7 @@ dependencies = [
  "axum",
  "dirs 5.0.1",
  "nestkey-core",
+ "openssl-sys",
  "rand 0.8.6",
  "reqwest 0.12.28",
  "serde",

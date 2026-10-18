@@ -28,7 +28,11 @@
     If anything gets freshly installed, PATH changes may need a NEW terminal window to take
     full effect everywhere (this script refreshes its own session's PATH best-effort so it can
     keep going without one).
+    Pass -Runtime on a machine that only RUNS the built app (no dev tools): checks just the
+    WebView2 Runtime (the one thing the built app needs that Windows may lack) and installs it if missing.
 #>
+
+param([switch]$Runtime)
 
 $ErrorActionPreference = 'Stop'
 
@@ -70,6 +74,14 @@ function Install-Winget-Package {
     $args = @('install', '--id', $Id, '-e', '--accept-source-agreements', '--accept-package-agreements', '--silent')
     if ($OverrideArgs) { $args += @('--override', $OverrideArgs) }
     & winget @args
+}
+
+if ($Runtime) {
+    if (Test-WebView2Runtime) { Write-Host "[OK] WebView2 Runtime present - the built app can run." -ForegroundColor Green; exit 0 }
+    Write-Host "[MISSING] WebView2 Runtime - the built app cannot open its window without it." -ForegroundColor Red
+    if (-not (Test-ToolOnPath 'winget')) { Write-Host "Install it from https://developer.microsoft.com/microsoft-edge/webview2/" -ForegroundColor Yellow; exit 1 }
+    Install-Winget-Package -Id 'Microsoft.EdgeWebView2Runtime'
+    exit [int](-not (Test-WebView2Runtime))
 }
 
 Write-Host "=== Checking system dependencies ===" -ForegroundColor Cyan

@@ -11,6 +11,7 @@ zeroize = { version = "1.7", features = ["derive", "serde"] }
 thiserror = "1.0"
 subtle = "2.5"
 rusqlite = { version = "0.31", features = ["bundled-sqlcipher-vendored-openssl"] }
+openssl-sys = "0.9"
 csv = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
